@@ -5006,30 +5006,28 @@
         }
 
         function buildTrainerPayloadForSync() {
-            // Keep identical to exportTrainerData payload shape
+            // Keep identical to exportTrainerData payload shape, but always read/write
+            // the *active profile* namespace via profileKey(...) so Cloud sync matches
+            // what the trainer actually uses.
             const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix'];
-            const profile = getProfileName();
+            const profile = getProfileName(); // '' means Guest
+
             const payload = {
                 app: 'PokerCrusher',
                 exportVersion: 2,
                 exportedAt: new Date().toISOString(),
-                profile: profile || 'Guest',
+                profile: profile || '', // store '' for Guest (do NOT store literal 'Guest')
                 data: {}
             };
 
-            // Include both base keys AND profile-suffixed keys when profile is not Guest
-            const keys = [...baseKeys];
-            if (profile && profile !== 'Guest') {
-                baseKeys.forEach(k => keys.push(k + '__pc_' + profile));
-            }
-
-            keys.forEach(k => {
-                const v = localStorage.getItem(k);
-                if (v !== null && v !== undefined) payload.data[k] = v;
+            baseKeys.forEach(k => {
+                const v = localStorage.getItem(profileKey(k));
+                if (v !== null && v !== undefined) payload.data[k] = v; // store raw string
             });
 
             return payload;
         }
+
 
         function applyTrainerPayload(payload) {
             if (!payload || typeof payload !== 'object' || !payload.data || typeof payload.data !== 'object') {
@@ -5037,22 +5035,40 @@
                 return false;
             }
 
-            // Optional: auto-switch profile if present
-            if (payload.profile && typeof payload.profile === 'string') {
-                try { setProfileName(payload.profile); } catch(e) {}
-            }
+            // Switch profile if payload specifies one.
+            // IMPORTANT: Guest is stored as '' (empty). Do not create a literal "guest" namespace by accident.
+            try {
+                const desiredRaw = (typeof payload.profile === 'string') ? payload.profile : '';
+                // Backward compat: older builds stored literal 'Guest'
+                const desiredRawNorm = String(desiredRaw || '').trim().toLowerCase();
+                const desired = (desiredRawNorm === 'guest') ? '' : normalizeProfileName(desiredRaw);
+                if (desired === null) {
+                    // If invalid, ignore profile switch
+                } else if (!desired) {
+                    // Guest
+                    try { localStorage.removeItem(PROFILE_KEY); } catch(e) {}
+                } else {
+                    try { localStorage.setItem(PROFILE_KEY, desired); } catch(e) {}
+                }
+            } catch(e) {}
 
-            // Write all keys
+            // Write only the known keys into the *active* profile namespace.
+            const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix'];
             const data = payload.data;
-            Object.keys(data).forEach(k => {
-                try { localStorage.setItem(k, data[k]); } catch(e) {}
+
+            let wrote = 0;
+            allowed.forEach(k => {
+                if (data[k] !== undefined && data[k] !== null) {
+                    try { localStorage.setItem(profileKey(k), String(data[k])); wrote++; } catch(e) {}
+                }
             });
 
-            // Also store a friendly "last imported" marker
+            // Friendly "last imported" marker
             try { localStorage.setItem('pc_last_cloud_sync_at', new Date().toISOString()); } catch(e) {}
 
-            return true;
+            return wrote > 0;
         }
+
 
         async function cloudSaveNow() {
             const uEl = document.getElementById('cloud-username');
