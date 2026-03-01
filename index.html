@@ -4247,7 +4247,7 @@ function get4betSize$(heroPos, villainPos){
 function get3betSize$(heroPos, oppPos) {
     const open = getOpenSize$();
     const isIP = postflopIP(heroPos, oppPos);
-    const mult = isIP ? 3.0 : 4.0;
+    const mult = isIP ? 3.0 : 3.0;
     return open * mult;
 }
 
