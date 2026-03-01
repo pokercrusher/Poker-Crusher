@@ -335,7 +335,22 @@
             cursor: default;
             position: relative;
         }
-    </style>
+    
+        /* Hero bet slide animation (visual only) */
+        .hero-bet-anim {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 60;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: left 260ms ease-out, top 260ms ease-out, opacity 260ms ease-out;
+            opacity: 0.0;
+        }
+        .hero-bet-anim.show { opacity: 1.0; }
+
+</style>
 
     <!-- Cloud Sync (optional): Firebase compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
@@ -713,6 +728,7 @@
         const TABLE_ORDER = ['SB', 'BB', 'UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN'];
         const ALL_POSITIONS = ['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
         const POS_LABELS = { 'SB':'SB','BB':'BB','UTG':'UTG','UTG1':'UTG+1','UTG2':'UTG+2','LJ':'LJ','HJ':'HJ','CO':'CO','BTN':'BTN' };
+        const BET_JITTER = { 'UTG':-6, 'UTG1':-2, 'UTG2':2, 'LJ':6, 'HJ':4, 'CO':2, 'BTN':-2, 'SB':-4, 'BB':4 };
 
         // Seat coords — desktop defaults; mobile overrides applied dynamically
         const SEAT_COORDS_DESKTOP = [
@@ -3274,7 +3290,20 @@
                     const pairs = Object.keys(facingRfiRanges).filter(p => state.config.positions.includes(p.split('_vs_')[0]));
                     const key = pairs[Math.floor(Math.random() * pairs.length)];
                     [state.currentPos, state.oppPos] = key.split('_vs_');
-                } else if (state.scenario === 'VS_LIMP') {
+                
+    } else if (state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') {
+        const villain3bet$ = get3betSize$(state.oppPos, state.currentPos);
+        const heroIP = postflopIP(state.currentPos, state.oppPos);
+        const fourBet$ = get4betSize$(state.currentPos, state.oppPos);
+        const main = `4-BET TO ${fmt$(fourBet$)}`;
+        const hint = heroIP ? `4-bet IP: 2.2× 3-bet (${fmt$(villain3bet$)})` : `4-bet OOP: 2.5× 3-bet (${fmt$(villain3bet$)})`;
+        setSizingHint(hint);
+        container.innerHTML = `<div class="grid grid-cols-3 gap-3 ${stateClass}">
+            <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button>
+            <button onclick="handleInput('CALL')" ${btnStyle} class="bg-emerald-700 rounded-2xl font-black text-white shadow-lg">CALL</button>
+            <button onclick="handleInput('4BET')" ${btnStyle} class="bg-indigo-600 rounded-2xl font-black text-white shadow-lg">${main}</button>
+        </div>`;
+} else if (state.scenario === 'VS_LIMP') {
                     // Filter limp keys to enabled hero positions
                     const limpKeys = Object.keys(allFacingLimps).filter(k => {
                         const m = k.match(/(.+)_vs_(.+)_Limp/);
@@ -3490,9 +3519,19 @@
                 // Tag bluff squeezes in correct toast
                 if (correctAction === 'SQUEEZE' && (sc === 'SQUEEZE' || sc === 'SQUEEZE_2C')) {
                     const sqData2 = sc === 'SQUEEZE' ? squeezeRanges[state.oppPos] : squeezeVsRfiTwoCallers[state.oppPos];
-                    if (isSqueezeBluff(state.currentHand, sqData2)) { showToast("Correct · Squeeze (Bluff)", "correct", 700); }
-                    else { showToast("Correct", "correct", 500); }
-                } else { showToast("Correct", "correct", 500); }
+                    if (isSqueezeBluff(state.currentHand, sqData2)) {
+                        showToast("Correct · Squeeze (Bluff)", "correct", 700);
+                    } else {
+                        showToast("Correct", "correct", 500);
+                    }
+                } else {
+                    showToast("Correct", "correct", 500);
+                }
+
+                // Visual-only: slide hero bet chip onto table for correct betting actions
+                const __bet$ = computeHeroBetDollarsForAction(action);
+                if (__bet$ != null) animateHeroBetDollars(__bet$);
+
                 updateUI(); saveProgress(); setTimeout(() => { if (!checkDrillComplete()) generateNextRound(); }, 600);
             } else {
                 state.sessionStats.streak = 0;
@@ -3510,7 +3549,15 @@
                 showToast(`Incorrect · ${correctLabel}`, "incorrect", 1500);
                 updateUI(); saveProgress();
                 setTimeout(() => showChart(state.currentPos, state.currentHand, state.scenario, state.oppPos), 800);
-            }
+            
+                // FAIL-SAFE: if chart doesn't show or user backs out, don't freeze on the same hand
+                setTimeout(() => {
+                    const trainerHidden = document.getElementById('trainer-screen')?.classList?.contains('hidden');
+                    const chartHidden = document.getElementById('chart-modal')?.classList?.contains('hidden');
+                    if (trainerHidden) return;
+                    if (chartHidden && !checkDrillComplete()) generateNextRound();
+                }, 2500);
+}
         }
 
         // Helper: get seat element coords as percentage strings
@@ -3518,7 +3565,7 @@
             const heroIdx = TABLE_ORDER.indexOf(heroPos);
             const i = TABLE_ORDER.indexOf(pos);
             const slotIdx = (i - heroIdx + 9) % 9;
-            return SEAT_COORDS[slotIdx];
+            return { ...SEAT_COORDS[slotIdx], pos };
         }
 
         // Place card backs near a seat, offset toward table center
@@ -3595,7 +3642,12 @@
             if (origL < (isMob ? 8 : 6)) betL += (isMob ? 10 : 12);
             if (origL > (isMob ? 92 : 94)) betL -= (isMob ? 10 : 12);
 
-            // Clamp into a safe box so chips never clip off the felt container
+                        // Small per-position horizontal jitter to prevent adjacent bet overlaps
+            if (coords && coords.pos && typeof BET_JITTER !== 'undefined' && BET_JITTER[coords.pos] != null) {
+                betL += BET_JITTER[coords.pos];
+            }
+
+// Clamp into a safe box so chips never clip off the felt container
             const minL = isMob ? 10 : 8, maxL = isMob ? 90 : 92;
             const minT = isMob ? 12 : 10, maxT = isMob ? 88 : 90;
             betL = Math.max(minL, Math.min(maxL, betL));
@@ -3637,26 +3689,40 @@
                 }
 
                 let betAmount = 0;
-                if (pos === 'SB' && state.scenario !== 'RFI_VS_3BET') betAmount = 0.5;
-                if (pos === 'BB' && state.scenario === 'RFI') betAmount = 1;
-                if (state.scenario === 'FACING_RFI' && pos === oppPos) betAmount = 2.5;
-                if (state.scenario === 'RFI_VS_3BET') {
-                    if (pos === heroPos) betAmount = 2.5;
-                    if (pos === oppPos) betAmount = 9;
+
+                const openBB = getOpenSizeBB();
+
+                // Blinds (displayed in $ via formatter)
+                if (pos === 'SB') betAmount = 0.5;
+                if (pos === 'BB') betAmount = 1;
+
+                // Facing RFI: opponent opened
+                if (state.scenario === 'FACING_RFI' && pos === oppPos) betAmount = openBB;
+
+                // Hero opened, facing 3-bet
+                if ((state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') ) {
+                    if (pos === heroPos) betAmount = openBB;
+                    if (pos === oppPos) {
+                        const villainIP = postflopIP(oppPos, heroPos);
+                        betAmount = (villainIP ? 3 : 4) * openBB;
+                    }
                 }
+
+                // Vs limpers: show limpers + BB posted
                 if (state.scenario === 'VS_LIMP') {
-                    if (pos === 'BB') betAmount = 1;
                     if (state.limperPositions && state.limperPositions.includes(pos)) betAmount = 1;
                     else if (pos === oppPos) betAmount = 1;
                 }
+
+                // Squeeze: show opener size and callers matching that size
                 if (state.scenario === 'SQUEEZE') {
-                    if (pos === state.squeezeOpener) betAmount = 2.5;
-                    if (pos === state.squeezeCaller) betAmount = 2.5;
+                    if (pos === state.squeezeOpener) betAmount = openBB;
+                    if (pos === state.squeezeCaller) betAmount = openBB;
                 }
                 if (state.scenario === 'SQUEEZE_2C') {
-                    if (pos === state.squeezeOpener) betAmount = 2.5;
-                    if (pos === state.squeezeCaller) betAmount = 2.5;
-                    if (pos === state.squeezeCaller2) betAmount = 2.5;
+                    if (pos === state.squeezeOpener) betAmount = openBB;
+                    if (pos === state.squeezeCaller) betAmount = openBB;
+                    if (pos === state.squeezeCaller2) betAmount = openBB;
                 }
 
                 if (betAmount > 0) {
@@ -3667,7 +3733,7 @@
                     if (betL < 45) betL += bOff; else if (betL > 55) betL -= bOff;
                     if (betT < 45) betT += bOff; else if (betT > 55) betT -= bOff;
                     betDiv.style.left = betL + '%'; betDiv.style.top = betT + '%';
-                    betDiv.innerHTML = `<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);" class="rounded-full bg-rose-600 border border-white/20"></div><span style="font-size:var(--chip-font,9px);" class="font-black text-yellow-400 bg-black/40 px-1 rounded">${betAmount}bb</span>`;
+                    betDiv.innerHTML = `<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);" class="rounded-full bg-rose-600 border border-white/20"></div><span style="font-size:var(--chip-font,9px);" class="font-black text-yellow-400 bg-black/40 px-1 rounded">${fmt$(betAmount * BB_DOLLARS)}</span>`;
                     betsLayer.appendChild(betDiv);
                 }
             });
@@ -4055,6 +4121,102 @@ function fmt$(n) {
     return `$${v}`;
 }
 
+// --- Hero bet slide animation (visual-only) ---
+function _heroSeatPct(pos){
+    const el = document.getElementById(`seat-${pos}`);
+    if(!el) return null;
+    const l = parseFloat(el.style.left);
+    const t = parseFloat(el.style.top);
+    if (Number.isNaN(l) || Number.isNaN(t)) return null;
+    return {left:l, top:t};
+}
+function _betTargetFromSeatPct(seat, pos){
+    let betL = seat.left, betT = seat.top;
+    const isMob = (SEAT_COORDS === SEAT_COORDS_MOBILE);
+    const bOff = isMob ? 12 : 16;
+    if (betL < 45) betL += bOff; else if (betL > 55) betL -= bOff;
+    if (betT < 45) betT += bOff; else if (betT > 55) betT -= bOff;
+
+    if (seat.top > (isMob ? 80 : 84)) betT -= (isMob ? 10 : 12);
+    if (seat.top < (isMob ? 12 : 10)) betT += (isMob ? 8 : 10);
+
+    if (seat.left < (isMob ? 8 : 6)) betL += (isMob ? 10 : 12);
+    if (seat.left > (isMob ? 92 : 94)) betL -= (isMob ? 10 : 12);
+
+    if (typeof BET_JITTER !== 'undefined' && pos && BET_JITTER[pos] != null) betL += BET_JITTER[pos];
+
+    const minL = isMob ? 10 : 8, maxL = isMob ? 90 : 92;
+    const minT = isMob ? 12 : 10, maxT = isMob ? 88 : 90;
+    betL = Math.max(minL, Math.min(maxL, betL));
+    betT = Math.max(minT, Math.min(maxT, betT));
+    return {left: betL, top: betT};
+}
+function animateHeroBetDollars(amountDollars){
+    try{
+        const betsLayer = document.getElementById('bets-layer');
+        if(!betsLayer) return;
+        const seat = _heroSeatPct(state.currentPos);
+        if(!seat) return;
+
+        const target = _betTargetFromSeatPct(seat, state.currentPos);
+
+        // start slightly "in front" of hero (toward table center)
+        const start = {
+            left: seat.left + (target.left - seat.left) * 0.35,
+            top:  seat.top  + (target.top  - seat.top)  * 0.35
+        };
+
+        const existing = document.getElementById('hero-bet-anim');
+        if(existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+        const betDiv = document.createElement('div');
+        betDiv.id = 'hero-bet-anim';
+        betDiv.className = 'hero-bet-anim';
+        betDiv.style.left = start.left + '%';
+        betDiv.style.top = start.top + '%';
+        betDiv.innerHTML = `<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);" class="rounded-full bg-indigo-500 border border-white/20"></div>
+            <span style="font-size:var(--chip-font,9px);" class="font-black text-yellow-400 bg-black/40 px-1 rounded">${fmt$(amountDollars)}</span>`;
+        betsLayer.appendChild(betDiv);
+
+        requestAnimationFrame(() => {
+            betDiv.classList.add('show');
+            betDiv.style.left = target.left + '%';
+            betDiv.style.top = target.top + '%';
+        });
+
+        setTimeout(() => {
+            if(betDiv && betDiv.parentNode){
+                betDiv.style.opacity = '0';
+                setTimeout(() => { if(betDiv.parentNode) betDiv.parentNode.removeChild(betDiv); }, 220);
+            }
+        }, 850);
+    } catch(e) { /* no-op */ }
+}
+
+function computeHeroBetDollarsForAction(action){
+    const open$ = getOpenSize$();
+
+    // RFI tree
+    if (state.scenario === 'RFI' && action === 'RAISE') return open$;
+
+    // Facing RFI tree
+    if (state.scenario === 'FACING_RFI' && action === '3BET') return get3betSize$(state.currentPos, state.oppPos);
+
+    // Vs limpers
+    if (state.scenario === 'VS_LIMP' && action === 'RAISE') {
+        const limpers = (state.limperPositions && Array.isArray(state.limperPositions)) ? state.limperPositions.length : (state.numLimpers || 1);
+        return getIsoSize$(limpers);
+    }
+
+    // Squeeze scenarios (your app uses separate scenario keys for 1 or 2 callers)
+    if ((state.scenario === 'SQUEEZE' || state.scenario === 'SQUEEZE_1C') && action === 'SQUEEZE') return getSqueezeSize$(state.currentPos, state.squeezeOpener, 1);
+    if (state.scenario === 'SQUEEZE_2C' && action === 'SQUEEZE') return getSqueezeSize$(state.currentPos, state.squeezeOpener, 2);
+
+        if ((state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') && action === '4BET') return get4betSize$(state.currentPos, state.oppPos);
+
+    return null;
+}
+
 function bbTo$(bb) {
     return fmt$(bb * BB_DOLLARS);
 }
@@ -4074,6 +4236,14 @@ function getIsoSize$(numLimpers) {
     return bb * BB_DOLLARS;
 }
 
+
+function get4betSize$(heroPos, villainPos){
+    const open$ = getOpenSize$();
+    const threeBet$ = get3betSize$(villainPos, heroPos); // villain 3-bet size vs hero open
+    const heroIP = postflopIP(heroPos, villainPos);
+    const mult = heroIP ? 2.2 : 2.5;
+    return roundLiveDollars(threeBet$ * mult);
+}
 function get3betSize$(heroPos, oppPos) {
     const open = getOpenSize$();
     const isIP = postflopIP(heroPos, oppPos);
@@ -4161,7 +4331,22 @@ function renderButtons(hidden) {
             <button onclick="handleInput('CALL')" ${btnStyle} class="bg-emerald-700 rounded-2xl font-black text-white shadow-lg">CALL</button>
             <button onclick="handleInput('SQUEEZE')" ${btnStyle} class="bg-red-600 rounded-2xl font-black text-white shadow-lg">${main}</button>
         </div>`;
-    } else {
+    
+    } else if (state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') {
+        // Defending vs a 3-bet after we opened: Fold / Call / 4-bet (display-only sizing)
+        const threeBet$ = get3betSize$(state.oppPos, state.currentPos); // villain 3-bet size vs our open
+        const heroIP = postflopIP(state.currentPos, state.oppPos);
+        const fourBet$ = get4betSize$(state.currentPos, state.oppPos);
+        const hint = heroIP ? `IP 4-bet: 2.2× 3-bet (${fmt$(threeBet$)})` : `OOP 4-bet: 2.5× 3-bet (${fmt$(threeBet$)})`;
+        setSizingHint(hint);
+
+        container.innerHTML = `<div class="grid grid-cols-3 gap-3 ${stateClass}">
+            <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button>
+            <button onclick="handleInput('CALL')" ${btnStyle} class="bg-emerald-700 rounded-2xl font-black text-white shadow-lg">CALL</button>
+            <button onclick="handleInput('4BET')" ${btnStyle} class="bg-indigo-600 rounded-2xl font-black text-white shadow-lg">4-BET TO ${fmt$(fourBet$)}</button>
+        </div>`;
+
+} else {
         container.innerHTML = `<div class="grid grid-cols-2 gap-3 ${stateClass}">
             <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button>
             <button onclick="handleInput('RAISE')" ${btnStyle} class="bg-indigo-600 rounded-2xl font-black text-white shadow-lg">RAISE</button>
@@ -5697,5 +5882,47 @@ function renderButtons(hidden) {
             document.getElementById('stats-body').innerHTML = html;
         }
     </script>
+
+<script>
+// Firebase Cloud Sync bootstrap (safe for file://).
+// When opened as a local file, cloud sync is disabled automatically.
+(function(){
+  if (location.protocol === 'file:') {
+    window.PokerCrusherCloud = null;
+    return;
+  }
+  const firebaseConfig = {
+    apiKey: "AIzaSyArpfetXIDgkdvnFXuWhpwKTyDyhDNqaFM",
+    authDomain: "poker-crusher.firebaseapp.com",
+    projectId: "poker-crusher",
+    storageBucket: "poker-crusher.firebasestorage.app",
+    messagingSenderId: "665996380905",
+    appId: "1:665996380905:web:eecb6be9bd2bea9c233e78"
+  };
+
+  async function init(){
+    try{
+      const appMod = await import("https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js");
+      const fsMod  = await import("https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js");
+      const app = appMod.initializeApp(firebaseConfig);
+      const db = fsMod.getFirestore(app);
+      window.PokerCrusherCloud = {
+        async save(username, payload){
+          await fsMod.setDoc(fsMod.doc(db, "users", username), { data: payload, updatedAt: Date.now() });
+        },
+        async load(username){
+          const snap = await fsMod.getDoc(fsMod.doc(db, "users", username));
+          return snap.exists() ? snap.data() : null;
+        }
+      };
+    } catch(e){
+      // Cloud sync fails silently; trainer still works.
+      window.PokerCrusherCloud = null;
+    }
+  }
+  init();
+})();
+</script>
+
 </body>
 </html>
