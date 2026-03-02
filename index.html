@@ -1542,8 +1542,333 @@
             return hands;
         }
 
-        // Get limp range data for any bucket, using generated ranges for 2L/3P
+        // ============================================================
+        // LIMP POT V2 (normalized classes + buckets + BTN wideners)
+        // ============================================================
+        // Design:
+        // - 4 limper position classes via normalizePos(): EP/MP/LP/SB/BB/OTHER
+        // - 3 limp-count buckets: 1L, 2L, 3P (3+ limpers)
+        // - CO and BTN share same base iso/overlimp; BTN gets slight wideners in 1L only
+        // NOTE: These are intended for live 1/3 9-max and will be used when hero is CO/BTN/SB.
+
+        const limpRangesV2 = {
+            CO: {
+                EP: {
+                    '1L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s','98s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','88','A5s','A4s','A3s','A2s','QJs','JTs','T9s','98s']
+                    }
+                },
+                MP: {
+                    '1L': {
+                        Iso: ['44','55','66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s','98s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                },
+                LP: {
+                    '1L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','A9s','ATs','AJs','AQs','AKs','ATo','AJo','AQo','AKo','KTs','KJs','KQs','KJo','KQo','QTs','QJs','QJo','JTs','T9s','98s','87s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                }
+            },
+
+            BTN: {
+                // CO base + wideners (1L only)
+                EP: {
+                    '1L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s','98s','AJo','KTs','QTs'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','88','A5s','A4s','A3s','A2s','QJs','JTs','T9s','98s']
+                    }
+                },
+                MP: {
+                    '1L': {
+                        Iso: ['44','55','66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s','98s','ATo','KJo','QTs','87s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                },
+                LP: {
+                    '1L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','A9s','ATs','AJs','AQs','AKs','ATo','AJo','AQo','AKo','KTs','KJs','KQs','KJo','KQo','QTs','QJs','QJo','JTs','T9s','98s','87s','A8s','K9s','Q9s','T8s','76s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                }
+            },
+
+
+            LJ: {
+                // Tightened HJ-style iso ranges for LJ (live 1/3, $300 cap). Uses normalizePos(firstLimpPos) => EP/MP/LP.
+                EP: {
+                    '1L': {
+                        Iso: ['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','88','A5s','A4s','A3s','A2s','QJs','JTs','T9s','98s']
+                    }
+                },
+                MP: {
+                    '1L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                },
+                LP: {
+                    '1L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                }
+            },
+
+            
+            HJ: {
+                // Tightened CO-style iso ranges for HJ (live 1/3, $300 cap). Uses normalizePos(firstLimpPos) => EP/MP/LP.
+                EP: {
+                    '1L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','88','A5s','A4s','A3s','A2s','QJs','JTs','T9s','98s']
+                    }
+                },
+                MP: {
+                    '1L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KQo','KJs','QJs','JTs','T9s','98s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs','QJs','JTs'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                },
+                LP: {
+                    '1L': {
+                        Iso: ['55','66','77','88','99','TT','JJ','QQ','KK','AA','A9s','ATs','AJs','AQs','AKs','ATo','AJo','AQo','AKo','KTs','KJs','KQs','KJo','KQo','QTs','QJs','QJo','JTs','T9s','98s','87s'],
+                        Overlimp: []
+                    },
+                    '2L': {
+                        Iso: ['66','77','88','99','TT','JJ','QQ','KK','AA','A2s','A3s','A4s','A5s','ATs','AJs','AQs','AKs','AJo','AQo','AKo','KQs','KJs','QJs','JTs','T9s'],
+                        Overlimp: []
+                    },
+                    '3P': {
+                        Iso: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Overlimp: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','76s','87s','98s','T9s','JTs','QJs']
+                    }
+                }
+            },
+
+SB: {
+                EP: {
+                    '1L': {
+                        Raise: ['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs'],
+                        Complete: ['22','33','44','55','66','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    },
+                    '2L': {
+                        Raise: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Complete: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    },
+                    '3P': {
+                        Raise: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Complete: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    }
+                },
+                MP: {
+                    '1L': {
+                        Raise: ['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs'],
+                        Complete: ['22','33','44','55','66','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    },
+                    '2L': {
+                        Raise: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Complete: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    },
+                    '3P': {
+                        Raise: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Complete: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    }
+                },
+                LP: {
+                    '1L': {
+                        Raise: ['77','88','99','TT','JJ','QQ','KK','AA','ATs','AJs','AQs','AKs','AQo','AKo','KQs','KJs'],
+                        Complete: ['22','33','44','55','66','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    },
+                    '2L': {
+                        Raise: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Complete: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    },
+                    '3P': {
+                        Raise: ['88','99','TT','JJ','QQ','KK','AA','AQs','AKs','AKo','KQs'],
+                        Complete: ['22','33','44','55','66','77','A5s','A4s','A3s','A2s','65s','76s','87s','98s','T9s','JTs','QTs','QJs','KTs']
+                    }
+                }
+            }
+        };
+
+        // --- Limp Range V2 Sanity Fixes (monotonicity / premium closure) ---
+        // Goal: prevent logic errors like raising ATs but folding AJs/AQs, or having AKs without AKo, etc.
+        function _uniq(arr){ return Array.from(new Set(arr)); }
+        function _ensure(arr, hands){
+            const set = new Set(arr);
+            let changed = false;
+            hands.forEach(h => { if (!set.has(h)) { set.add(h); changed = true; } });
+            return { arr: Array.from(set), changed };
+        }
+        function _premiumClosureOnIso(iso){
+            let a = iso.slice();
+            let changedAny = false;
+
+            const has = (h) => a.includes(h);
+
+            // If any offsuit Ax included, include all stronger offsuit Ax up to AKo where relevant
+            const offsuitRanks = ['T','J','Q','K'];
+            for (const r of offsuitRanks){
+                if (has('A'+r+'o')){
+                    const need = [];
+                    if (r === 'T') need.push('AJo','AQo','AKo');
+                    if (r === 'J') need.push('AQo','AKo');
+                    if (r === 'Q') need.push('AKo');
+                    const out = _ensure(a, need);
+                    a = out.arr; changedAny = changedAny || out.changed;
+                }
+            }
+
+            // If AKs present, AKo should almost never be missing in an ISO list
+            if (has('AKs') && !has('AKo')){
+                const out = _ensure(a, ['AKo']);
+                a = out.arr; changedAny = changedAny || out.changed;
+            }
+            // If AQs present, ensure AKs as well (stronger suited)
+            if (has('AQs') && !has('AKs')){
+                const out = _ensure(a, ['AKs']);
+                a = out.arr; changedAny = changedAny || out.changed;
+            }
+            // If ATs present, ensure AJs/AQs/AKs
+            if (has('ATs')){
+                const out = _ensure(a, ['AJs','AQs','AKs']);
+                a = out.arr; changedAny = changedAny || out.changed;
+            }
+            // KTs => KJs/KQs; QTs => QJs; JTs => QJs (often already), keep simple
+            if (has('KTs')){
+                const out = _ensure(a, ['KJs','KQs']);
+                a = out.arr; changedAny = changedAny || out.changed;
+            }
+            if (has('QTs')){
+                const out = _ensure(a, ['QJs']);
+                a = out.arr; changedAny = changedAny || out.changed;
+            }
+
+            return _uniq(a);
+        }
+        function applyLimpV2SanityFixes(){
+            try {
+                for (const hero of Object.keys(limpRangesV2)){
+                    const heroObj = limpRangesV2[hero];
+                    for (const cls of Object.keys(heroObj)){
+                        const clsObj = heroObj[cls];
+                        for (const bucket of Object.keys(clsObj)){
+                            if (!clsObj[bucket] || !Array.isArray(clsObj[bucket].Iso)) continue;
+                            clsObj[bucket].Iso = _premiumClosureOnIso(clsObj[bucket].Iso);
+                        }
+                    }
+                }
+            } catch(e){ /* no-op */ }
+        }
+        applyLimpV2SanityFixes();
+
+
+        function getLimpDataV2(heroPos, firstLimpPos, bucket) {
+            const oppClass = normalizePos(firstLimpPos);
+            if (!limpRangesV2[heroPos]) return null;
+            if (!limpRangesV2[heroPos][oppClass]) return null;
+            const b = bucket && bucket !== '1L' ? bucket : '1L';
+            return limpRangesV2[heroPos][oppClass][b] || null;
+        }
+
+        // Get limp range data for any bucket, using V2 where available and generated ranges otherwise
         function getLimpDataForBucket(heroPos, firstLimpPos, bucket) {
+            const v2 = getLimpDataV2(heroPos, firstLimpPos, bucket);
+            if (v2) return v2;
+
+            // Legacy behavior: use exact position keys (hero_vs_exactPos_Limp) then tighten deterministically for 2L/3P
             const baseKey = `${heroPos}_vs_${firstLimpPos}_Limp`;
             const baseData = allFacingLimps[baseKey];
             if (!bucket || bucket === '1L') return baseData || null;
