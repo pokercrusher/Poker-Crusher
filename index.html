@@ -4096,10 +4096,8 @@ function handleInput(action) {
         }
 
         function updateTable(heroPos, oppPos) {
-            // Defensive: Challenge mode sometimes transitions fast on mobile Safari.
-            // If the felt/layers aren't in the DOM for a moment, we avoid throwing
-            // and simply skip the frame (next render will succeed).
-            try { ensureTableLayers(false); } catch(_) {}
+            // Defensive: ensure layers exist before rendering (challenge transitions can drop them)
+            try { ensureTableLayers(); } catch(_) {}
 
             const heroIdx = TABLE_ORDER.indexOf(heroPos);
             const btnEl = document.getElementById('dealer-button');
@@ -4111,15 +4109,17 @@ function handleInput(action) {
                 betsLayer = document.getElementById('bets-layer');
                 cardsLayer = document.getElementById('cards-layer');
             }
-            if (!betsLayer || !cardsLayer) return;
+            if (!betsLayer || !cardsLayer) {
+                console.warn('[updateTable] Missing table layers; aborting render');
+                return;
+            }
 
             betsLayer.innerHTML = '';
             cardsLayer.innerHTML = '';
-
+            
             TABLE_ORDER.forEach((pos, i) => {
                 const slotIdx = (i - heroIdx + 9) % 9;
                 const coords = SEAT_COORDS[slotIdx];
-
                 const el = document.getElementById(`seat-${pos}`);
                 if (el) {
                     el.style.left = coords.left; el.style.top = coords.top;
@@ -4129,7 +4129,7 @@ function handleInput(action) {
                     else el.className = `seat bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center font-black text-slate-300`;
                 }
 
-                // Card backs for all seats
+                // Card backs for all seats (safe)
                 try { placeCardBacks(cardsLayer, coords, false, false); } catch(_) {}
 
                 if (pos === 'BTN' && btnEl) {
@@ -4140,6 +4140,7 @@ function handleInput(action) {
                 }
 
                 let betAmount = 0;
+
                 const openBB = getOpenSizeBB();
 
                 // Blinds (displayed in $ via formatter)
@@ -4204,10 +4205,11 @@ function handleInput(action) {
 
             const heroIdx = TABLE_ORDER.indexOf(heroPos);
             const btnEl = document.getElementById('dealer-button');
+            // Mobile Safari can drop absolutely-positioned layers during rapid screen changes.
+            try { ensureTableLayers(); } catch(_) {}
             let betsLayer = document.getElementById('bets-layer');
             let cardsLayer = document.getElementById('cards-layer');
             if (!betsLayer || !cardsLayer) {
-                // Mobile Safari can drop absolutely-positioned layers during rapid screen changes.
                 try { ensureTableLayers(true); } catch(_) {}
                 betsLayer = document.getElementById('bets-layer');
                 cardsLayer = document.getElementById('cards-layer');
