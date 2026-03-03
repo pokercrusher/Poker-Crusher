@@ -2583,6 +2583,7 @@
             state.sessionLog = [];
             document.getElementById('menu-screen').classList.add('hidden');
             document.getElementById('trainer-screen').classList.remove('hidden');
+            try { ensureTableLayers(true); } catch(_) {}
             updateUI();
             safeGenerateNextRound();
         }
@@ -4095,27 +4096,43 @@ function handleInput(action) {
         }
 
         function updateTable(heroPos, oppPos) {
+            // Defensive: Challenge mode sometimes transitions fast on mobile Safari.
+            // If the felt/layers aren't in the DOM for a moment, we avoid throwing
+            // and simply skip the frame (next render will succeed).
+            try { ensureTableLayers(false); } catch(_) {}
+
             const heroIdx = TABLE_ORDER.indexOf(heroPos);
             const btnEl = document.getElementById('dealer-button');
-            const betsLayer = document.getElementById('bets-layer');
-            const cardsLayer = document.getElementById('cards-layer');
+            let betsLayer = document.getElementById('bets-layer');
+            let cardsLayer = document.getElementById('cards-layer');
+
+            if (!betsLayer || !cardsLayer) {
+                try { ensureTableLayers(true); } catch(_) {}
+                betsLayer = document.getElementById('bets-layer');
+                cardsLayer = document.getElementById('cards-layer');
+            }
+            if (!betsLayer || !cardsLayer) return;
+
             betsLayer.innerHTML = '';
             cardsLayer.innerHTML = '';
-            
+
             TABLE_ORDER.forEach((pos, i) => {
                 const slotIdx = (i - heroIdx + 9) % 9;
                 const coords = SEAT_COORDS[slotIdx];
+
                 const el = document.getElementById(`seat-${pos}`);
-                el.style.left = coords.left; el.style.top = coords.top;
-                
-                if (pos === heroPos) el.className = `seat bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center font-black text-slate-300 seat-active`;
-                else if (pos === oppPos) el.className = `seat border rounded-lg flex items-center justify-center font-black bg-rose-900/40 border-rose-500/50 text-rose-200`;
-                else el.className = `seat bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center font-black text-slate-300`;
+                if (el) {
+                    el.style.left = coords.left; el.style.top = coords.top;
+
+                    if (pos === heroPos) el.className = `seat bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center font-black text-slate-300 seat-active`;
+                    else if (pos === oppPos) el.className = `seat border rounded-lg flex items-center justify-center font-black bg-rose-900/40 border-rose-500/50 text-rose-200`;
+                    else el.className = `seat bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center font-black text-slate-300`;
+                }
 
                 // Card backs for all seats
-                placeCardBacks(cardsLayer, coords, false, false);
+                try { placeCardBacks(cardsLayer, coords, false, false); } catch(_) {}
 
-                if (pos === 'BTN') {
+                if (pos === 'BTN' && btnEl) {
                     let bL = parseFloat(coords.left), bT = parseFloat(coords.top);
                     if (bL < 50) bL += 5; else bL -= 5;
                     if (bT < 50) bT += 5; else bT -= 5;
@@ -4123,7 +4140,6 @@ function handleInput(action) {
                 }
 
                 let betAmount = 0;
-
                 const openBB = getOpenSizeBB();
 
                 // Blinds (displayed in $ via formatter)
@@ -4188,8 +4204,14 @@ function handleInput(action) {
 
             const heroIdx = TABLE_ORDER.indexOf(heroPos);
             const btnEl = document.getElementById('dealer-button');
-            const betsLayer = document.getElementById('bets-layer');
-            const cardsLayer = document.getElementById('cards-layer');
+            let betsLayer = document.getElementById('bets-layer');
+            let cardsLayer = document.getElementById('cards-layer');
+            if (!betsLayer || !cardsLayer) {
+                // Mobile Safari can drop absolutely-positioned layers during rapid screen changes.
+                try { ensureTableLayers(true); } catch(_) {}
+                betsLayer = document.getElementById('bets-layer');
+                cardsLayer = document.getElementById('cards-layer');
+            }
             if (!betsLayer || !cardsLayer) {
                 console.warn('[TableAnim] Missing table layers; skipping animation');
                 try { if (onDone) onDone(); } catch(e) {}
