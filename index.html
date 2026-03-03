@@ -2954,6 +2954,9 @@
         }
 
         function exitToChallenge() {
+            try { __clearNextTimer(); __endResolve(); } catch(_) {}
+            try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
+
             // Restore config if drill was active
             if (drillState._savedConfig) {
                 state.config = drillState._savedConfig;
@@ -2968,6 +2971,9 @@
 
         
         function endChallengeToMenu() {
+            try { __clearNextTimer(); __endResolve(); } catch(_) {}
+            try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
+
             // Restore config if drill was active
             if (drillState._savedConfig) {
                 state.config = drillState._savedConfig;
@@ -3273,6 +3279,21 @@ function retryChallenge() {
             document.getElementById('drill-complete-screen').classList.remove('hidden');
         }
 
+
+        function continueDrill() {
+            // Hide completion modal and continue the current drill/challenge run
+            document.getElementById('drill-complete-screen').classList.add('hidden');
+            // In challenge mode, start a fresh attempt on the same node (keep challengeState.active true)
+            if (typeof challengeState !== 'undefined' && challengeState && challengeState.nodeId) {
+                // If we were in a completed challenge screen, we are no longer in an active run
+                // (checkDrillComplete triggers when drillState.active). Keep existing drill settings and continue.
+            }
+            // Reset per-session counters for the next segment
+            state.sessionStats = { total: 0, correct: 0, streak: 0 };
+            updateUI(); saveProgress();
+            try { __clearNextTimer(); __endResolve(); } catch(_) {}
+            safeGenerateNextRound();
+        }
 
         function closeDrillComplete() {
             document.getElementById('drill-complete-screen').classList.add('hidden');
@@ -3761,7 +3782,28 @@ function retryChallenge() {
             });
         }
 
-        function handleInput(action) {
+        
+        // === Round guard to prevent double-advance / race conditions (especially on mobile + Challenge Mode) ===
+        window.__roundGuard = window.__roundGuard || { resolving: false, nextTimer: null };
+        function __clearNextTimer() {
+            try {
+                if (window.__roundGuard && window.__roundGuard.nextTimer) {
+                    clearTimeout(window.__roundGuard.nextTimer);
+                    window.__roundGuard.nextTimer = null;
+                }
+            } catch(_) {}
+        }
+        function __endResolve() { try { if (window.__roundGuard) window.__roundGuard.resolving = false; } catch(_) {} }
+        function __beginResolve() {
+            window.__roundGuard = window.__roundGuard || { resolving: false, nextTimer: null };
+            if (window.__roundGuard.resolving) return false;
+            window.__roundGuard.resolving = true;
+            __clearNextTimer();
+            return true;
+        }
+
+function handleInput(action) {
+            if (!__beginResolve()) return;
             // Immediately disable buttons to prevent double-clicks
             const grid = document.querySelector('#action-buttons > div');
             if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
@@ -3872,7 +3914,7 @@ function retryChallenge() {
                 const __bet$ = computeHeroBetDollarsForAction(action);
                 if (__bet$ != null) animateHeroBetDollars(__bet$);
 
-                updateUI(); saveProgress(); setTimeout(() => { if (!checkDrillComplete()) safeGenerateNextRound(); }, 600);
+                updateUI(); saveProgress(); window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete()) safeGenerateNextRound(); }, 600);
             } else {
                 state.sessionStats.streak = 0;
                 let correctLabel = ACTION_LABELS[correctAction] || correctAction;
@@ -3895,7 +3937,7 @@ function retryChallenge() {
                     const trainerHidden = document.getElementById('trainer-screen')?.classList?.contains('hidden');
                     const chartHidden = document.getElementById('chart-modal')?.classList?.contains('hidden');
                     if (trainerHidden) return;
-                    if (chartHidden && !checkDrillComplete()) safeGenerateNextRound();
+                    if (chartHidden && !checkDrillComplete()) { __endResolve(); safeGenerateNextRound(); }
                 }, 2500);
 }
         }
@@ -3934,14 +3976,19 @@ function retryChallenge() {
         }
 
         function safeGenerateNextRound() {
+            window.__roundGuard = window.__roundGuard || { resolving:false, nextTimer:null, generating:false };
+            if (window.__roundGuard.generating) return;
+            window.__roundGuard.generating = true;
             try {
                 generateNextRound();
+                window.__roundGuard.generating = false;
             } catch (e) {
                 console.error('[Trainer] generateNextRound failed; attempting recovery', e);
+                try { window.__roundGuard.generating = false; } catch(_) {}
                 try { ensureTableLayers(true); } catch(_) {}
                 // Small retry (next tick) in case we were mid-resize / DOM update.
                 setTimeout(() => {
-                    try { generateNextRound(); } catch (e2) { console.error('[Trainer] recovery retry failed', e2); }
+                    try { generateNextRound(); } catch (e2) { console.error('[Trainer] recovery retry failed', e2); } finally { try { window.__roundGuard.generating = false; } catch(_) {} }
                 }, 50);
             }
         }
@@ -4970,8 +5017,20 @@ function renderButtons(hidden) {
         function showConfigMenu() { document.getElementById('config-screen').classList.remove('hidden'); hydrateCloudUI(); hydrateCloudAutoUI(); setDrillMode(drillState.mode); updateConfigUI(); }
         function hideConfigMenu() { document.getElementById('config-screen').classList.add('hidden'); }
         let _chartIsReview = false;
-        function closeChart() { document.getElementById('chart-modal').classList.add('hidden'); if (document.getElementById('trainer-screen').classList.contains('hidden')) return; if (!_chartIsReview) { if (!checkDrillComplete()) safeGenerateNextRound(); } _chartIsReview = false; }
+        function closeChart() {
+            document.getElementById('chart-modal').classList.add('hidden');
+            // Release round guard (user is returning to trainer)
+            __endResolve();
+            if (document.getElementById('trainer-screen').classList.contains('hidden')) return;
+            if (!_chartIsReview) {
+                if (!checkDrillComplete()) safeGenerateNextRound();
+            }
+            _chartIsReview = false;
+        } _chartIsReview = false; }
         function startConfiguredTraining() {
+            try { __clearNextTimer(); __endResolve(); } catch(_) {}
+            try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
+
             state.sessionStats = { total: 0, correct: 0, streak: 0 };
             state.sessionLog = [];
 
@@ -4996,6 +5055,9 @@ function renderButtons(hidden) {
             safeGenerateNextRound();
         }
         function exitToMenu() {
+            try { __clearNextTimer(); __endResolve(); } catch(_) {}
+            try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
+
             // Restore config if drill was active
             if (drillState._savedConfig) {
                 state.config = drillState._savedConfig;
