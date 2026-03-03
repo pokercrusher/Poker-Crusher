@@ -770,6 +770,7 @@
     <div id="chart-modal" class="hidden fixed inset-0 bg-slate-950/95 z-[70] flex flex-col items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-700 rounded-3xl p-4 w-full max-w-lg shadow-2xl flex flex-col items-center">
             <h3 id="chart-pos-label" class="text-xs font-black text-white mb-2 uppercase tracking-widest text-center">Range Analysis</h3>
+            <p id="chart-why-text" class="hidden text-[11px] text-slate-300 text-center mb-3 px-2 leading-snug italic"></p>
             <div id="chart-legend" class="flex gap-4 mb-4 text-[9px] font-bold uppercase tracking-wider"></div>
             <div id="chart-bucket-toggle" class="hidden flex gap-2 mb-3"></div>
             <div id="chart-container" class="range-grid w-full mb-6"></div>
@@ -3927,7 +3928,7 @@ function handleInput(action) {
                 }
                 showToast(`Incorrect · ${correctLabel}`, "incorrect", 1500);
                 updateUI(); saveProgress();
-                setTimeout(() => showChart(state.currentPos, state.currentHand, state.scenario, state.oppPos), 800);
+                setTimeout(() => showChart(state.currentPos, state.currentHand, state.scenario, state.oppPos), 0);
             
                 // FAIL-SAFE: if chart doesn't show or user backs out, don't freeze on the same hand
                 setTimeout(() => {
@@ -3935,7 +3936,7 @@ function handleInput(action) {
                     const chartHidden = document.getElementById('chart-modal')?.classList?.contains('hidden');
                     if (trainerHidden) return;
                     if (chartHidden && !checkDrillComplete()) { __endResolve(); safeGenerateNextRound(); }
-                }, 2500);
+                }, 3500);
 }
         }
 
@@ -4725,7 +4726,7 @@ function get4betSize$(heroPos, villainPos){
 function get3betSize$(heroPos, oppPos) {
     const open = getOpenSize$();
     const isIP = postflopIP(heroPos, oppPos);
-    const mult = isIP ? 3.0 : 3.0;
+    const mult = isIP ? 3.0 : 4.0; // IP: 3× open ($45), OOP: 4× open ($60) for live 1/3
     return open * mult;
 }
 
@@ -4918,10 +4919,143 @@ function renderButtons(hidden) {
             document.getElementById('chart-modal').classList.remove('hidden');
         }
 
-        function _renderChart(pos, target, scenario, oppPos) {
+        
+        // === "WHY" EXPLANATIONS for chart modal ===
+        // Returns a short explanation string for the correct action given hand/scenario/position context.
+        // Covers edge cases and common confusions — empty string for trivial/obvious situations.
+        function getWhyText(hand, correctAction, scenario, heroPos, oppPos) {
+            const r1 = hand[0], r2 = hand[1], suited = hand[2] === 's', pair = r1 === r2;
+            const RANKS_STR = 'AKQJT98765432';
+            const rank = r => RANKS_STR.indexOf(r);
+            const topRank = rank(r1); // lower index = higher rank
+            const isIP = postflopIP(heroPos, oppPos);
+            const posLabel = p => POS_LABELS[p] || p;
+
+            // Helper: is this hand a blocker hand (Ax suited/offsuit)?
+            const isAx = r1 === 'A' && !pair;
+            const isSuited = suited && !pair;
+            const isBroadway = !pair && rank(r1) <= 4 && rank(r2) <= 4; // T or better on both
+            const isConnector = !pair && Math.abs(rank(r1) - rank(r2)) === 1;
+            const isOneGapper = !pair && Math.abs(rank(r1) - rank(r2)) === 2;
+            const highRank = Math.min(rank(r1), rank(r2)); // smaller index = stronger
+
+            if (scenario === 'RFI') {
+                if (correctAction === 'RAISE') {
+                    if (pair && rank(r1) >= 6) return `Small pairs have set-mining value — open from ${posLabel(heroPos)} and get stacks in on the flop.`;
+                    if (isAx && suited && rank(r2) >= 5) return `Ax suited hands have strong equity + nut flush potential — always open from ${posLabel(heroPos)}.`;
+                    if (isSuited && isConnector) return `Suited connectors make straights and flushes — worth opening from ${posLabel(heroPos)} for their multiway potential.`;
+                    if (isBroadway) return `Broadway hands dominate calling ranges and have strong showdown value.`;
+                    return ''; // don't explain obvious opens
+                } else { // FOLD
+                    if (isSuited && isConnector) return `${hand} is too weak to open from ${posLabel(heroPos)} — the range is tight here. Wait for better spots.`;
+                    if (pair) return `${hand} is marginal from ${posLabel(heroPos)} — not enough equity to profitably open this early.`;
+                    if (isAx && !suited) return `Weak offsuit Ax hands are dominated too often from ${posLabel(heroPos)} — fold and wait for suited or better kickers.`;
+                    return `${hand} doesn't have enough raw equity or playability to open from ${posLabel(heroPos)}.`;
+                }
+            }
+
+            if (scenario === 'FACING_RFI') {
+                const opener = posLabel(oppPos);
+                const pos = posLabel(heroPos);
+                if (correctAction === '3BET') {
+                    if (pair && rank(r1) <= 2) return `${hand} is a value 3-bet — you have near-top equity. Charge ${opener} to continue.`;
+                    if (isAx && suited && rank(r2) <= 3) return `A5s–A2s are classic 3-bet bluffs — they block the villain's 4-bet range (AA) and have good equity when called.`;
+                    if (isAx && suited) return `Strong Ax suited hands are 3-bet value from ${pos} — great equity vs ${opener}'s range and builds pots in position.`;
+                    if (isBroadway && suited) return `${hand} is a thin 3-bet — strong enough for value, blocks villain's best broadway combos.`;
+                    return `${hand} 3-bets here for value — your hand dominates ${opener}'s continuing range.`;
+                } else if (correctAction === 'CALL') {
+                    if (pair && rank(r1) >= 5 && rank(r1) <= 8) return `Medium pairs — too strong to fold, not strong enough to 3-bet. Call and set-mine or play fit-or-fold.`;
+                    if (pair && rank(r1) > 8) return `Small pairs play best as calls vs ${opener} — you want to see a cheap flop and hit your set.`;
+                    if (isSuited && (isConnector || isOneGapper)) return `${hand} has good implied odds when called — suited rundowns flop well multiway and disguise their strength.`;
+                    if (isAx && suited) return `${hand} calls here — strong enough to continue but not the nut 3-bet hand from this position.`;
+                    if (isBroadway) return `${hand} has good equity and dominates ${opener}'s weaker broadway hands — flat and realize that equity.`;
+                    return `${hand} is a call vs ${opener} — good equity to continue but not strong enough to repot.`;
+                } else { // FOLD
+                    if (isSuited && isConnector) return `${hand} is a fold vs ${opener} — too weak to 3-bet profitably and implied odds aren't there out of position.`;
+                    if (isAx && !suited) return `Weak offsuit Ax folds vs ${opener} — you'll often be dominated and have no backdoor equity.`;
+                    if (pair && rank(r1) >= 9) return `${hand} is a fold — too small to set-mine profitably here and not good enough to 3-bet.`;
+                    return `${hand} doesn't have enough equity or playability to continue vs ${opener}'s opening range.`;
+                }
+            }
+
+            if (scenario === 'RFI_VS_3BET') {
+                const threeBettor = posLabel(oppPos);
+                if (correctAction === '4BET') {
+                    if (pair && rank(r1) <= 2) return `${hand} is a 4-bet for value — you have near-nuts. Get it in.`;
+                    if (isAx && suited && rank(r2) >= 4) return `A5s–A3s are 4-bet bluffs — they block AA (reducing villain's value combos) and have decent equity if called.`;
+                    if (isAx && !suited && rank(r2) >= 5) return `Ax offsuit 4-bets as a bluff here — blocks AA combos and folds out hands that have you beat.`;
+                    return `${hand} 4-bets for value vs ${threeBettor}'s 3-bet range.`;
+                } else if (correctAction === 'CALL') {
+                    if (pair) return `${hand} calls the 3-bet — set-mining odds are good at these depths, and you avoid flipping against a tight 4-bet range.`;
+                    if (isBroadway && suited) return `${hand} has strong equity vs ${threeBettor}'s 3-bet range — call and realize equity ${isIP ? 'in position' : 'with your hand strength'}.`;
+                    if (isSuited && (isConnector || isOneGapper)) return `${hand} has the implied odds to call a 3-bet — you flop well and can stack villain on good boards.`;
+                    return `${hand} calls here — strong enough to continue, not strong enough to 4-bet without blockers.`;
+                } else { // FOLD
+                    if (isSuited && isConnector) return `${hand} folds to the 3-bet — implied odds aren't there at these stack depths${isIP ? '' : ' out of position'}.`;
+                    if (isAx && !suited) return `Weak offsuit Ax folds vs a 3-bet — you don't block enough and the equity vs a 3-bet range is thin.`;
+                    return `${hand} isn't strong enough to continue vs ${threeBettor}'s 3-bet — fold and wait for better spots.`;
+                }
+            }
+
+            if (scenario === 'VS_LIMP') {
+                const isBlinds = heroPos === 'SB' || heroPos === 'BB';
+                if (correctAction === 'ISO' || correctAction === 'RAISE') {
+                    if (pair && rank(r1) <= 4) return `${hand} iso-raises to thin the field and build a pot — you have strong equity and don't want multiway action.`;
+                    if (isBroadway) return `${hand} iso-raises — strong hand that plays best heads-up or short-handed, not multiway.`;
+                    if (isAx && suited) return `${hand} iso-raises — nut flush potential plus strong equity heads-up.`;
+                    return `${hand} is strong enough to iso-raise — take initiative and build the pot with a quality hand.`;
+                } else if (correctAction === 'OVERLIMP') {
+                    if (pair && rank(r1) >= 5) return `${hand} overlimps for set value — good implied odds in a multiway pot, no need to iso with a medium pair.`;
+                    if (isSuited && (isConnector || isOneGapper)) return `${hand} overlimps — suited rundowns want to see cheap multiway flops where they can make disguised straights and flushes.`;
+                    return `${hand} calls — good multiway value but not strong enough to iso-raise and play heads-up.`;
+                } else { // FOLD
+                    if (!isBlinds) return `${hand} folds — not worth investing even a limp with this hand from ${posLabel(heroPos)}.`;
+                    return `${hand} folds — even in the blinds, this hand doesn't play well enough multiway.`;
+                }
+            }
+
+            if (scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C') {
+                const numCallers = scenario === 'SQUEEZE_2C' ? 2 : 1;
+                if (correctAction === 'SQUEEZE') {
+                    if (pair && rank(r1) <= 3) return `${hand} squeezes for value — your hand dominates. More callers = more dead money.`;
+                    if (isAx && suited && rank(r2) >= 4) return `${hand} is a squeeze bluff — blocks AA/AK combos, and if called you have nut-flush outs.`;
+                    return `${hand} squeezes — ${numCallers > 1 ? 'two callers means more dead money and' : ''} your hand has strong enough equity to pile it in.`;
+                } else if (correctAction === 'CALL') {
+                    return `${hand} calls — your hand plays well multiway but isn't strong enough to repot vs the opener and ${numCallers} caller${numCallers > 1 ? 's' : ''}.`;
+                } else {
+                    return `${hand} folds — squeezing requires a strong hand or great blocker. This hand has neither here.`;
+                }
+            }
+
+            return ''; // fallback: no explanation
+        }
+
+function _renderChart(pos, target, scenario, oppPos) {
             let html = '';
             const legendEl = document.getElementById('chart-legend');
             const bucketToggle = document.getElementById('chart-bucket-toggle');
+
+            // "Why" explanation — only shown when called after a wrong answer (target is the missed hand)
+            const whyEl = document.getElementById('chart-why-text');
+            if (whyEl && target) {
+                try {
+                    const correctAction = EdgeWeight.getCorrectAction(target, scenario, pos, oppPos);
+                    const why = getWhyText(target, correctAction, scenario, pos, oppPos);
+                    if (why) {
+                        whyEl.textContent = why;
+                        whyEl.classList.remove('hidden');
+                    } else {
+                        whyEl.textContent = '';
+                        whyEl.classList.add('hidden');
+                    }
+                } catch(e) {
+                    whyEl.textContent = '';
+                    whyEl.classList.add('hidden');
+                }
+            } else if (whyEl) {
+                whyEl.textContent = '';
+                whyEl.classList.add('hidden');
+            }
             
             if (scenario === 'RFI') {
                 legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-indigo-600 rounded"></div><span>Raise</span></div>`;
