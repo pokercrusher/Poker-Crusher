@@ -270,6 +270,23 @@
             border: 1px solid rgba(244, 63, 94, 0.3);
             color: #fda4af;
         }
+        @keyframes miss-flash {
+            0%   { opacity: 0; }
+            20%  { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        #miss-flash-overlay {
+            pointer-events: none;
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            background: rgba(220, 38, 38, 0.5);
+            display: none;
+        }
+        #miss-flash-overlay.active {
+            display: block;
+            animation: miss-flash 0.7s ease-out forwards;
+        }
         @keyframes fold-cards {
             0% { opacity: 1; transform: scale(1) translateY(0) rotate(0deg); }
             100% { opacity: 0; transform: scale(0.5) translateY(6px) rotate(15deg); }
@@ -358,6 +375,7 @@
 
 </head>
 <body class="bg-slate-950 text-slate-100 h-[100dvh] flex flex-col items-center overflow-hidden font-sans">
+    <div id="miss-flash-overlay"></div>
 
     <!-- MENU SCREEN -->
     <div id="menu-screen" class="w-full max-w-md p-6 flex flex-col items-center justify-center h-full gap-5 text-center z-10">
@@ -369,6 +387,17 @@
         <!-- Mastery dashboard card -->
         <div id="menu-dashboard" class="w-full bg-slate-900/40 backdrop-blur-md border border-slate-700/50 rounded-3xl p-5 shadow-2xl">
             <!-- Injected by updateMenuUI -->
+        </div>
+
+        <!-- Onboarding card: hidden once user has 50+ hands -->
+        <div id="menu-onboarding" class="hidden w-full bg-indigo-950/40 border border-indigo-700/30 rounded-2xl px-4 py-3 text-left">
+            <p class="text-indigo-300 font-black text-xs uppercase tracking-widest mb-2">Getting started</p>
+            <div class="flex flex-col gap-1.5 text-[11px] text-slate-400 leading-snug">
+                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">1.</span><span><span class="text-slate-200 font-bold">TRAIN NOW</span> — free practice. Pick your scenarios and go.</span></div>
+                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">2.</span><span><span class="text-slate-200 font-bold">DAILY RUN</span> — one shot per difficulty per day. Score = correct answers in a row.</span></div>
+                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">3.</span><span><span class="text-slate-200 font-bold">REVIEW</span> — hands you've missed come back on a schedule. Check it daily.</span></div>
+            </div>
+            <button onclick="dismissOnboarding()" class="mt-2 text-[9px] text-slate-600 hover:text-slate-400 font-bold uppercase tracking-wider">Dismiss</button>
         </div>
 
         <div class="w-full flex flex-col gap-3">
@@ -388,9 +417,10 @@
                 STRATEGY LIBRARY
             </button>
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="startReviewSession()" id="menu-review-btn" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
+                <button onclick="showReviewPreview()" id="menu-review-btn" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
                     REVIEW <span id="menu-due-badge" class="hidden text-[10px] font-black bg-amber-500/20 text-amber-400 rounded-full px-1.5 py-0.5"></span>
+                    <span id="menu-due-zero" class="text-[10px] text-slate-600 font-normal">(0 due)</span>
                 </button>
                 <button onclick="showUserStats()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
@@ -419,9 +449,13 @@
             <div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
                 <p class="text-[10px] text-slate-400 font-bold">How it works</p>
                 <p class="text-[11px] text-slate-500 mt-1 leading-snug">
-                    Beat a node by hitting the accuracy target over the required hands. Completing nodes unlocks the next ones.
-                    Your normal stats/SR still track everything — this is just a progression layer.
+                    Beat a node by hitting the accuracy target over the required hands. Completing nodes unlocks the next ones. Finish the full path to earn the Champion badge.
                 </p>
+            </div>
+            <div id="challenge-complete-banner" class="hidden bg-emerald-900/30 border border-emerald-700/40 rounded-2xl p-5 text-center">
+                <div class="text-3xl mb-2">&#127942;</div>
+                <div class="text-emerald-300 font-black text-base">Challenge Path Complete!</div>
+                <div class="text-emerald-500/80 text-[12px] mt-1 leading-snug">You've mastered every node. You're a certified Poker Crusher.</div>
             </div>
 
             <div id="challenge-body" class="flex flex-col gap-3"></div>
@@ -436,58 +470,138 @@
 
     <!-- LIBRARY SCREEN -->
     <div id="library-screen" class="hidden fixed inset-0 bg-slate-950 z-[60] flex flex-col overflow-hidden">
-        <div class="p-6 border-b border-white/5 flex justify-between items-center">
-            <h2 class="text-2xl font-black">GTO Library</h2>
+
+        <!-- Fixed header: title + close -->
+        <div class="shrink-0 px-5 pt-5 pb-3 border-b border-white/5 flex justify-between items-center">
+            <h2 class="text-xl font-black">GTO Library</h2>
             <button onclick="hideLibrary()" class="p-2 bg-slate-900 rounded-lg text-slate-400">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
-        
-        <div class="flex-1 overflow-y-auto p-6 scroll-hide">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-5">
-    <p class="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Profile</p>
-    <p class="text-sm text-slate-300 leading-relaxed mb-4">
-        Set a simple username to keep separate profiles and to make Import/Export automatic across devices.
-    </p>
 
-    <div class="bg-slate-950/40 border border-slate-800 rounded-xl p-3 mb-4">
-        <div class="flex items-center justify-between gap-3">
-            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Current</div>
-            <div id="profile-current" class="text-sm font-black text-slate-200">Guest</div>
+        <!-- Fixed control strip: category tabs + spot pickers -->
+        <div class="shrink-0 bg-slate-950 border-b border-white/5 px-4 pt-3 pb-2 flex flex-col gap-2">
+            <!-- Row 1: scenario category tabs -->
+            <div id="lib-nav" class="flex gap-1.5 overflow-x-auto scroll-hide pb-1">
+                <button id="lib-tab-RFI" onclick="setLibCategory('RFI')" class="whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs bg-indigo-600 text-white">RFI</button>
+                <button id="lib-tab-FACING_RFI" onclick="setLibCategory('FACING_RFI')" class="whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs bg-slate-800 text-slate-400">Defending vs RFI</button>
+                <button id="lib-tab-RFI_VS_3BET" onclick="setLibCategory('RFI_VS_3BET')" class="whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs bg-slate-800 text-slate-400">vs 3-Bet</button>
+                <button id="lib-tab-VS_LIMP" onclick="setLibCategory('VS_LIMP')" class="whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs bg-slate-800 text-slate-400">vs Limpers</button>
+                <button id="lib-tab-SQUEEZE" onclick="setLibCategory('SQUEEZE')" class="whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs bg-slate-800 text-slate-400">Squeeze</button>
+                <button id="lib-tab-SQUEEZE_2C" onclick="setLibCategory('SQUEEZE_2C')" class="whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs bg-slate-800 text-slate-400">Squeeze 2C</button>
+            </div>
+            <!-- Row 2: hero position picker (always shown) -->
+            <div id="lib-hero-row" class="flex gap-1.5 overflow-x-auto scroll-hide pb-1"></div>
+            <!-- Row 3: opponent picker (shown for multi-spot categories) -->
+            <div id="lib-opp-row" class="flex gap-1.5 overflow-x-auto scroll-hide pb-1 hidden"></div>
+            <!-- Row 4: bucket picker for VS_LIMP -->
+            <div id="lib-bucket-row" class="flex gap-1.5 overflow-x-auto scroll-hide pb-1 hidden"></div>
+        </div>
+
+        <!-- Scrollable chart area -->
+        <div class="flex-1 overflow-y-auto scroll-hide">
+            <div id="lib-chart-area" class="flex flex-col items-center px-4 py-5 gap-4">
+                <!-- Injected by renderLibraryChart() -->
+            </div>
+        </div>
+
+    </div>
+
+    <!-- REVIEW COMPLETE SCREEN -->
+    <div id="review-complete-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-sm flex flex-col gap-5">
+            <div class="text-center">
+                <p class="text-[10px] text-amber-400/80 font-bold uppercase tracking-[0.25em] mb-1">Review Complete</p>
+                <h2 class="text-2xl font-black tracking-tight">Session done</h2>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-700/40 rounded-2xl p-5">
+                <div class="grid grid-cols-2 gap-4 text-center mb-4">
+                    <div>
+                        <div id="rc-hands" class="text-3xl font-black text-slate-100">0</div>
+                        <div class="text-slate-500 text-[9px] font-bold uppercase tracking-wider mt-0.5">Hands reviewed</div>
+                    </div>
+                    <div>
+                        <div id="rc-accuracy" class="text-4xl font-black text-emerald-400">0%</div>
+                        <div class="text-slate-500 text-[9px] font-bold uppercase tracking-wider mt-0.5">Accuracy</div>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-2">Still needs work</p>
+                    <div id="rc-wrong-rows"></div>
+                </div>
+            </div>
+            <button onclick="closeReviewComplete()" class="w-full py-4 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] rounded-2xl font-black text-lg transition-all">Back to Menu</button>
         </div>
     </div>
 
-    <div class="flex flex-col gap-3">
-        <input id="profile-input" type="text" placeholder="Username (letters/numbers/_/-)" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-2xl text-slate-200 font-bold placeholder:text-slate-600 focus:outline-none focus:border-slate-600" />
-        <div class="grid grid-cols-2 gap-3">
-            <button onclick="saveProfileFromUI()" class="py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black transition-all">
-                SAVE
-            </button>
-            <button onclick="clearProfile()" class="py-3 bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-2xl font-black text-slate-200 transition-all">
-                USE GUEST
-            </button>
+    <!-- SESSION SUMMARY SCREEN -->
+    <div id="session-summary-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-sm flex flex-col gap-5">
+            <div class="text-center">
+                <p class="text-[10px] text-indigo-400/80 font-bold uppercase tracking-[0.25em] mb-1">Session Complete</p>
+                <h2 class="text-2xl font-black tracking-tight">Nice work</h2>
+            </div>
+            <div class="bg-slate-900/60 border border-slate-700/40 rounded-2xl p-5">
+                <div class="grid grid-cols-3 gap-4 text-center mb-4">
+                    <div>
+                        <div id="ss-hands" class="text-3xl font-black text-slate-100">0</div>
+                        <div class="text-slate-500 text-[9px] font-bold uppercase tracking-wider mt-0.5">Hands</div>
+                    </div>
+                    <div>
+                        <div id="ss-accuracy" class="text-4xl font-black text-emerald-400">0%</div>
+                        <div class="text-slate-500 text-[9px] font-bold uppercase tracking-wider mt-0.5">Accuracy</div>
+                    </div>
+                    <div>
+                        <div id="ss-streak" class="text-3xl font-black text-orange-400">0</div>
+                        <div class="text-slate-500 text-[9px] font-bold uppercase tracking-wider mt-0.5">Best Streak</div>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-2">This session by spot</p>
+                    <div id="ss-spot-rows"></div>
+                </div>
+            </div>
+            <button onclick="closeSessionSummary()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-lg transition-all">Back to Menu</button>
         </div>
     </div>
 
-    <div class="mt-4 text-[11px] text-slate-500 leading-relaxed">
-        Notes: changing profile reloads the app. Your existing data is preserved inside its profile.
-    </div>
-</div>
-
-            <!-- Library Navigation -->
-            <div id="lib-nav" class="flex gap-2 overflow-x-auto pb-4 scroll-hide mb-6">
-                <button id="lib-tab-RFI" onclick="setLibCategory('RFI')" class="whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm bg-indigo-600 text-white">RFI</button>
-                <button id="lib-tab-FACING_RFI" onclick="setLibCategory('FACING_RFI')" class="whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm bg-slate-900 text-slate-400">Defending</button>
-                <button id="lib-tab-RFI_VS_3BET" onclick="setLibCategory('RFI_VS_3BET')" class="whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm bg-slate-900 text-slate-400">vs 3-Bet</button>
-                <button id="lib-tab-VS_LIMP" onclick="setLibCategory('VS_LIMP')" class="whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm bg-slate-900 text-slate-400">vs Limp</button>
-                <button id="lib-tab-SQUEEZE" onclick="setLibCategory('SQUEEZE')" class="whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm bg-slate-900 text-slate-400">Squeeze</button>
-                <button id="lib-tab-SQUEEZE_2C" onclick="setLibCategory('SQUEEZE_2C')" class="whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm bg-slate-900 text-slate-400">Sq vs 2C</button>
+    <!-- REVIEW PREVIEW SCREEN -->
+    <div id="review-preview-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-sm flex flex-col gap-5">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-[10px] text-amber-400/80 font-bold uppercase tracking-[0.25em]">Spaced Repetition</p>
+                    <h2 class="text-2xl font-black tracking-tight">Today's Review</h2>
+                </div>
+                <button onclick="hideReviewPreview()" class="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-bold">Back</button>
             </div>
 
-            <!-- Library Content -->
-            <div id="lib-content" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- Injected via JS -->
+            <!-- Session summary card -->
+            <div class="bg-slate-900/60 border border-slate-700/40 rounded-2xl p-5 flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div id="review-count-label" class="text-3xl font-black text-amber-400">—</div>
+                        <div class="text-slate-400 text-xs font-bold mt-0.5">hands in this session</div>
+                    </div>
+                    <div class="text-right">
+                        <div id="review-overdue-label" class="text-lg font-black text-slate-300">—</div>
+                        <div class="text-slate-500 text-[10px] font-bold mt-0.5">total overdue</div>
+                    </div>
+                </div>
+                <!-- Top weak spots -->
+                <div>
+                    <p class="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-2">Focus spots</p>
+                    <div id="review-spot-list" class="flex flex-col gap-1.5"></div>
+                </div>
             </div>
+
+            <div class="bg-slate-900/40 border border-slate-800/40 rounded-xl px-4 py-3 text-[11px] text-slate-500 leading-relaxed">
+                You have a daily cap of <span class="text-slate-300 font-bold">20 review hands</span>. The most overdue and weakest spots are picked first. Come back tomorrow for the next batch.
+            </div>
+
+            <button onclick="launchReviewSession()" class="w-full py-5 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] rounded-2xl font-black text-xl transition-all shadow-lg">
+                START REVIEW
+            </button>
         </div>
     </div>
 
@@ -512,7 +626,7 @@
                 <button onclick="showMenu()" class="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-xl font-bold text-slate-300 text-sm">← Back</button>
                 <div class="text-right">
                     <div class="text-slate-200 font-black text-lg">Daily Run</div>
-                    <div id="daily-run-subtitle" class="text-slate-400 text-xs font-semibold">Up to 3 runs per day</div>
+                    <div id="daily-run-subtitle" class="text-slate-400 text-xs font-semibold">One shot per difficulty per day</div>
                 </div>
             </div>
 
@@ -523,20 +637,20 @@
             <div class="grid grid-cols-1 gap-3">
                 <button onclick="startDailyRun('easy')" id="daily-run-btn-easy" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
                     <span class="flex items-center gap-3"><span class="text-lg">🟢</span><span>Warm‑Up</span></span>
-                    <span class="text-slate-400 text-sm font-bold">Easy spots</span>
+                    <span class="flex flex-col items-end gap-0.5"><span class="text-slate-400 text-sm font-bold">Easy spots</span><span class="dr-btn-best hidden text-[9px] font-bold text-emerald-400/80"></span></span>
                 </button>
                 <button onclick="startDailyRun('medium')" id="daily-run-btn-medium" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
                     <span class="flex items-center gap-3"><span class="text-lg">🟡</span><span>Grind</span></span>
-                    <span class="text-slate-400 text-sm font-bold">Mixed spots</span>
+                    <span class="flex flex-col items-end gap-0.5"><span class="text-slate-400 text-sm font-bold">Mixed spots</span><span class="dr-btn-best hidden text-[9px] font-bold text-yellow-400/80"></span></span>
                 </button>
                 <button onclick="startDailyRun('hard')" id="daily-run-btn-hard" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
                     <span class="flex items-center gap-3"><span class="text-lg">🔴</span><span>Boss</span></span>
-                    <span class="text-slate-400 text-sm font-bold">Hard spots</span>
+                    <span class="flex flex-col items-end gap-0.5"><span class="text-slate-400 text-sm font-bold">Hard spots</span><span class="dr-btn-best hidden text-[9px] font-bold text-rose-400/80"></span></span>
                 </button>
             </div>
 
-            <div class="text-slate-500 text-xs leading-relaxed">
-                Finish the run to keep your streak. You'll get a summary: score, accuracy, and your biggest leak spot from today.
+            <div class="bg-slate-900/60 border border-slate-700/40 rounded-2xl px-4 py-3 text-slate-400 text-[12px] leading-relaxed">
+                <span class="text-slate-200 font-black">How it works:</span> Answer hand-by-hand. Your <span class="text-orange-400 font-bold">score = correct answers in a row</span>. Your first wrong answer ends the run. Pick a difficulty and go.
             </div>
         </div>
     </div>
@@ -550,6 +664,7 @@
             </div>
             <div id="daily-run-complete-body" class="mt-4"></div>
             <div class="mt-5 flex flex-col gap-3">
+                <button id="dr-play-again-btn" onclick="drPlayAgain()" class="w-full py-4 bg-orange-600 hover:bg-orange-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg">Play Again</button>
                 <button onclick="endDailyRunToMenu()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg">Main Menu</button>
             </div>
         </div>
@@ -563,6 +678,7 @@
                 <button onclick="setDrillMode('open')" id="mode-open" class="mode-tab active">Open Training</button>
                 <button onclick="setDrillMode('focused')" id="mode-focused" class="mode-tab">Focused Drill</button>
             </div>
+            <div id="mode-desc" class="text-[11px] text-slate-500 text-center -mt-3 px-2">Mix scenarios &amp; positions — great for general practice.</div>
 
             <!-- Open Training Options -->
             <div id="config-open" class="flex flex-col gap-6">
@@ -575,6 +691,7 @@
                         <button onclick="toggleConfig('scenario', 'VS_LIMP')" id="cfg-VS_LIMP" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Vs Limpers (1–3+) <span>✓</span></button>
                         <button onclick="toggleConfig('scenario', 'SQUEEZE')" id="cfg-SQUEEZE" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Squeeze <span>✓</span></button>
                         <button onclick="toggleConfig('scenario', 'SQUEEZE_2C')" id="cfg-SQUEEZE_2C" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Squeeze vs 2 Callers <span>✓</span></button>
+                        <button onclick="toggleConfig('scenario', 'PUSH_FOLD')" id="cfg-PUSH_FOLD" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Push / Fold (Short Stack) <span></span></button>
                     </div>
                 </div>
                 <div id="limper-mix-section" class="hidden">
@@ -584,7 +701,7 @@
                         <button onclick="setLimperMix('liveish')" id="lmix-liveish" class="config-btn py-3 rounded-lg text-[10px] font-bold">Live 1/3</button>
                         <button onclick="setLimperMix('multiway')" id="lmix-multiway" class="config-btn py-3 rounded-lg text-[10px] font-bold selected">Active</button>
                     </div>
-                    <p class="text-[9px] text-slate-600 mt-1.5 ml-1">Tight: 70/22/8 · Live 1/3: 50/32/18 · Active: 38/40/22</p>
+                    <p class="text-[9px] text-slate-600 mt-1.5 ml-1">1 limper / 2 limpers / 3+ limpers — Tight: 70/22/8 · Live: 50/32/18 · Active: 38/40/22</p>
                 </div>
                 <div>
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Hero Position</p>
@@ -639,11 +756,15 @@
     <div id="trainer-screen" class="hidden w-full flex flex-col items-center" style="height:100dvh;overflow:hidden;">
         <!-- Header -->
         <div class="w-full flex justify-between items-center bg-slate-900/30 border-b border-white/5 shrink-0 z-30" style="padding: clamp(6px,1.5vh,14px) clamp(10px,2vw,24px); max-width: 1200px; margin: 0 auto;">
-            <button onclick="exitToMenu()" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg" style="font-size:clamp(8px,1.2vh,11px);padding:clamp(4px,0.8vh,8px) clamp(8px,1.2vw,14px);">Exit</button>
+            <button onclick="confirmExit()" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg" style="font-size:clamp(8px,1.2vh,11px);padding:clamp(4px,0.8vh,8px) clamp(8px,1.2vw,14px);">Exit</button>
             <div class="flex gap-6">
                 <div id="drill-counter" class="hidden text-right">
                     <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(7px,1vh,10px);margin-bottom:2px;">Hands</p>
                     <p id="drill-progress" class="font-black text-indigo-400" style="font-size:clamp(14px,2.5vh,22px);">0/25</p>
+                </div>
+                <div id="dr-round-counter" class="hidden text-right">
+                    <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(7px,1vh,10px);margin-bottom:2px;">Round</p>
+                    <p id="dr-round-num" class="font-black text-orange-400" style="font-size:clamp(14px,2.5vh,22px);">1</p>
                 </div>
                 <div class="text-right">
                     <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(7px,1vh,10px);margin-bottom:2px;">Accuracy</p>
@@ -652,6 +773,10 @@
                 <div class="text-right">
                     <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(7px,1vh,10px);margin-bottom:2px;">Streak</p>
                     <p id="streak" class="font-black text-orange-400" style="font-size:clamp(14px,2.5vh,22px);">0</p>
+                </div>
+                <div id="streak-best-block" class="hidden text-right">
+                    <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(7px,1vh,10px);margin-bottom:2px;">Best</p>
+                    <p id="streak-best" class="font-black text-slate-500" style="font-size:clamp(14px,2.5vh,22px);">0</p>
                 </div>
                 <button onclick="showSessionLog()" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg flex items-center gap-1" style="font-size:clamp(8px,1.2vh,11px);padding:clamp(4px,0.8vh,8px) clamp(8px,1.2vw,14px);">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
@@ -664,7 +789,10 @@
         <div id="trainer-main" class="flex-1 w-full flex flex-col items-center min-h-0" style="padding: clamp(2px,0.8vh,12px) clamp(6px,2vw,24px); gap: clamp(2px,1.2vh,12px); max-width: 1200px; margin: 0 auto;">
 
             <!-- Scenario hint -->
-            <div id="scenario-hint" class="shrink-0 font-bold text-slate-300 uppercase tracking-widest text-center w-full" style="font-size:var(--hint-size, clamp(9px,1.4vh,12px)); min-height:1.2em; line-height:1.2;"></div>
+            <div class="shrink-0 flex items-center justify-center gap-2 w-full">
+                <div id="scenario-hint" class="font-bold text-slate-200 uppercase tracking-widest text-center" style="font-size:var(--hint-size, clamp(11px,1.8vh,15px)); min-height:1.2em; line-height:1.2;"></div>
+                <div id="stack-bb-badge" class="hidden shrink-0 px-2 py-0.5 bg-rose-600/20 border border-rose-500/40 rounded-full text-rose-400 font-black text-[11px]"></div>
+            </div>
 
             <!-- Poker table — uses container-aware sizing -->
             <div id="table-wrapper" class="w-full shrink min-h-0 flex items-center justify-center" style="flex: 2 1 0;">
@@ -695,7 +823,7 @@
 
             <!-- Action buttons -->
             <div id="action-buttons" class="shrink-0 w-full z-20" style="max-width:var(--btn-max-w, 448px);"></div>
-            <div id="sizing-hint-line" class="shrink-0 w-full text-center text-[12px] text-slate-400/80 mt-2" style="max-width:var(--btn-max-w, 448px);"></div>
+            <div id="sizing-hint-line" class="shrink-0 w-full text-center font-bold text-[13px] text-slate-300 mt-1 tracking-wide" style="max-width:var(--btn-max-w, 448px);"></div>
         </div>
     </div>
     <!-- SETTINGS SCREEN -->
@@ -708,6 +836,21 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-6 scroll-hide">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-5">
+                <p class="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Profile</p>
+                <p class="text-sm text-slate-300 leading-relaxed mb-4">Set a username to keep separate profiles and sync across devices.</p>
+                <div class="bg-slate-950/40 border border-slate-800 rounded-xl p-3 mb-4 flex items-center justify-between">
+                    <div class="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Active profile</div>
+                    <div id="settings-profile-current" class="text-sm font-black text-slate-200">Guest</div>
+                </div>
+                <div class="flex flex-col gap-3">
+                    <input id="settings-profile-input" type="text" placeholder="Username (letters/numbers/_/-)" class="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-2xl text-slate-200 font-bold placeholder:text-slate-600 focus:outline-none focus:border-slate-600" />
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="saveProfileFromSettings()" class="py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black transition-all">SAVE</button>
+                        <button onclick="clearProfile()" class="py-3 bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-2xl font-black text-slate-200 transition-all">USE GUEST</button>
+                    </div>
+                </div>
+            </div>
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
                 <p class="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Data Transfer</p>
                 <p class="text-sm text-slate-300 leading-relaxed mb-4">
@@ -751,7 +894,8 @@
                 <div class="mt-4 text-[11px] text-slate-500 leading-relaxed">
                     Tip: importing replaces the current device’s saved data with what’s inside the file.
                 </div>
-            
+            </div>
+
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mt-5">
                 <p class="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Cloud Sync (Username)</p>
                 <p class="text-sm text-slate-300 leading-relaxed mb-4">
@@ -1465,6 +1609,31 @@
             return { score, isPair, isSuited, isConnector: isConnector || isGapper, isAce };
         }
 
+// Certain hands should NEVER be "cut" from the aggressive (raise/iso) bucket in multi-limp tightening.
+// These are the hands that retain strong EV from isolating even when more limp callers are present.
+function isProtectedMultiLimpHand(hand) {
+    const r1 = hand[0], r2 = hand[1], sfx = hand[2] || '';
+    const v1 = RANK_VALUES[r1], v2 = RANK_VALUES[r2];
+    const hi = Math.max(v1, v2), lo = Math.min(v1, v2);
+    const isPair = r1 === r2;
+    const isSuited = sfx === 's';
+    const isAce = r1 === 'A' || r2 === 'A';
+    const isBroadway = v1 >= 10 && v2 >= 10;
+
+    // Keep big pairs raising (they don't want multiway)
+    if (isPair && hi >= 9) return true; // 99+
+
+    // Keep strong Ax raising (value + denies equity); at minimum AQ/AK always.
+    if (isAce && lo >= 12) return true; // AQ/AK suited or offsuit
+    if (isAce && isSuited && lo >= 10) return true; // ATs+
+
+    // Keep suited broadways raising (including JTs/T9s which play well and deny equity)
+    if (isSuited && isBroadway) return true;
+
+    return false;
+}
+
+
         // Deterministic multi-limp range generation
         // baseData: the 1-limp range data object (with Iso/Raise/Overlimp/Complete/Check/Fold keys)
         // bucket: '2L' or '3P'
@@ -1492,7 +1661,7 @@
                 hands.forEach(h => {
                     if (!raiseSet.has(h)) {
                         raiseSet.add(h);
-                        raiseExpanded.push({ hand: h, ...classifyHandForKeep(h) });
+                        raiseExpanded.push({ hand: h, ...classifyHandForKeep(h), protected: isProtectedMultiLimpHand(h) });
                     }
                 });
             }
@@ -1500,9 +1669,15 @@
             // Sort by keepScore ascending (weakest first = cut first)
             raiseExpanded.sort((a, b) => a.score - b.score);
 
-            const numCut = Math.round(raiseExpanded.length * cutPct);
-            const cutHands = raiseExpanded.slice(0, numCut);
-            const keptHands = raiseExpanded.slice(numCut);
+            // Only cut from NON-protected hands, so we never demote core value isolates like AQ/AK or suited broadways.
+            const cutPool = raiseExpanded.filter(x => !x.protected);
+            const desiredCuts = Math.round(raiseExpanded.length * cutPct);
+            const numCut = Math.min(desiredCuts, cutPool.length);
+
+            // Build the cut set from the weakest non-protected hands
+            const cutSet = new Set(cutPool.slice(0, numCut).map(x => x.hand));
+            const cutHands = raiseExpanded.filter(x => cutSet.has(x.hand));
+            const keptHands = raiseExpanded.filter(x => !cutSet.has(x.hand));
 
             // Build passive set for reference
             const passiveSet = new Set();
@@ -1514,8 +1689,13 @@
             const movedToPassive = [];
             const movedToFold = [];
             cutHands.forEach(c => {
-                // Pairs, suited connectors/gappers, suited aces => move to passive
-                if (c.isPair || (c.isSuited && c.isConnector) || (c.isSuited && c.isAce)) {
+                // Pairs, suited connectors/gappers, suited aces, and strong offsuit Ax/broadways => move to passive
+                const v1 = RANK_VALUES[c.hand[0]], v2 = RANK_VALUES[c.hand[1]];
+                const hi = Math.max(v1, v2), lo = Math.min(v1, v2);
+                const isAce = (c.hand[0] === 'A' || c.hand[1] === 'A');
+                const isOff = (c.hand[2] === 'o');
+                const isBroadway = v1 >= 10 && v2 >= 10;
+                if (c.isPair || (c.isSuited && c.isConnector) || (c.isSuited && c.isAce) || (isAce && isOff && lo >= 10) || (isOff && isBroadway && lo >= 11)) {
                     movedToPassive.push(c.hand);
                 } else {
                     movedToFold.push(c.hand);
@@ -1610,6 +1790,88 @@
             const oopFlag = heroPos === 'SB' || heroPos === 'BB';
             return generateMultiLimpRanges(baseData, bucket, oopFlag);
         }
+
+// Push/fold Nash equilibrium ranges for 6-9 handed live cash
+// Keyed as: PF_PUSH[stackBB][heroPos] = [...hands to shove]
+// Keyed as: PF_CALL_BB[stackBB][oppPos] = [...hands to call a shove from BB]
+// Stack depths: 5, 8, 10, 13, 15, 20
+
+const PF_STACK_DEPTHS = [5, 8, 10, 13, 15, 20];
+
+// Push ranges (shove or fold, unopened pot)
+const PF_PUSH = {
+  5: {
+    UTG:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","QJs","QTs","Q9s","JTs","J9s","T9s"],
+    UTG1: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","QJs","QTs","Q9s","JTs","J9s","T9s"],
+    UTG2: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s"],
+    LJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","QJs","QTs","Q9s","Q8s","JTs","J9s","T9s","98s","87s"],
+    HJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s"],
+    CO:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","Q7s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s","65s"],
+    BTN:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","KQo","KJo","KTo","K9o","K8o","QJs","QTs","Q9s","Q8s","Q7s","Q6s","JTs","J9s","J8s","J7s","T9s","T8s","T7s","98s","87s","76s","65s","54s"],
+    SB:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","A4o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","K3s","KQo","KJo","KTo","K9o","K8o","K7o","QJs","QTs","Q9s","Q8s","Q7s","Q6s","Q5s","JTs","J9s","J8s","J7s","J6s","T9s","T8s","T7s","98s","97s","87s","86s","76s","75s","65s","64s","54s","53s"]
+  },
+  8: {
+    UTG:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","K9s","KQo","QJs","QTs","JTs"],
+    UTG1: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","KQo","KJo","QJs","QTs","JTs"],
+    UTG2: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","QJs","QTs","Q9s","JTs","J9s","T9s"],
+    LJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s"],
+    HJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","QJs","QTs","Q9s","Q8s","JTs","J9s","T9s","98s","87s"],
+    CO:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s"],
+    BTN:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","Q7s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s","65s"],
+    SB:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","A5o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","K4s","KQo","KJo","KTo","K9o","K8o","QJs","QTs","Q9s","Q8s","Q7s","Q6s","JTs","J9s","J8s","J7s","T9s","T8s","T7s","98s","97s","87s","76s","65s","54s"]
+  },
+  10: {
+    UTG:  ["AA","KK","QQ","JJ","TT","99","88","77","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A5s","AKo","AQo","AJo","KQs","KJs","KTs","KQo","QJs"],
+    UTG1: ["AA","KK","QQ","JJ","TT","99","88","77","66","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","KQo","QJs","QTs","JTs"],
+    UTG2: ["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","K9s","KQo","KJo","QJs","QTs","JTs"],
+    LJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","QJs","QTs","Q9s","JTs","J9s","T9s"],
+    HJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s"],
+    CO:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","Q8s","JTs","J9s","T9s","98s","87s"],
+    BTN:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s"],
+    SB:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","Q7s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s","65s"]
+  },
+  13: {
+    UTG:  ["AA","KK","QQ","JJ","TT","99","88","AKs","AQs","AJs","ATs","A9s","A8s","A5s","AKo","AQo","AJo","KQs","KJs","KQo"],
+    UTG1: ["AA","KK","QQ","JJ","TT","99","88","77","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A5s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","KQo","QJs"],
+    UTG2: ["AA","KK","QQ","JJ","TT","99","88","77","66","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","KQo","KJo","QJs","QTs","JTs"],
+    LJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","KQo","KJo","QJs","QTs","JTs","T9s"],
+    HJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s"],
+    CO:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s","87s"],
+    BTN:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s"],
+    SB:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","A6o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s","65s"]
+  },
+  15: {
+    UTG:  ["AA","KK","QQ","JJ","TT","99","AKs","AQs","AJs","ATs","A9s","A5s","AKo","AQo","AJo","KQs","KQo"],
+    UTG1: ["AA","KK","QQ","JJ","TT","99","88","AKs","AQs","AJs","ATs","A9s","A8s","A5s","AKo","AQo","AJo","KQs","KJs","KQo"],
+    UTG2: ["AA","KK","QQ","JJ","TT","99","88","77","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A5s","AKo","AQo","AJo","ATo","KQs","KJs","KQo","QJs"],
+    LJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","KQo","KJo","QJs","QTs","JTs"],
+    HJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","KQo","KJo","QJs","QTs","JTs","T9s"],
+    CO:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s"],
+    BTN:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s","87s"],
+    SB:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s"]
+  },
+  20: {
+    UTG:  ["AA","KK","QQ","JJ","TT","AKs","AQs","AJs","ATs","AKo","AQo","KQs"],
+    UTG1: ["AA","KK","QQ","JJ","TT","99","AKs","AQs","AJs","ATs","A9s","AKo","AQo","AJo","KQs","KQo"],
+    UTG2: ["AA","KK","QQ","JJ","TT","99","88","AKs","AQs","AJs","ATs","A9s","A5s","AKo","AQo","AJo","KQs","KJs","KQo"],
+    LJ:   ["AA","KK","QQ","JJ","TT","99","88","77","AKs","AQs","AJs","ATs","A9s","A8s","A5s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","KQo","QJs","JTs"],
+    HJ:   ["AA","KK","QQ","JJ","TT","99","88","77","66","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A5s","AKo","AQo","AJo","ATo","KQs","KJs","KTs","K9s","KQo","KJo","QJs","QTs","JTs","T9s"],
+    CO:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","QJs","QTs","JTs","T9s","98s"],
+    BTN:  ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","AKo","AQo","AJo","ATo","A9o","A8o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","JTs","J9s","T9s","98s","87s"],
+    SB:   ["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","KQo","KJo","KTo","QJs","QTs","Q9s","Q8s","JTs","J9s","J8s","T9s","T8s","98s","87s","76s"]
+  }
+};
+
+// BB call ranges vs a shove (getting ~2:1 roughly, varies by stack)
+const PF_CALL_BB = {
+  5:  { UTG:"AA,KK,QQ,JJ,TT,99,88,77,AKs,AQs,AJs,ATs,A9s,A8s,A7s,A6s,A5s,A4s,A3s,A2s,AKo,AQo,AJo,ATo,A9o,KQs,KJs,KTs,K9s,KQo,QJs".split(","), SB:"AA,KK,QQ,JJ,TT,99,88,77,66,AKs,AQs,AJs,ATs,A9s,A8s,A7s,A6s,A5s,A4s,A3s,A2s,AKo,AQo,AJo,ATo,KQs,KJs,KTs,K9s,KQo,KJo,QJs,QTs,JTs".split(",") },
+  8:  { UTG:"AA,KK,QQ,JJ,TT,99,AKs,AQs,AJs,ATs,A9s,A8s,A5s,AKo,AQo,AJo,KQs,KQo".split(","), SB:"AA,KK,QQ,JJ,TT,99,88,77,AKs,AQs,AJs,ATs,A9s,A8s,A7s,A5s,AKo,AQo,AJo,ATo,KQs,KJs,KTs,KQo,QJs,JTs".split(",") },
+  10: { UTG:"AA,KK,QQ,JJ,TT,AKs,AQs,AJs,ATs,A5s,AKo,AQo,KQs".split(","), SB:"AA,KK,QQ,JJ,TT,99,88,AKs,AQs,AJs,ATs,A9s,A8s,A7s,A5s,AKo,AQo,AJo,KQs,KJs,KTs,KQo,QJs".split(",") },
+  13: { UTG:"AA,KK,QQ,JJ,TT,AKs,AQs,AJs,AKo,KQs".split(","), SB:"AA,KK,QQ,JJ,TT,99,AKs,AQs,AJs,ATs,A9s,A5s,AKo,AQo,AJo,KQs,KJs,KQo".split(",") },
+  15: { UTG:"AA,KK,QQ,JJ,AKs,AQs,AKo".split(","), SB:"AA,KK,QQ,JJ,TT,99,AKs,AQs,AJs,ATs,A5s,AKo,AQo,KQs,KQo".split(",") },
+  20: { UTG:"AA,KK,QQ,AKs,AKo".split(","), SB:"AA,KK,QQ,JJ,TT,AKs,AQs,AJs,AKo,AQo,KQs".split(",") }
+};
+
 
         // ============================================================
         // SQUEEZE RANGES (open + 1 caller)
@@ -2060,7 +2322,7 @@
         }
 
         let state = {
-            currentHand: null, currentPos: '', oppPos: '', scenario: 'RFI', villainOpenSize: 15,
+            currentHand: null, currentPos: '', oppPos: '', scenario: 'RFI', villainOpenSize: 15, stackBB: 10,
             squeezeOpener: '', squeezeCaller: '', squeezeCaller2: '',
             limperBucket: '1L', limperPositions: [],
             sessionStats: { total: 0, correct: 0, streak: 0 },
@@ -2068,6 +2330,7 @@
             recentHandKeys: [], // variety guard: last N hand keys for anti-repeat
             global: { totalHands: 0, totalCorrect: 0, bestStreak: 0, byScenario: {}, byPos: {}, byPosGroup: {}, bySpot: {}, byHand: {} },
             config: { scenarios: ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'], positions: [...ALL_POSITIONS], openSize: 15 },
+            pfStacks: [5,8,10,13,15,20],  // enabled stack depths for push/fold
             libCategory: 'RFI'
         };
 
@@ -2624,13 +2887,134 @@
         // ============================================================
         // REVIEW SESSION STATE
         // ============================================================
+        const REVIEW_DAILY_CAP = 20;
+
         let reviewSession = {
             active: false,
-            queue: [],        // ordered spotKeys for this session
-            recentKeys: [],   // anti-repeat buffer
+            queue: [],
+            recentKeys: [],
             answered: 0,
-            maxQ: 20
+            maxQ: REVIEW_DAILY_CAP,
+            todayDoneKeys: new Set() // hands reviewed this session-day (in-memory)
         };
+
+        // ── Build today's capped, prioritised review queue ────────────
+        function buildReviewQueue() {
+            const allSpotKeys = getAllSpotKeys();
+            const now = Date.now();
+            const srDb = SR.getAll();
+
+            // Collect all overdue hand keys, scored by urgency
+            const scored = [];
+            Object.entries(srDb).forEach(([k, r]) => {
+                if (k.endsWith('|_LEGACY')) return;
+                if (reviewSession.todayDoneKeys.has(k)) return; // skip already done today
+                const lastPipe = k.lastIndexOf('|');
+                const spotKey = k.substring(0, lastPipe);
+                if (!allSpotKeys.includes(spotKey)) return;
+                if (r.dueAt > now) return; // not yet due
+                // Score: higher = more urgent. Combine overdueness + error rate
+                const overdueDays = (now - r.dueAt) / (24 * 3600 * 1000);
+                const errRate = r.totalAttempts > 0 ? r.totalWrong / r.totalAttempts : 0;
+                const urgency = overdueDays * 2 + errRate * 3 + (r.lastResult === 'Again' ? 2 : 0);
+                scored.push({ key: k, urgency, spotKey, errRate });
+            });
+
+            // Sort by urgency descending, take top cap
+            scored.sort((a, b) => b.urgency - a.urgency);
+            const queue = scored.slice(0, REVIEW_DAILY_CAP).map(s => s.key);
+
+            // If queue is thin, pad with recently-incorrect hands not yet due
+            if (queue.length < 5) {
+                const incorrectSet = SR.getRecentlyIncorrect(7);
+                for (const k of incorrectSet) {
+                    if (queue.length >= REVIEW_DAILY_CAP) break;
+                    if (queue.includes(k)) continue;
+                    const lastPipe = k.lastIndexOf('|');
+                    if (allSpotKeys.includes(k.substring(0, lastPipe))) queue.push(k);
+                }
+            }
+
+            return queue;
+        }
+
+        // ── Preview screen ─────────────────────────────────────────────
+        function showReviewPreview() {
+            const queue = buildReviewQueue();
+            const allDueCount = SR.getDueSpots(false).length;
+
+            const countEl = document.getElementById('review-count-label');
+            const overdueEl = document.getElementById('review-overdue-label');
+            const spotListEl = document.getElementById('review-spot-list');
+
+            if (countEl) countEl.textContent = queue.length > 0 ? String(queue.length) : '0';
+            if (overdueEl) overdueEl.textContent = allDueCount > REVIEW_DAILY_CAP ? allDueCount + ' total' : allDueCount + ' overdue';
+
+            // Build top spots summary (group by spotKey, pick worst 4)
+            if (spotListEl) {
+                if (queue.length === 0) {
+                    spotListEl.innerHTML = '<div class="text-slate-600 text-xs italic">Nothing due right now — great work!</div>';
+                } else {
+                    const spotGroups = {};
+                    queue.forEach(k => {
+                        const spotKey = k.substring(0, k.lastIndexOf('|'));
+                        if (!spotGroups[spotKey]) spotGroups[spotKey] = 0;
+                        spotGroups[spotKey]++;
+                    });
+                    const topSpots = Object.entries(spotGroups)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 4);
+                    spotListEl.innerHTML = topSpots.map(([sk, n]) => {
+                        const name = prettySpotName(sk);
+                        return `<div class="flex items-center justify-between py-1 border-b border-slate-800/40 last:border-0">
+                            <span class="text-[12px] text-slate-300 font-semibold">${name}</span>
+                            <span class="text-[10px] text-amber-400 font-black">${n} hand${n>1?'s':''}</span>
+                        </div>`;
+                    }).join('');
+                }
+            }
+
+            // Show/hide start button
+            const startBtn = document.querySelector('#review-preview-screen button[onclick="launchReviewSession()"]');
+            if (startBtn) {
+                startBtn.disabled = queue.length === 0;
+                startBtn.classList.toggle('opacity-40', queue.length === 0);
+                startBtn.textContent = queue.length > 0 ? 'START REVIEW' : 'All caught up!';
+            }
+
+            // Stash the queue so launchReviewSession can use it
+            reviewSession._previewQueue = queue;
+
+            hideAllScreens();
+            document.getElementById('review-preview-screen').classList.remove('hidden');
+        }
+
+        function hideReviewPreview() {
+            document.getElementById('review-preview-screen').classList.add('hidden');
+            showMenu();
+        }
+
+        function launchReviewSession() {
+            const queue = reviewSession._previewQueue || buildReviewQueue();
+            if (queue.length === 0) return;
+            _startReviewWithQueue(queue);
+        }
+
+        function _startReviewWithQueue(candidates) {
+            reviewSession.active = true;
+            reviewSession.queue = candidates;
+            reviewSession.recentKeys = [];
+            reviewSession.answered = 0;
+            reviewSession.maxQ = candidates.length;
+
+            state.sessionStats = { total: 0, correct: 0, streak: 0 };
+            state.sessionLog = [];
+            hideAllScreens();
+            document.getElementById('trainer-screen').classList.remove('hidden');
+            try { ensureTableLayers(true); } catch(_) {}
+            updateUI();
+            safeGenerateNextRound();
+        }
 
         // All possible spot keys from the loaded ranges
         function getAllSpotKeys() {
@@ -2645,66 +3029,16 @@
             });
             Object.keys(squeezeRanges).forEach(k => keys.push(`SQUEEZE|${k}`));
             Object.keys(squeezeVsRfiTwoCallers).forEach(k => keys.push(`SQUEEZE_2C|${k}`));
+            // Push/fold spots: one per position × stack depth
+            PF_STACK_DEPTHS.forEach(bb => {
+                Object.keys(PF_PUSH[bb] || {}).forEach(pos => keys.push(`PUSH_FOLD|${pos}|${bb}BB`));
+            });
             return keys;
         }
 
+        // Legacy alias — keeps the ResizeObserver patch in the IIFE working
         function startReviewSession() {
-            const allSpotKeys = getAllSpotKeys();
-
-            // Hand-level candidates from SR
-            const dueSet = new Set(SR.getDueSpots(true));
-            const incorrectSet = new Set(SR.getRecentlyIncorrect(7));
-            const weakSet = new Set(SR.getWeakest(30));
-
-            let candidates = [...new Set([...dueSet, ...incorrectSet])];
-            // Filter: key must belong to a valid spot
-            candidates = candidates.filter(k => {
-                const lastPipe = k.lastIndexOf('|');
-                const spotKey = k.substring(0, lastPipe);
-                return allSpotKeys.includes(spotKey);
-            });
-
-            if (candidates.length < 5) {
-                for (const k of weakSet) {
-                    if (!candidates.includes(k)) {
-                        const lastPipe = k.lastIndexOf('|');
-                        const spotKey = k.substring(0, lastPipe);
-                        if (allSpotKeys.includes(spotKey)) candidates.push(k);
-                    }
-                    if (candidates.length >= 20) break;
-                }
-            }
-
-            // Still not enough — generate hand-level keys from spot keys
-            if (candidates.length < 5) {
-                for (const spotKey of allSpotKeys) {
-                    // Pick a random hand for this spot
-                    const handKey = `${spotKey}|AKs`; // seed with a common edge hand
-                    if (!candidates.includes(handKey)) candidates.push(handKey);
-                    if (candidates.length >= 20) break;
-                }
-            }
-
-            if (candidates.length === 0) {
-                console.log('[Review] No spots due. Try regular training.');
-                alert('No spots due yet! Play some regular hands first to build your review queue.');
-                return;
-            }
-
-            reviewSession.active = true;
-            reviewSession.queue = candidates;
-            reviewSession.recentKeys = [];
-            reviewSession.answered = 0;
-            reviewSession.maxQ = 20;
-
-            // Start trainer with first SR-selected spot
-            state.sessionStats = { total: 0, correct: 0, streak: 0 };
-            state.sessionLog = [];
-            document.getElementById('menu-screen').classList.add('hidden');
-            document.getElementById('trainer-screen').classList.remove('hidden');
-            try { ensureTableLayers(true); } catch(_) {}
-            updateUI();
-            safeGenerateNextRound();
+            showReviewPreview();
         }
 
         // --- RANGE VALIDATOR ---
@@ -2848,7 +3182,7 @@
         // ============================================================
         // DRILL MODE & MEDALS
         // ============================================================
-        const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C' };
+        const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)' };
         const MEDAL_THRESHOLDS = {
             bronze: { hands: 10, accuracy: 65 },
             silver: { hands: 25, accuracy: 80 },
@@ -2887,9 +3221,10 @@
                 bestStreak: 0,
                 lastDayIndex: null,
 
-                // Per-day cap (3 runs/day)
+                // Per-day cap — one slot per difficulty
                 runsDayIndex: null,
-                runsToday: 0,
+                runsToday: 0,          // legacy; kept for backward compat
+                completedToday: {},    // { easy: bool, medium: bool, hard: bool }
 
                 // Lifetime
                 totalRuns: 0,
@@ -2922,6 +3257,7 @@
                 merged.runsToday = Number(merged.runsToday || 0);
                 if (merged.runsDayIndex !== null && merged.runsDayIndex !== undefined) merged.runsDayIndex = Number(merged.runsDayIndex);
                 if (merged.runsDayIndex !== merged.runsDayIndex) merged.runsDayIndex = null;
+                if (!merged.completedToday || typeof merged.completedToday !== 'object') merged.completedToday = {};
 
                 merged.totalRuns = Number(merged.totalRuns || 0);
                 merged.bestRun = Number(merged.bestRun || 0);
@@ -2960,23 +3296,26 @@
             const now = Date.now();
             const today = getLocalDayIndex(now);
 
-            // reset daily counter if we've moved to a new local day
+            // reset daily slots if we've moved to a new local day
             if (meta.runsDayIndex === null || meta.runsDayIndex === undefined || meta.runsDayIndex !== today) {
                 meta.runsDayIndex = today;
                 meta.runsToday = 0;
+                meta.completedToday = {};
                 saveDailyRunMeta(meta);
             }
+            if (!meta.completedToday || typeof meta.completedToday !== 'object') meta.completedToday = {};
 
-            const locked = Number(meta.runsToday || 0) >= 3;
+            // Each difficulty has its own slot; "locked" means all three done
+            const allDone = !!(meta.completedToday.easy && meta.completedToday.medium && meta.completedToday.hard);
 
             // ms left until next local midnight
             let msLeft = 0;
-            if (locked) {
+            if (allDone) {
                 const d = new Date(now);
                 d.setHours(24,0,0,0); // next midnight
                 msLeft = Math.max(0, d.getTime() - now);
             }
-            return { meta, locked, msLeft };
+            return { meta, locked: allDone, msLeft, completedToday: meta.completedToday };
         }
 
         function formatDuration(ms) {
@@ -3038,13 +3377,29 @@ function showDailyRunMenu() {
             const lastOptName = lastOpt === 'easy' ? 'Warm‑Up' : lastOpt === 'hard' ? 'Boss' : lastOpt === 'medium' ? 'Grind' : null;
 
             const subtitle = document.getElementById('daily-run-subtitle');
-            if (subtitle) subtitle.textContent = `3 runs per day · Score = correct in a row`;
+            if (subtitle) subtitle.textContent = 'One shot per difficulty · Score = correct in a row';
+
+            const ct = meta.completedToday || {};
+            const slotsDone = [ct.easy, ct.medium, ct.hard].filter(Boolean).length;
 
             const statusEl = document.getElementById('daily-run-status');
             if (statusEl) {
                 const lockLine = locked
-                    ? `<div class="text-amber-300 font-black">Daily cap reached (3/3)</div><div class="text-slate-400 text-xs font-semibold mt-1">Resets in ${formatDuration(msLeft)}</div>`
-                    : `<div class="text-emerald-300 font-black">${runsToday}/3 used today</div><div class="text-slate-400 text-xs font-semibold mt-1">Pick a difficulty and go until you miss.</div>`;
+                    ? `<div class="text-amber-300 font-black">All done for today!</div><div class="text-slate-400 text-xs font-semibold mt-1">Resets in ${formatDuration(msLeft)}</div>`
+                    : `<div class="text-emerald-300 font-black">${slotsDone}/3 completed today</div><div class="text-slate-400 text-xs font-semibold mt-1">One shot at each difficulty. First miss ends the run.</div>`;
+
+                const slotRow = ['easy','medium','hard'].map(opt => {
+                    const done = !!ct[opt];
+                    const label = opt === 'easy' ? 'Warm-Up' : opt === 'medium' ? 'Grind' : 'Boss';
+                    const icon = opt === 'easy' ? '🟢' : opt === 'medium' ? '🟡' : '🔴';
+                    const bests = { easy: Number(meta.bestRunEasy||0), medium: Number(meta.bestRunMedium||0), hard: Number(meta.bestRunHard||0) };
+                    return `<div class="bg-slate-950/40 border ${done ? 'border-emerald-700/50' : 'border-slate-800'} rounded-2xl p-3 text-center">
+                        <div class="text-lg">${done ? '✅' : icon}</div>
+                        <div class="text-slate-300 text-[10px] font-bold uppercase tracking-widest mt-1">${label}</div>
+                        <div class="text-slate-500 text-[9px] mt-0.5">Best: ${bests[opt]}</div>
+                    </div>`;
+                }).join('');
+
                 statusEl.innerHTML = `
                     <div class="flex items-start justify-between gap-4">
                         <div>${lockLine}</div>
@@ -3053,20 +3408,9 @@ function showDailyRunMenu() {
                             <div class="text-slate-100 font-black text-2xl">${streakDays}</div>
                         </div>
                     </div>
-                    <div class="mt-4 grid grid-cols-3 gap-3">
-                        <div class="bg-slate-950/40 border border-slate-800 rounded-2xl p-3 text-center">
-                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Runs</div>
-                            <div class="text-slate-100 font-black text-xl mt-1">${runs}</div>
-                        </div>
-                        <div class="bg-slate-950/40 border border-slate-800 rounded-2xl p-3 text-center">
-                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Best run</div>
-                            <div class="text-slate-100 font-black text-xl mt-1">${bestRun}</div>
-                        </div>
-                        <div class="bg-slate-950/40 border border-slate-800 rounded-2xl p-3 text-center">
-                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Today left</div>
-                            <div class="text-slate-100 font-black text-xl mt-1">${Math.max(0, 3 - runsToday)}</div>
-                        </div>
-                    </div>
+                    <div class="mt-4 grid grid-cols-3 gap-3">${slotRow}</div>
+                    <div id="dr-history-label" class="hidden mt-3 text-[9px] text-slate-600 uppercase font-bold tracking-widest">Recent runs (up to 14)</div>
+                    <div id="dr-history-sparkline" class="hidden mt-1 mb-2 rounded-lg overflow-hidden bg-slate-950/30 px-2 pt-2 pb-0.5"></div>
                     <div class="mt-4 bg-slate-950/40 border border-slate-800 rounded-2xl p-4">
                         <div class="text-slate-400 text-xs font-bold uppercase tracking-widest">Last run</div>
                         <div class="text-slate-100 font-black text-lg mt-1">${lastOptName ? `${lastRun} · ${lastOptName}` : '—'}</div>
@@ -3077,23 +3421,45 @@ function showDailyRunMenu() {
                 `;
             }
 
-            // Disable buttons when locked
+            // UX #17: render history sparkline
+            try {
+                const histEl = document.getElementById('dr-history-sparkline');
+                const histLabel = document.getElementById('dr-history-label');
+                if (histEl && meta.history && meta.history.length > 0) {
+                    const last14 = meta.history.slice(-14);
+                    const maxScore = Math.max(...last14.map(h => h.run || 0), 1);
+                    const bars = last14.map(h => {
+                        const pct = Math.max(8, Math.round(((h.run || 0) / maxScore) * 100));
+                        const col = h.option === 'hard' ? '#f43f5e' : h.option === 'medium' ? '#eab308' : '#22c55e';
+                        return `<div title="Score: ${h.run}" style="flex:1;background:${col};opacity:0.75;height:${pct}%;border-radius:2px 2px 0 0;min-height:4px;"></div>`;
+                    }).join('');
+                    histEl.innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:36px;">${bars}</div>`;
+                    histEl.classList.remove('hidden');
+                    if (histLabel) histLabel.classList.remove('hidden');
+                }
+            } catch(_) {}
+
+            // Disable buttons individually per completed slot
             ['easy','medium','hard'].forEach(opt => {
                 const btn = document.getElementById(`daily-run-btn-${opt}`);
                 if (!btn) return;
-                if (locked) {
-                    btn.disabled = true;
-                    btn.classList.add('opacity-50','pointer-events-none');
-                } else {
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-50','pointer-events-none');
+                const isDone = !!(ct[opt]);
+                btn.disabled = isDone;
+                btn.classList.toggle('opacity-50', isDone);
+                btn.classList.toggle('pointer-events-none', isDone);
+                // Show personal best inline
+                const bestMap = { easy: Number(meta.bestRunEasy||0), medium: Number(meta.bestRunMedium||0), hard: Number(meta.bestRunHard||0) };
+                const bestEl = btn.querySelector('.dr-btn-best');
+                if (bestEl && bestMap[opt] > 0) {
+                    bestEl.textContent = 'Best: ' + bestMap[opt];
+                    bestEl.classList.remove('hidden');
                 }
             });
         }
 
         function startDailyRun(option) {
-            const { locked } = getDailyRunLockInfo();
-            if (locked) { updateDailyRunUI(); return; }
+            const { completedToday } = getDailyRunLockInfo();
+            if (completedToday[option]) { updateDailyRunUI(); return; }
 
             dailyRunState.active = true;
             dailyRunState.option = option; // easy|medium|hard
@@ -3113,9 +3479,30 @@ function showDailyRunMenu() {
             hideAllScreens();
             document.getElementById('trainer-screen').classList.remove('hidden');
 
+            // FIX Bug C: attach ResizeObserver so table layout scales correctly in Daily Run
+            const _drFelt = document.getElementById('poker-felt-container');
+            if (_drFelt) { try { ro.observe(_drFelt); } catch(_) {} }
+
+            // UX: show DR round counter + best streak, hide focused-drill hands counter
+            try {
+                document.getElementById('dr-round-counter').classList.remove('hidden');
+                document.getElementById('drill-counter').classList.add('hidden');
+                document.getElementById('streak-best-block').classList.remove('hidden');
+                const bestEl = document.getElementById('streak-best');
+                if (bestEl) bestEl.textContent = String(state.global.bestStreak || 0);
+                updateDRRoundCounter();
+            } catch(e) {}
+
             updateUI();
             try { updateDrillCounter(); } catch(_) {}
             safeGenerateNextRound();
+        }
+
+        function updateDRRoundCounter() {
+            const el = document.getElementById('dr-round-num');
+            if (el && dailyRunState && dailyRunState.active) {
+                el.textContent = String((dailyRunState.total || 0) + 1);
+            }
         }
 
 
@@ -3130,7 +3517,7 @@ function showDailyRunMenu() {
                 return scenario === 'RFI' || scenario === 'FACING_RFI' || scenario === 'VS_LIMP' || scenario === 'RFI_VS_3BET';
             }
             // hard
-            return scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C' || scenario === 'RFI_VS_3BET' || scenario === 'VS_LIMP' || scenario === 'FACING_RFI' || scenario === 'RFI';
+            return scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C' || scenario === 'RFI_VS_3BET' || scenario === 'VS_LIMP' || scenario === 'FACING_RFI' || scenario === 'RFI' || scenario === 'PUSH_FOLD';
         }
 
         function dailyRunSpotAllowedNow() {
@@ -3185,8 +3572,9 @@ function checkDailyRunComplete() {
             }
 
             // day-streak increments only on the first completed run of a new day
+            const _prevCompleted = Object.keys(meta.completedToday || {}).length;
             let newDayStreak = Number(meta.streak || 0);
-            if (meta.runsToday === 0) {
+            if (_prevCompleted === 0) {
                 if (lastDay === null) newDayStreak = 1;
                 else if (today === lastDay) newDayStreak = Math.max(1, newDayStreak);
                 else if (today === lastDay + 1) newDayStreak = newDayStreak + 1;
@@ -3197,6 +3585,8 @@ function checkDailyRunComplete() {
             }
 
             meta.runsToday = Number(meta.runsToday || 0) + 1;
+            if (!meta.completedToday) meta.completedToday = {};
+            meta.completedToday[dailyRunState.option] = true;
 
             meta.lastCompletedAt = now;
             meta.lastOption = dailyRunState.option;
@@ -3241,7 +3631,7 @@ function checkDailyRunComplete() {
                     <div class="text-slate-100 font-black text-lg mt-1">${leakLabel}</div>
                 </div>
                 <div class="mt-3 text-slate-400 text-xs">
-                    Runs today: <span class="text-slate-200 font-bold">${meta.runsToday}/3</span> · Day streak: <span class="text-slate-200 font-bold">${meta.streak}</span>
+                    Slots today: <span class="text-slate-200 font-bold">${['easy','medium','hard'].filter(o => (meta.completedToday||{})[o]).length}/3</span> · Day streak: <span class="text-slate-200 font-bold">${meta.streak}</span>
                 </div>
             `;
 
@@ -3252,10 +3642,25 @@ function checkDailyRunComplete() {
                 if (titleEl) titleEl.textContent = 'Daily Run Complete';
                 if (bodyEl) bodyEl.innerHTML = body;
                 modal.classList.remove('hidden');
+                const pab = document.getElementById('dr-play-again-btn');
+                if (pab) {
+                    const ct2 = meta.completedToday || {};
+                    const slotsLeft = ['easy','medium','hard'].filter(o => !ct2[o]).length;
+                    pab.disabled = slotsLeft <= 0;
+                    pab.classList.toggle('opacity-40', slotsLeft <= 0);
+                    pab.classList.toggle('pointer-events-none', slotsLeft <= 0);
+                    pab.textContent = slotsLeft > 0 ? 'Play Another Difficulty (' + slotsLeft + ' left)' : 'All done today!';
+                }
             }
 
             // mark run as finished
             dailyRunState.active = false;
+        }
+
+        function drPlayAgain() {
+            const modal = document.getElementById('daily-run-complete-screen');
+            if (modal) modal.classList.add('hidden');
+            showDailyRunMenu();
         }
 
         function endDailyRunToMenu() {
@@ -3273,6 +3678,9 @@ function checkDailyRunComplete() {
                 if (sc === 'VS_LIMP') {
                     const bucket = parts[2] ? ` · ${parts[2]} limp${parts[2]==='1'?'':'s'}` : '';
                     return `${sc.replace('_',' ')} · ${rest.replaceAll('_',' ')}${bucket}`;
+                }
+                if (sc === 'PUSH_FOLD') {
+                    return `Push/Fold · ${POS_LABELS[rest] || rest} · ${parts[2] || ''}`;
                 }
                 return `${sc.replaceAll('_',' ')} · ${rest.replaceAll('_',' ')}`;
             } catch(_) {
@@ -3324,6 +3732,8 @@ function checkDailyRunComplete() {
         }
         function setDrillMode(mode) {
             drillState.mode = mode;
+            const _modeDescs = { open: 'Mix scenarios & positions — great for general practice.', focused: 'Lock in on one spot for a fixed number of hands — drill deep.' };
+            try { const d = document.getElementById('mode-desc'); if(d) d.textContent = _modeDescs[mode] || ''; } catch(_){}
             document.getElementById('mode-open').className = `mode-tab ${mode === 'open' ? 'active' : ''}`;
             document.getElementById('mode-focused').className = `mode-tab ${mode === 'focused' ? 'active' : ''}`;
             document.getElementById('config-open').classList.toggle('hidden', mode !== 'open');
@@ -3423,6 +3833,19 @@ function checkDailyRunComplete() {
         }
 
         function showChallengeMenu() {
+            // After rendering, check if all challenge nodes are beaten
+            setTimeout(() => {
+                try {
+                    const prog = loadChallengeProgress ? loadChallengeProgress() : {};
+                    const nodeEls = document.querySelectorAll('#challenge-body [data-node-id]');
+                    const allDone = nodeEls.length > 0 && [...nodeEls].every(el => {
+                        const id = el.dataset.nodeId;
+                        return prog[id] && prog[id].beaten;
+                    });
+                    const banner = document.getElementById('challenge-complete-banner');
+                    if (banner) banner.classList.toggle('hidden', !allDone);
+                } catch(_){}
+            }, 100);
             document.getElementById('menu-screen').classList.add('hidden');
             document.getElementById('challenge-screen').classList.remove('hidden');
             renderChallengeScreen();
@@ -3561,7 +3984,7 @@ function retryChallenge() {
             const medals = loadMedals();
             const container = document.getElementById('drill-scenario-list');
             container.innerHTML = '';
-            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'].forEach(sc => {
+            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(sc => {
                 // Count medals for this scenario
                 let gC = 0, sC = 0, bC = 0;
                 Object.keys(medals).forEach(k => {
@@ -3617,10 +4040,10 @@ function retryChallenge() {
                 const s = localStorage.getItem(profileKey('gto_config_v2'));
                 if (s) {
                     const c = JSON.parse(s);
-                    const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'];
+                    const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'];
                     if (c.scenarios && Array.isArray(c.scenarios)) {
                         state.config.scenarios = c.scenarios.filter(s => validScenarios.includes(s));
-                        if (state.config.scenarios.length === 0) state.config.scenarios = [...validScenarios];
+                        if (state.config.scenarios.length === 0) state.config.scenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'];
                     }
                     if (c.positions && Array.isArray(c.positions)) {
                         state.config.positions = c.positions.filter(p => ALL_POSITIONS.includes(p));
@@ -3635,7 +4058,7 @@ function retryChallenge() {
 
         function updateConfigUI() {
             // Open training
-            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'].forEach(s => {
+            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(s => {
                 const btn = document.getElementById(`cfg-${s}`);
                 if (!btn) return;
                 const isSel = state.config.scenarios.includes(s);
@@ -3884,165 +4307,275 @@ function retryChallenge() {
             renderLibrary();
         }
 
-        function renderLibrary() {
-            const content = document.getElementById('lib-content');
-            content.innerHTML = '';
-            
-            // Update tabs
-            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'].forEach(tab => {
-                const btn = document.getElementById(`lib-tab-${tab}`);
-                btn.className = `whitespace-nowrap px-6 py-2 rounded-full font-bold text-sm ${state.libCategory === tab ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`;
-            });
+        // ── Library state ─────────────────────────────────────────────
+        const libSel = { category: 'RFI', heroPos: null, oppPos: null, bucket: '1L' };
 
-            let spots = [];
-            if (state.libCategory === 'RFI') {
-                spots = Object.keys(rfiRanges).map(p => ({ pos: p, opp: null, data: rfiRanges[p] }));
-            } else if (state.libCategory === 'FACING_RFI') {
-                spots = Object.keys(facingRfiRanges).map(k => {
-                    const [p, o] = k.split('_vs_');
-                    return { pos: p, opp: o, data: facingRfiRanges[k] };
-                });
-            } else if (state.libCategory === 'VS_LIMP') {
-                spots = Object.keys(allFacingLimps).map(k => {
-                    const m = k.match(/(.+)_vs_(.+)_Limp/);
-                    return { pos: m[1], opp: m[2], data: allFacingLimps[k] };
-                });
-            } else if (state.libCategory === 'SQUEEZE') {
-                spots = Object.keys(squeezeRanges).map(k => {
-                    const p = parseSqueezeKey(k);
-                    return { pos: p.hero, opp: p.opener, caller: p.caller, data: squeezeRanges[k], squeezeKey: k };
-                });
-            } else if (state.libCategory === 'SQUEEZE_2C') {
-                spots = Object.keys(squeezeVsRfiTwoCallers).map(k => {
-                    const p = parseSqueeze2CKey(k);
-                    return { pos: p.hero, opp: p.opener, caller: p.caller1, caller2: p.caller2, data: squeezeVsRfiTwoCallers[k], squeezeKey: k };
-                });
-            } else {
-                spots = Object.keys(rfiVs3BetRanges).map(k => {
-                    const [p, o] = k.split('_vs_');
-                    return { pos: p, opp: o, data: rfiVs3BetRanges[k] };
-                });
-            }
-
-            spots.forEach((spot, spotIdx) => {
-                const card = document.createElement('div');
-                card.className = "bg-slate-900 border border-slate-800 rounded-3xl p-5 flex flex-col items-center gap-4";
-                
-                const title = spot.caller2
-                    ? `${POS_LABELS[spot.pos]} vs ${POS_LABELS[spot.opp]} open, ${POS_LABELS[spot.caller]} & ${POS_LABELS[spot.caller2]} call`
-                    : spot.caller
-                    ? `${POS_LABELS[spot.pos]} vs ${POS_LABELS[spot.opp]} open, ${POS_LABELS[spot.caller]} call`
-                    : spot.opp ? `${POS_LABELS[spot.pos]} vs ${POS_LABELS[spot.opp]}` : `${POS_LABELS[spot.pos]} Open`;
-                
-                const gridId = `lib-grid-${spotIdx}`;
-                const renderGrid = (data) => {
-                    let g = '';
-                    for (let i = 0; i < 13; i++) {
-                        for (let j = 0; j < 13; j++) {
-                            const r1 = RANKS[i], r2 = RANKS[j];
-                            let hKey = (i === j) ? r1 + r2 : (i < j ? r1 + r2 + 's' : r2 + r1 + 'o');
-                            let bg = 'bg-slate-950';
-                            
-                            if (state.libCategory === 'RFI') {
-                                if (checkRangeHelper(hKey, data)) bg = 'bg-indigo-600';
-                            } else if (state.libCategory === 'VS_LIMP') {
-                                if (checkRangeHelper(hKey, getLimpRaise(data))) bg = 'bg-orange-600';
-                                else if (checkRangeHelper(hKey, getLimpPassive(data))) bg = 'bg-cyan-700';
-                            } else if (state.libCategory === 'SQUEEZE') {
-                                if (checkRangeHelper(hKey, data["Squeeze"])) { bg = 'bg-red-600'; if (isSqueezeBluff(hKey, data)) bg = 'bg-red-600 sq-bluff-stripe'; }
-                                else if (data["Call"] && checkRangeHelper(hKey, data["Call"])) bg = 'bg-emerald-600';
-                            } else if (state.libCategory === 'SQUEEZE_2C') {
-                                if (checkRangeHelper(hKey, data["Squeeze"])) { bg = 'bg-red-600'; if (isSqueezeBluff(hKey, data)) bg = 'bg-red-600 sq-bluff-stripe'; }
-                                else if (data["Call"] && checkRangeHelper(hKey, data["Call"])) bg = 'bg-emerald-600';
-                            } else {
-                                if (checkRangeHelper(hKey, data["3-bet"] || data["4-bet"])) bg = 'bg-indigo-600';
-                                else if (checkRangeHelper(hKey, data["Call"])) bg = 'bg-emerald-600';
-                            }
-                            g += `<div class="aspect-square rounded-[1px] ${bg}"></div>`;
-                        }
-                    }
-                    return g;
-                };
-
-                let gridHtml = `<div id="${gridId}" class="range-grid w-full gap-[0.5px]">${renderGrid(spot.data)}</div>`;
-
-                // Bucket toggle for VS_LIMP library cards
-                let bucketToggleHtml = '';
-                if (state.libCategory === 'VS_LIMP') {
-                    bucketToggleHtml = `<div class="flex gap-1.5" id="lib-btog-${spotIdx}">` +
-                        ['1L','2L','3P'].map(b => {
-                            const sel = b === '1L';
-                            const lab = b === '1L' ? '1L' : b === '2L' ? '2L' : '3+L';
-                            return `<button data-bucket="${b}" onclick="switchLibBucket(${spotIdx},'${spot.pos}','${spot.opp}','${b}')" class="px-2 py-0.5 rounded-full text-[8px] font-bold transition-all ${sel ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-500 hover:text-slate-300'}">${lab}</button>`;
-                        }).join('') + '</div>';
-                }
-
-                card.innerHTML = `
-                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">${title}</p>
-                    ${bucketToggleHtml}
-                    ${gridHtml}
-                    <button onclick="zoomSpot('${spot.pos}', '${spot.squeezeKey || spot.opp || ''}', '${state.libCategory}', ${spotIdx})" class="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">Full View</button>
-                `;
-
-                // Store render function for bucket switching
-                if (state.libCategory === 'VS_LIMP') {
-                    card._renderGrid = renderGrid;
-                    card._gridId = gridId;
-                }
-
-                content.appendChild(card);
-            });
+        function setLibCategory(cat) {
+            state.libCategory = cat;
+            libSel.category = cat;
+            libSel.heroPos = null;
+            libSel.oppPos = null;
+            libSel.bucket = '1L';
+            renderLibrary();
         }
 
-        function switchLibBucket(spotIdx, pos, opp, bucket) {
-            const gridEl = document.getElementById(`lib-grid-${spotIdx}`);
-            const togEl = document.getElementById(`lib-btog-${spotIdx}`);
-            if (!gridEl || !togEl) return;
-            // Store active bucket on the toggle element for Full View to read
-            togEl.dataset.activeBucket = bucket;
-            const data = getLimpDataForBucket(pos, opp, bucket) || allFacingLimps[`${pos}_vs_${opp}_Limp`];
-            if (!data) return;
-            // Re-render grid
-            let g = '';
+        function setLibHero(pos) {
+            libSel.heroPos = pos;
+            libSel.oppPos = null;
+            renderLibrary();
+        }
+
+        function setLibOpp(opp) {
+            libSel.oppPos = opp;
+            renderLibrary();
+        }
+
+        function setLibBucket(b) {
+            libSel.bucket = b;
+            renderLibrary();
+        }
+
+        // ── Build spot index for current category ──────────────────────
+        function getLibSpots() {
+            const cat = libSel.category;
+            if (cat === 'RFI') {
+                return Object.keys(rfiRanges).map(p => ({ hero: p, opp: null, key: p }));
+            } else if (cat === 'FACING_RFI') {
+                return Object.keys(facingRfiRanges).map(k => {
+                    const [p, o] = k.split('_vs_'); return { hero: p, opp: o, key: k };
+                });
+            } else if (cat === 'RFI_VS_3BET') {
+                return Object.keys(rfiVs3BetRanges).map(k => {
+                    const [p, o] = k.split('_vs_'); return { hero: p, opp: o, key: k };
+                });
+            } else if (cat === 'VS_LIMP') {
+                return Object.keys(allFacingLimps).map(k => {
+                    const m = k.match(/(.+)_vs_(.+)_Limp/);
+                    return { hero: m[1], opp: m[2], key: k };
+                });
+            } else if (cat === 'SQUEEZE') {
+                return Object.keys(squeezeRanges).map(k => {
+                    const p = parseSqueezeKey(k);
+                    return { hero: p.hero, opp: k, key: k,
+                             label: `${POS_LABELS[p.opener]} opens · ${POS_LABELS[p.caller]} calls` };
+                });
+            } else if (cat === 'SQUEEZE_2C') {
+                return Object.keys(squeezeVsRfiTwoCallers).map(k => {
+                    const p = parseSqueeze2CKey(k);
+                    return { hero: p.hero, opp: k, key: k,
+                             label: `${POS_LABELS[p.opener]} opens · ${POS_LABELS[p.caller1]} & ${POS_LABELS[p.caller2]} call` };
+                });
+            }
+            return [];
+        }
+
+        // ── Render toggle rows + chart area ───────────────────────────
+        function renderLibrary() {
+            const cat = libSel.category;
+            const spots = getLibSpots();
+
+            // Update category tab styles
+            ['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C'].forEach(tab => {
+                const btn = document.getElementById(`lib-tab-${tab}`);
+                if (btn) btn.className = `whitespace-nowrap px-4 py-1.5 rounded-full font-bold text-xs ${cat === tab ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`;
+            });
+
+            // Hero position row — unique heroes for this category
+            const heroRow = document.getElementById('lib-hero-row');
+            const heroes = [...new Set(spots.map(s => s.hero))];
+            // Auto-select first hero if none set or current invalid
+            if (!libSel.heroPos || !heroes.includes(libSel.heroPos)) libSel.heroPos = heroes[0] || null;
+
+            heroRow.innerHTML = heroes.map(h => {
+                const active = h === libSel.heroPos;
+                return `<button onclick="setLibHero('${h}')" class="whitespace-nowrap px-3 py-1 rounded-full font-black text-[11px] transition-all ${active ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}">${POS_LABELS[h] || h}</button>`;
+            }).join('');
+
+            // Opponent row (hidden for RFI which has no opponent)
+            const oppRow = document.getElementById('lib-opp-row');
+            if (cat === 'RFI') {
+                oppRow.classList.add('hidden');
+                libSel.oppPos = null;
+            } else {
+                oppRow.classList.remove('hidden');
+                const heroSpots = spots.filter(s => s.hero === libSel.heroPos);
+                const opps = [...new Set(heroSpots.map(s => s.opp))];
+                if (!libSel.oppPos || !opps.includes(libSel.oppPos)) libSel.oppPos = opps[0] || null;
+
+                oppRow.innerHTML = opps.map(o => {
+                    const active = o === libSel.oppPos;
+                    // For SQUEEZE/2C the opp is a full key; use the label
+                    const spot = heroSpots.find(s => s.opp === o);
+                    const label = spot && spot.label ? spot.label : (POS_LABELS[o] || o);
+                    return `<button onclick="setLibOpp('${o}')" class="whitespace-nowrap px-3 py-1 rounded-full font-black text-[11px] transition-all ${active ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}">${label}</button>`;
+                }).join('');
+            }
+
+            // Bucket row (VS_LIMP only)
+            const bucketRow = document.getElementById('lib-bucket-row');
+            if (cat === 'VS_LIMP') {
+                bucketRow.classList.remove('hidden');
+                bucketRow.innerHTML = [['1L','1 Limper'],['2L','2 Limpers'],['3P','3+ Limpers']].map(([b, lab]) => {
+                    const active = libSel.bucket === b;
+                    return `<button onclick="setLibBucket('${b}')" class="whitespace-nowrap px-3 py-1 rounded-full font-black text-[11px] transition-all ${active ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}">${lab}</button>`;
+                }).join('');
+            } else {
+                bucketRow.classList.add('hidden');
+            }
+
+            renderLibraryChart();
+        }
+
+        // ── Render the single chart for current selection ─────────────
+        function renderLibraryChart() {
+            const cat = libSel.category;
+            const area = document.getElementById('lib-chart-area');
+            if (!area) return;
+
+            const spots = getLibSpots();
+            let spot = null;
+
+            if (cat === 'RFI') {
+                spot = spots.find(s => s.hero === libSel.heroPos);
+            } else {
+                spot = spots.find(s => s.hero === libSel.heroPos && s.opp === libSel.oppPos);
+            }
+
+            if (!spot) { area.innerHTML = '<div class="text-slate-600 text-sm mt-10">No data for this selection.</div>'; return; }
+
+            // Get data
+            let data = null;
+            if (cat === 'RFI') data = rfiRanges[spot.key];
+            else if (cat === 'FACING_RFI') data = facingRfiRanges[spot.key];
+            else if (cat === 'RFI_VS_3BET') data = rfiVs3BetRanges[spot.key];
+            else if (cat === 'VS_LIMP') {
+                data = getLimpDataForBucket(spot.hero, spot.opp, libSel.bucket) || allFacingLimps[spot.key];
+            } else if (cat === 'SQUEEZE') data = squeezeRanges[spot.key];
+            else if (cat === 'SQUEEZE_2C') data = squeezeVsRfiTwoCallers[spot.key];
+
+            if (!data) { area.innerHTML = '<div class="text-slate-600 text-sm mt-10">No data for this selection.</div>'; return; }
+
+            // Title
+            let title = '';
+            if (cat === 'RFI') title = `${POS_LABELS[spot.hero]} Open Range`;
+            else if (cat === 'VS_LIMP') title = `${POS_LABELS[spot.hero]} vs ${POS_LABELS[spot.opp]} Limp`;
+            else if (cat === 'SQUEEZE' || cat === 'SQUEEZE_2C') {
+                const p = cat === 'SQUEEZE' ? parseSqueezeKey(spot.key) : parseSqueeze2CKey(spot.key);
+                title = cat === 'SQUEEZE'
+                    ? `${POS_LABELS[p.hero]} Squeeze — ${POS_LABELS[p.opener]} opens, ${POS_LABELS[p.caller]} calls`
+                    : `${POS_LABELS[p.hero]} Squeeze — ${POS_LABELS[p.opener]} opens, ${POS_LABELS[p.caller1]} & ${POS_LABELS[p.caller2]} call`;
+            } else {
+                title = `${POS_LABELS[spot.hero]} vs ${POS_LABELS[spot.opp]}`;
+            }
+
+            // Legend
+            let legendHtml = '';
+            if (cat === 'RFI') {
+                legendHtml = '<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-indigo-600 inline-block"></span>Open</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>';
+            } else if (cat === 'VS_LIMP') {
+                legendHtml = '<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-orange-600 inline-block"></span>Iso</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-cyan-700 inline-block"></span>Limp</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>';
+            } else if (cat === 'SQUEEZE' || cat === 'SQUEEZE_2C') {
+                legendHtml = '<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-red-600 inline-block"></span>Squeeze</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-emerald-600 inline-block"></span>Call</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>';
+            } else {
+                const raiseLabel = cat === 'RFI_VS_3BET' ? '4-Bet' : '3-Bet';
+                legendHtml = `<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-indigo-600 inline-block"></span>${raiseLabel}</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-emerald-600 inline-block"></span>Call</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>`;
+            }
+
+            // Build grid
+            let grid = '';
+            // Rank labels row
+            grid += RANKS.map(r => `<div class="aspect-square flex items-center justify-center text-[7px] font-black text-slate-600">${r}</div>`).join('');
             for (let i = 0; i < 13; i++) {
                 for (let j = 0; j < 13; j++) {
                     const r1 = RANKS[i], r2 = RANKS[j];
-                    let hKey = (i === j) ? r1 + r2 : (i < j ? r1 + r2 + 's' : r2 + r1 + 'o');
-                    let bg = 'bg-slate-950';
-                    if (checkRangeHelper(hKey, getLimpRaise(data))) bg = 'bg-orange-600';
-                    else if (checkRangeHelper(hKey, getLimpPassive(data))) bg = 'bg-cyan-700';
-                    g += `<div class="aspect-square rounded-[1px] ${bg}"></div>`;
+                    const hKey = (i === j) ? r1 + r2 : (i < j ? r1 + r2 + 's' : r2 + r1 + 'o');
+                    let bg = 'bg-slate-900';
+                    if (cat === 'RFI') {
+                        if (checkRangeHelper(hKey, data)) bg = 'bg-indigo-600';
+                    } else if (cat === 'VS_LIMP') {
+                        if (checkRangeHelper(hKey, getLimpRaise(data))) bg = 'bg-orange-600';
+                        else if (checkRangeHelper(hKey, getLimpPassive(data))) bg = 'bg-cyan-700';
+                    } else if (cat === 'SQUEEZE' || cat === 'SQUEEZE_2C') {
+                        if (checkRangeHelper(hKey, data["Squeeze"])) { bg = isSqueezeBluff(hKey, data) ? 'bg-red-600 sq-bluff-stripe' : 'bg-red-600'; }
+                        else if (data["Call"] && checkRangeHelper(hKey, data["Call"])) bg = 'bg-emerald-600';
+                    } else {
+                        if (checkRangeHelper(hKey, data["3-bet"] || data["4-bet"])) bg = 'bg-indigo-600';
+                        else if (checkRangeHelper(hKey, data["Call"])) bg = 'bg-emerald-600';
+                    }
+                    // Cell label: suits label on diagonal, otherwise hand key small
+                    const isP = i === j, isS = i < j;
+                    const cellLabel = `<span class="text-[5px] font-black leading-none select-none ${bg === 'bg-slate-900' ? 'text-slate-700' : 'text-white/60'}">${hKey}</span>`;
+                    grid += `<div class="aspect-square rounded-[1px] ${bg} flex items-center justify-center">${cellLabel}</div>`;
                 }
             }
-            gridEl.innerHTML = g;
-            // Update toggle button styles
-            togEl.querySelectorAll('button').forEach(btn => {
-                const b = btn.dataset.bucket;
-                if (b === bucket) { btn.className = 'px-2 py-0.5 rounded-full text-[8px] font-bold transition-all bg-indigo-600 text-white'; }
-                else { btn.className = 'px-2 py-0.5 rounded-full text-[8px] font-bold transition-all bg-slate-800 text-slate-500 hover:text-slate-300'; }
-            });
+
+            // Hand counts
+            let counts = '';
+            if (cat === 'RFI') {
+                const n = (data || []).reduce((acc, combo) => acc + countCombos(combo), 0);
+                counts = `<div class="text-[11px] text-slate-500"><span class="font-bold text-slate-300">${n}</span> combos</div>`;
+            } else if (data["3-bet"] || data["4-bet"] || data["Squeeze"]) {
+                const raiseKey = data["3-bet"] ? "3-bet" : data["4-bet"] ? "4-bet" : "Squeeze";
+                const nR = (data[raiseKey]||[]).reduce((acc,c)=>acc+countCombos(c),0);
+                const nC = (data["Call"]||[]).reduce((acc,c)=>acc+countCombos(c),0);
+                const raiseLabel = cat === 'RFI_VS_3BET' ? '4-bet' : cat === 'SQUEEZE' || cat === 'SQUEEZE_2C' ? 'Squeeze' : '3-bet';
+                counts = `<div class="flex gap-5 text-[11px] text-slate-500"><span><span class="font-bold text-indigo-400">${nR}</span> ${raiseLabel}</span><span><span class="font-bold text-emerald-400">${nC}</span> call</span></div>`;
+            }
+
+            area.innerHTML = `
+                <div class="w-full max-w-sm flex flex-col items-center gap-3">
+                    <div class="text-center">
+                        <div class="text-[11px] font-black uppercase tracking-widest text-slate-300">${title}</div>
+                    </div>
+                    ${legendHtml}
+                    <div class="range-grid w-full gap-[1px]" style="grid-template-columns: repeat(13,1fr);">${grid}</div>
+                    ${counts}
+                    <button onclick="zoomSpot('${spot.hero}','${cat === 'SQUEEZE' || cat === 'SQUEEZE_2C' ? spot.key : (spot.opp||'')}','${cat}',null)" class="mt-1 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-black text-xs uppercase tracking-widest transition-all">Full View</button>
+                </div>
+            `;
+        }
+
+        function countCombos(rangeStr) {
+            // Quick combo counter for display
+            if (!rangeStr) return 0;
+            try {
+                const expanded = expandList([rangeStr]);
+                return expanded.reduce((acc, h) => {
+                    if (h.length === 2) return acc + 6; // pair
+                    if (h.endsWith('s')) return acc + 4;
+                    if (h.endsWith('o')) return acc + 12;
+                    return acc + 6;
+                }, 0);
+            } catch(_) { return 0; }
         }
 
         function zoomSpot(pos, opp, cat, spotIdx) {
             _chartIsReview = true;
             if (cat === 'VS_LIMP') {
-                // Read active bucket from library card toggle if available
-                const togEl = spotIdx != null && document.getElementById(`lib-btog-${spotIdx}`);
-                state.limperBucket = (togEl && togEl.dataset.activeBucket) || '1L';
+                state.limperBucket = libSel.bucket || '1L';
             }
             showChart(pos, null, cat, opp);
+        }
+
+        // Legacy stub — keep for backward compat with any saved references
+        function switchLibBucket(spotIdx, pos, opp, bucket) {
+            libSel.bucket = bucket;
+            renderLibraryChart();
         }
 
         // --- TRAINER LOGIC ---
 
         function generateNextRound() {
+            // FIX Bug D: reset per-round so guard doesn't saturate across the session
+            if (dailyRunState && dailyRunState.active) dailyRunState._rerollGuard = 0;
+
             const srDb = SR.getAll();
 
             if (reviewSession.active) {
                 // SR-driven review: hand-level keys like "FACING_RFI|CO_vs_UTG|AKs"
                 if (reviewSession.answered >= reviewSession.maxQ) {
                     reviewSession.active = false;
-                    exitToMenu();
+                    showReviewComplete();
                     return;
                 }
                 const handLevelKey = SR.selectSpot(reviewSession.queue, reviewSession.recentKeys);
@@ -4062,6 +4595,14 @@ function retryChallenge() {
                     state.currentPos = parts[1];
                     state.oppPos = '';
                     state.villainOpenSize = 15; // RFI: hero opens, no villain open
+                } else if (state.scenario === 'FACING_RFI') {
+                    const [p, o] = parts[1].split('_vs_');
+                    state.currentPos = p; state.oppPos = o;
+                    state.villainOpenSize = pickVillainOpenSize(); // FIX Bug A: was stale
+                } else if (state.scenario === 'RFI_VS_3BET') {
+                    const [p, o] = parts[1].split('_vs_');
+                    state.currentPos = p; state.oppPos = o;
+                    state.villainOpenSize = getOpenSize$(); // FIX Bug A: was stale
                 } else if (state.scenario === 'VS_LIMP') {
                     const m = parts[1].match(/(.+)_vs_(.+)_Limp/);
                     state.currentPos = m ? m[1] : 'BTN';
@@ -4100,10 +4641,9 @@ function retryChallenge() {
                     state.squeezeCaller2 = p.caller2;
                     state.oppPos = parts[1];
                 } else {
+                    // Fallback for any other scenario with a pos_vs_pos key
                     const [p, o] = parts[1].split('_vs_');
                     state.currentPos = p; state.oppPos = o;
-                    // FACING_RFI: villain opened with a random size; RFI_VS_3BET: hero opened
-                    state.villainOpenSize = (state.scenario === 'FACING_RFI') ? pickVillainOpenSize() : getOpenSize$();
                 }
             } else {
                 // Normal training: random scenario/spot respecting config
@@ -4114,6 +4654,7 @@ function retryChallenge() {
                     if (s === 'VS_LIMP') { const lp = state.config.positions; return Object.keys(allFacingLimps).some(k => { const m = k.match(/(.+)_vs_(.+)_Limp/); return m && lp.includes(m[1]); }); }
                     if (s === 'SQUEEZE') { return Object.keys(squeezeRanges).some(k => { const p = parseSqueezeKey(k); return p && state.config.positions.includes(p.hero); }); }
                     if (s === 'SQUEEZE_2C') { return Object.keys(squeezeVsRfiTwoCallers).some(k => { const p = parseSqueeze2CKey(k); return p && state.config.positions.includes(p.hero); }); }
+                    if (s === 'PUSH_FOLD') { return (state.pfStacks || state.config.pfStacks || [10]).length > 0 && state.config.positions.some(p => p !== 'BB'); }
                     return false;
                 });
                 if (!validScenarios.length) { console.warn('[Trainer] No valid scenarios for config:', JSON.stringify(state.config)); return; }
@@ -4178,6 +4719,12 @@ function retryChallenge() {
                     } else if (state.scenario === 'SQUEEZE_2C') {
                         const p = parseSqueeze2CKey(parts[1]);
                         if (p) { state.currentPos = p.hero; state.squeezeOpener = p.opener; state.squeezeCaller = p.caller1; state.squeezeCaller2 = p.caller2; state.oppPos = parts[1]; }
+                    } else if (state.scenario === 'PUSH_FOLD') {
+                        state.currentPos = parts[1];
+                        state.oppPos = '';
+                        // stack depth encoded as "10BB" in parts[2]
+                        const bbStr = parts[2] || '10BB';
+                        state.stackBB = parseInt(bbStr) || 10;
                     } else {
                         const [p, o] = parts[1].split('_vs_');
                         state.currentPos = p; state.oppPos = o;
@@ -4260,6 +4807,16 @@ function retryChallenge() {
                     state.squeezeCaller2 = p.caller2;
                     state.oppPos = key;
                     state.villainOpenSize = pickVillainOpenSize();
+                } else if (state.scenario === 'PUSH_FOLD') {
+                    // Pick a random enabled stack depth and a random eligible hero position
+                    const stacks = state.pfStacks || state.config.pfStacks || [5,8,10,13,15,20];
+                    state.stackBB = stacks[Math.floor(Math.random() * stacks.length)];
+                    // Hero can be any configured position except BB (BB is call-only, handled separately as oppPos)
+                    const pfPositions = state.config.positions.filter(p => p !== 'BB' && PF_PUSH[state.stackBB] && PF_PUSH[state.stackBB][p]);
+                    if (!pfPositions.length) { state.currentPos = 'BTN'; } else {
+                        state.currentPos = pfPositions[Math.floor(Math.random() * pfPositions.length)];
+                    }
+                    state.oppPos = '';
                 } else {
                     const pairs = Object.keys(rfiVs3BetRanges).filter(p => state.config.positions.includes(p.split('_vs_')[0]));
                     const key = pairs[Math.floor(Math.random() * pairs.length)];
@@ -4287,6 +4844,8 @@ function retryChallenge() {
                 document.getElementById('scenario-hint').innerText = `${POS_LABELS[state.squeezeOpener]} opens, ${POS_LABELS[state.squeezeCaller]} calls...`;
             } else if (state.scenario === 'SQUEEZE_2C') {
                 document.getElementById('scenario-hint').innerText = `${POS_LABELS[state.squeezeOpener]} opens, ${POS_LABELS[state.squeezeCaller]} and ${POS_LABELS[state.squeezeCaller2]} call...`;
+            } else if (state.scenario === 'PUSH_FOLD') {
+                document.getElementById('scenario-hint').innerText = `${state.stackBB}BB effective — shove or fold?`;
             } else {
                 document.getElementById('scenario-hint').innerText = `You raised, ${POS_LABELS[state.oppPos]} 3-bets to ${fmt$(get3betSize$(state.oppPos, state.currentPos))}...`;
             }
@@ -4317,6 +4876,7 @@ function retryChallenge() {
                 let curSRKey;
                 if (state.scenario === 'SQUEEZE' || state.scenario === 'SQUEEZE_2C') curSRKey = `${state.scenario}|${state.oppPos}|${state.currentHand}`;
                 else if (state.scenario === 'VS_LIMP') curSRKey = `${state.scenario}|${state.currentPos}_vs_${state.oppPos}_Limp|${state.limperBucket}|${state.currentHand}`;
+                else if (state.scenario === 'PUSH_FOLD') curSRKey = `${state.scenario}|${state.currentPos}|${state.stackBB}BB|${state.currentHand}`;
                 else curSRKey = `${state.scenario}|${state.currentPos}${state.oppPos ? '_vs_' + state.oppPos + oppSuffix : ''}|${state.currentHand}`;
                 state.recentHandKeys.push(curSRKey);
                 if (state.recentHandKeys.length > 10) state.recentHandKeys = state.recentHandKeys.slice(-10);
@@ -4396,6 +4956,9 @@ function handleInput(action) {
                 if (data && checkRangeHelper(state.currentHand, data["Squeeze"])) correctAction = "SQUEEZE";
                 else if (data && data["Call"] && checkRangeHelper(state.currentHand, data["Call"])) correctAction = "CALL";
                 else correctAction = "FOLD";
+            } else if (state.scenario === 'PUSH_FOLD') {
+                const pfRange = PF_PUSH[state.stackBB] && PF_PUSH[state.stackBB][state.currentPos];
+                correctAction = (pfRange && checkRangeHelper(state.currentHand, pfRange)) ? 'SHOVE' : 'FOLD';
             } else {
                 const data = rfiVs3BetRanges[`${state.currentPos}_vs_${state.oppPos}`];
                 if (checkRangeHelper(state.currentHand, data["4-bet"])) correctAction = "4BET";
@@ -4409,7 +4972,7 @@ function handleInput(action) {
             // Track per-scenario stats
             const sc = state.scenario;
             const hp = state.currentPos;
-            const spotKey = sc === 'RFI' ? `${sc}|${hp}` : sc === 'VS_LIMP' ? `${sc}|${hp}_vs_${state.oppPos}_Limp|${state.limperBucket}` : (sc === 'SQUEEZE' || sc === 'SQUEEZE_2C') ? `${sc}|${state.oppPos}` : `${sc}|${hp}_vs_${state.oppPos}`;
+            const spotKey = sc === 'RFI' ? `${sc}|${hp}` : sc === 'VS_LIMP' ? `${sc}|${hp}_vs_${state.oppPos}_Limp|${state.limperBucket}` : (sc === 'SQUEEZE' || sc === 'SQUEEZE_2C') ? `${sc}|${state.oppPos}` : sc === 'PUSH_FOLD' ? `${sc}|${hp}|${state.stackBB}BB` : `${sc}|${hp}_vs_${state.oppPos}`;
 
 
             // Daily Run tracking (UI wrapper only — does not affect SR or core stats)
@@ -4418,9 +4981,14 @@ function handleInput(action) {
                 if (correct) {
                     dailyRunState.correct++;
                     dailyRunState.runStreak++;
+                    try { updateDRRoundCounter(); } catch(_){}
+                    try { if(navigator.vibrate) navigator.vibrate(25); } catch(_){}
                 } else {
                     // run ends on first miss
+                    dailyRunState.active = false; // IMP 4: disable active before ended to prevent double-tap race
                     dailyRunState.ended = true;
+                    try { const ov=document.getElementById('miss-flash-overlay'); if(ov){ov.classList.remove('active');void ov.offsetWidth;ov.classList.add('active');} } catch(_){}
+                    try { if(navigator.vibrate) navigator.vibrate([40,30,40]); } catch(_){}
                 }
                 if (!dailyRunState.bySpot[spotKey]) dailyRunState.bySpot[spotKey] = { total: 0, correct: 0 };
                 dailyRunState.bySpot[spotKey].total++;
@@ -4431,6 +4999,8 @@ function handleInput(action) {
             const handSRKey = `${spotKey}|${state.currentHand}`;
             const srGrade = correct ? 'Good' : 'Again';
             SR.update(handSRKey, srGrade);
+            // Track reviewed hands so they don't show again today
+            if (reviewSession.active) reviewSession.todayDoneKeys.add(handSRKey);
             
             if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
             state.global.byScenario[sc].total++;
@@ -4468,6 +5038,7 @@ function handleInput(action) {
                 correct: correct, spotKey: spotKey, isBluff: _isBluff,
                 limperBucket: state.limperBucket, limperPositions: state.limperPositions ? [...state.limperPositions] : []
             };
+            if (!logEntry.spotKey) logEntry.spotKey = spotKey;
             state.sessionLog.unshift(logEntry); // newest first
             
             if (correct) {
@@ -5357,7 +5928,7 @@ function renderButtons(hidden) {
         const raiseHint = `Open: 5bb (${openBB.toFixed(0)}bb)`;
         setSizingHint(raiseHint);
         container.innerHTML = `<div class="grid grid-cols-2 gap-3 ${stateClass}">
-            <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button>
+            <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">PASS</button>
             <button onclick="handleInput('RAISE')" ${btnStyle} class="bg-indigo-600 rounded-2xl font-black text-white shadow-lg">${raiseMain}</button>
         </div>`;
     } else if (state.scenario === 'FACING_RFI') {
@@ -5420,7 +5991,14 @@ function renderButtons(hidden) {
             <button onclick="handleInput('4BET')" ${btnStyle} class="bg-indigo-600 rounded-2xl font-black text-white shadow-lg">4-BET TO ${fmt$(fourBet$)}</button>
         </div>`;
 
-} else {
+} else if (state.scenario === 'PUSH_FOLD') {
+        const bb$ = (state.stackBB || 10) * 3; // approx $ at 1/3
+        setSizingHint(`Shoving ${state.stackBB}BB (~$${bb$} at 1/3)`);
+        container.innerHTML = `<div class="grid grid-cols-2 gap-3 ${stateClass}">
+            <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button>
+            <button onclick="handleInput('SHOVE')" ${btnStyle} class="bg-rose-600 rounded-2xl font-black text-white shadow-lg">ALL IN</button>
+        </div>`;
+    } else {
         container.innerHTML = `<div class="grid grid-cols-2 gap-3 ${stateClass}">
             <button onclick="handleInput('FOLD')" ${btnStyle} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button>
             <button onclick="handleInput('RAISE')" ${btnStyle} class="bg-indigo-600 rounded-2xl font-black text-white shadow-lg">RAISE</button>
@@ -5634,8 +6212,9 @@ function _renderChart(pos, target, scenario, oppPos) {
             const whyEl = document.getElementById('chart-why-text');
             if (whyEl && target) {
                 try {
-                    const correctAction = EdgeWeight.getCorrectAction(target, scenario, pos, oppPos);
-                    const why = getWhyText(target, correctAction, scenario, pos, oppPos);
+                    const effOpp = (scenario === 'VS_LIMP') ? `${oppPos}|${state.limperBucket}` : oppPos;
+const correctAction = EdgeWeight.getCorrectAction(target, scenario, pos, effOpp);
+const why = getWhyText(target, correctAction, scenario, pos, effOpp);
                     if (why) {
                         whyEl.textContent = why;
                         whyEl.classList.remove('hidden');
@@ -5710,7 +6289,7 @@ function _renderChart(pos, target, scenario, oppPos) {
                         if (checkRangeHelper(hKey, d["4-bet"])) bg = 'bg-indigo-600';
                         else if (checkRangeHelper(hKey, d["Call"])) bg = 'bg-emerald-600';
                     }
-                    const ring = (hKey === target) ? 'ring-[3px] ring-white z-10 scale-110 shadow-xl' : 'opacity-60';
+                    const ring = target ? (hKey === target ? 'ring-[3px] ring-white z-10 scale-110 shadow-xl' : 'opacity-50') : '';
                     html += `<div class="aspect-square flex items-center justify-center rounded-[2px] text-[5px] sm:text-[7px] font-black ${bg} ${ring} text-white/95">${hKey}</div>`;
                 }
             }
@@ -5800,12 +6379,38 @@ function _renderChart(pos, target, scenario, oppPos) {
             if (ch) ch.classList.add('hidden');
             document.getElementById('trainer-screen').classList.remove('hidden');
             updateUI();
-            updateDrillCounter();
+            if (typeof updateDrillCounter === 'function') updateDrillCounter(); // IMP 3: guard against missing function
             safeGenerateNextRound();
         }
+        function confirmExit() {
+            const hands = state.sessionStats && state.sessionStats.total;
+            // No confirmation needed for 0 hands or review sessions
+            if (!hands || hands < 3 || reviewSession.active) { exitToMenu(); return; }
+            // Show inline confirm by temporarily changing button text
+            const btn = document.querySelector('#trainer-screen button[onclick="confirmExit()"]');
+            if (!btn) { exitToMenu(); return; }
+            if (btn.dataset.confirming === '1') { exitToMenu(); return; }
+            btn.dataset.confirming = '1';
+            const orig = btn.textContent;
+            btn.textContent = 'Sure?';
+            btn.classList.add('text-rose-400');
+            setTimeout(() => {
+                btn.textContent = orig;
+                btn.classList.remove('text-rose-400');
+                delete btn.dataset.confirming;
+            }, 2500);
+        }
+
         function exitToMenu() {
             try { __clearNextTimer(); __endResolve(); } catch(_) {}
+            try { document.getElementById('dr-round-counter').classList.add('hidden'); } catch(_) {}
+            try { document.getElementById('streak-best-block').classList.add('hidden'); } catch(_) {}
             try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
+
+            const wasOpenTraining = !drillState.active && !reviewSession.active &&
+                !(dailyRunState && dailyRunState.active) &&
+                !(typeof challengeState !== 'undefined' && challengeState && challengeState.active);
+            const handsPlayed = state.sessionStats && state.sessionStats.total || 0;
 
             // Restore config if drill was active
             if (drillState._savedConfig) {
@@ -5813,13 +6418,117 @@ function _renderChart(pos, target, scenario, oppPos) {
                 drillState._savedConfig = null;
             }
             drillState.active = false;
+            reviewSession.active = false;
+
+            if (wasOpenTraining && handsPlayed >= 5) {
+                showSessionSummary();
+            } else {
+                document.getElementById('trainer-screen').classList.add('hidden');
+                document.getElementById('menu-screen').classList.remove('hidden');
+                updateMenuUI();
+            }
+        }
+
+        function showReviewComplete() {
+            const s = state.sessionStats;
+            const total = s.total || 0;
+            const correct = s.correct || 0;
+            const acc = total ? Math.round(correct / total * 100) : 0;
+            const accColor = acc >= 85 ? 'text-emerald-400' : acc >= 70 ? 'text-yellow-400' : 'text-rose-400';
+
+            // Find hands still wrong this session
+            const stillWrong = (state.sessionLog || []).filter(e => !e.correct);
+            const wrongSpots = [...new Set(stillWrong.map(e => e.spotKey).filter(Boolean))];
+
+            const wrongRows = wrongSpots.slice(0, 4).map(sk =>
+                `<div class="text-[11px] text-rose-300 font-semibold py-1 border-b border-slate-800/40 last:border-0">${prettySpotName(sk)}</div>`
+            ).join('');
+
+            const el = document.getElementById('review-complete-screen');
+            if (!el) { exitToMenu(); return; }
+            el.querySelector('#rc-hands').textContent = total;
+            el.querySelector('#rc-accuracy').textContent = acc + '%';
+            el.querySelector('#rc-accuracy').className = 'text-4xl font-black ' + accColor;
+            el.querySelector('#rc-wrong-rows').innerHTML = wrongRows ||
+                '<div class="text-emerald-400 text-[11px] font-bold">Clean sweep — all correct!</div>';
+
             document.getElementById('trainer-screen').classList.add('hidden');
+            el.classList.remove('hidden');
+        }
+
+        function closeReviewComplete() {
+            const el = document.getElementById('review-complete-screen');
+            if (el) el.classList.add('hidden');
+            document.getElementById('menu-screen').classList.remove('hidden');
+            updateMenuUI();
+        }
+
+        function showSessionSummary() {
+            const s = state.sessionStats;
+            const total = s.total || 0;
+            const correct = s.correct || 0;
+            const acc = total ? Math.round(correct / total * 100) : 0;
+            const accColor = acc >= 85 ? 'text-emerald-400' : acc >= 70 ? 'text-yellow-400' : acc >= 55 ? 'text-orange-400' : 'text-rose-400';
+            const streak = state.global.bestStreak || 0;
+
+            // Find worst spot this session from sessionLog
+            const spotErr = {};
+            (state.sessionLog || []).forEach(entry => {
+                if (!entry.spotKey) return;
+                if (!spotErr[entry.spotKey]) spotErr[entry.spotKey] = { w: 0, t: 0 };
+                spotErr[entry.spotKey].t++;
+                if (!entry.correct) spotErr[entry.spotKey].w++;
+            });
+            const worstSpots = Object.entries(spotErr)
+                .filter(([,v]) => v.t >= 2)
+                .map(([k,v]) => ({ key: k, acc: Math.round((v.t-v.w)/v.t*100), wrong: v.w, total: v.t }))
+                .sort((a,b) => a.acc - b.acc)
+                .slice(0, 3);
+
+            const spotRows = worstSpots.length ? worstSpots.map(sp => {
+                const col = sp.acc >= 80 ? 'text-emerald-400' : sp.acc >= 60 ? 'text-yellow-400' : 'text-rose-400';
+                return `<div class="flex items-center justify-between py-1.5 border-b border-slate-800/50 last:border-0">
+                    <span class="text-[11px] text-slate-300 font-semibold">${prettySpotName(sp.key)}</span>
+                    <span class="text-[11px] font-black ${col}">${sp.acc}%</span>
+                </div>`;
+            }).join('') : '<div class="text-slate-600 text-xs italic">Not enough data yet</div>';
+
+            const el = document.getElementById('session-summary-screen');
+            if (!el) { document.getElementById('trainer-screen').classList.add('hidden'); document.getElementById('menu-screen').classList.remove('hidden'); updateMenuUI(); return; }
+
+            el.querySelector('#ss-hands').textContent = total;
+            el.querySelector('#ss-accuracy').textContent = acc + '%';
+            el.querySelector('#ss-accuracy').className = 'text-4xl font-black ' + accColor;
+            el.querySelector('#ss-streak').textContent = streak;
+            el.querySelector('#ss-spot-rows').innerHTML = spotRows;
+
+            document.getElementById('trainer-screen').classList.add('hidden');
+            el.classList.remove('hidden');
+        }
+
+        function closeSessionSummary() {
+            const el = document.getElementById('session-summary-screen');
+            if (el) el.classList.add('hidden');
             document.getElementById('menu-screen').classList.remove('hidden');
             updateMenuUI();
         }
         function saveProgress() { localStorage.setItem(profileKey('gto_rfi_stats_v2'), JSON.stringify(state.global)); SR.save(); markCloudDirty(); }
         function loadProgress() { const s = localStorage.getItem(profileKey('gto_rfi_stats_v2')); if (s) state.global = JSON.parse(s); if (!state.global.byScenario) state.global.byScenario = {}; if (!state.global.byPos) state.global.byPos = {}; if (!state.global.byPosGroup) state.global.byPosGroup = {}; if (!state.global.bestStreak) state.global.bestStreak = 0; if (!state.global.bySpot) state.global.bySpot = {}; if (!state.global.byHand) state.global.byHand = {}; loadConfig(); loadLimperMix(); SR.load(); updateMenuUI(); if (window.RANGE_VALIDATE) { validateAndNormalizeRanges(facingRfiRanges); validateAndNormalizeRanges(rfiVs3BetRanges); validateAndNormalizeRanges(allFacingLimps); } }
-        function updateUI() { document.getElementById('accuracy').innerText = (state.sessionStats.total ? Math.round(state.sessionStats.correct/state.sessionStats.total*100) : 0) + '%'; document.getElementById('streak').innerText = state.sessionStats.streak; updateDrillCounter(); }
+        function updateUI() {
+            document.getElementById('accuracy').innerText = (state.sessionStats.total ? Math.round(state.sessionStats.correct/state.sessionStats.total*100) : 0) + '%';
+            document.getElementById('streak').innerText = state.sessionStats.streak;
+            updateDrillCounter();
+            // Show/hide stack badge
+            try {
+                const sb = document.getElementById('stack-bb-badge');
+                if (sb) {
+                    if (state.scenario === 'PUSH_FOLD' && state.stackBB) {
+                        sb.textContent = state.stackBB + 'BB';
+                        sb.classList.remove('hidden');
+                    } else { sb.classList.add('hidden'); }
+                }
+            } catch(_) {}
+        }
         function updateMenuUI() {
             const allSpots = getAllSpotKeys();
             const g = state.global;
@@ -5909,13 +6618,26 @@ function _renderChart(pos, target, scenario, oppPos) {
                 if (lockEl) lockEl.textContent = locked ? `Locked: ${formatDuration(msLeft)}` : 'Ready';
             } catch(_) {}
 
+            // Onboarding card — show until 50 hands or dismissed
+            try {
+                const ob = document.getElementById('menu-onboarding');
+                if (ob) {
+                    const dismissed = localStorage.getItem('pkOnboardingDismissed');
+                    const totalHands = (state.global && state.global.totalHands) || 0;
+                    ob.classList.toggle('hidden', !!(dismissed || totalHands >= 50));
+                }
+            } catch(_) {}
+
             // Due badge on review button
             const badge = document.getElementById('menu-due-badge');
+            const cappedDue = Math.min(dueCount, REVIEW_DAILY_CAP);
             if (dueCount > 0) {
                 badge.classList.remove('hidden');
-                badge.textContent = dueCount;
+                badge.textContent = dueCount > REVIEW_DAILY_CAP ? REVIEW_DAILY_CAP + '+' : dueCount;
+                try { document.getElementById('menu-due-zero').classList.add('hidden'); } catch(_) {}
             } else {
                 badge.classList.add('hidden');
+                try { document.getElementById('menu-due-zero').classList.remove('hidden'); } catch(_) {}
             }
         }
         function formatHandKey(r1, r2, s) { const i1 = RANKS.indexOf(r1), i2 = RANKS.indexOf(r2); const hi = i1 < i2 ? r1 : r2, lo = i1 < i2 ? r2 : r1; return hi === lo ? hi + lo : hi + lo + (s ? 's' : 'o'); }
@@ -5939,7 +6661,7 @@ function _renderChart(pos, target, scenario, oppPos) {
             return POS_LABELS[clean] || clean;
         }
         const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C' };
-        const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze' };
+        const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In' };
 
         function showSessionLog() {
             const list = document.getElementById('session-log-list');
@@ -6403,7 +7125,15 @@ function _renderChart(pos, target, scenario, oppPos) {
             }
         })();
 
-        function showSettings() { updateProfileUI(); document.getElementById('settings-screen').classList.remove('hidden'); }
+        function showSettings() {
+            try {
+                const cur = localStorage.getItem('pkCrusherProfile') || 'default';
+                const disp = cur === 'default' ? 'Guest' : cur;
+                const el = document.getElementById('settings-profile-current');
+                if (el) el.textContent = disp;
+                const inp = document.getElementById('settings-profile-input');
+                if (inp && cur !== 'default') inp.placeholder = cur;
+            } catch(_) {} updateProfileUI(); document.getElementById('settings-screen').classList.remove('hidden'); }
         function hideSettings() { document.getElementById('settings-screen').classList.add('hidden'); }
 
                 function exportTrainerData() {
@@ -6869,7 +7599,38 @@ function _renderChart(pos, target, scenario, oppPos) {
             return { label: 'Weak', colorClass: 'bg-rose-500/20 text-rose-400' };
         }
 
+        function dismissOnboarding() {
+            try { localStorage.setItem('pkOnboardingDismissed', '1'); } catch(_) {}
+            const ob = document.getElementById('menu-onboarding');
+            if (ob) ob.classList.add('hidden');
+        }
+
+        function saveProfileFromSettings() {
+            const inp = document.getElementById('settings-profile-input');
+            if (!inp) return;
+            const v = inp.value.trim();
+            if (!v) { showToast('Enter a username first', 'incorrect', 2000); return; }
+            if (!/^[a-zA-Z0-9_-]{1,30}$/.test(v)) { showToast('Only letters, numbers, _ or - (max 30)', 'incorrect', 2200); return; }
+            const old = localStorage.getItem('pkCrusherProfile') || 'default';
+            if (v === old) { showToast('Already using ' + v, 'correct', 1800); return; }
+            localStorage.setItem('pkCrusherProfile', v);
+            showToast('Profile set — reloading…', 'correct', 1800);
+            setTimeout(() => location.reload(), 1800);
+        }
+
+        function resetSpotSR(spotKey) {
+            const decodedKey = decodeURIComponent(spotKey);
+            const handKeys = SR.getHandKeysForSpot(decodedKey);
+            if (handKeys.length === 0) { showToast('No SR data for this spot', 'incorrect', 1800); return; }
+            if (!confirm('Reset SR history for this spot? It will reappear in review soon.')) return;
+            handKeys.forEach(k => SR.update(k, 'Again')); // force due
+            SR.save();
+            showToast('Spot reset — will reappear in Review', 'correct', 2000);
+            renderUserStats();
+        }
+
         function renderUserStats() {
+            currentProfile = localStorage.getItem('pkCrusherProfile') || 'default'; // IMP 1: guard multi-tab drift
             const g = state.global;
             const allSpots = getAllSpotKeys();
             const medals = loadMedals();
@@ -6920,6 +7681,35 @@ function _renderChart(pos, target, scenario, oppPos) {
             function scTotal(sc) { return g.byScenario[sc] ? g.byScenario[sc].total : 0; }
 
             let html = '';
+
+            // === WEAKEST SPOTS CARD ===
+            const topLeaks = Object.entries(g.bySpot || {})
+                .filter(([,v]) => v.total >= 10)
+                .map(([k,v]) => ({ key: k, acc: Math.round(v.correct/v.total*100), total: v.total }))
+                .sort((a,b) => a.acc - b.acc)
+                .slice(0, 3);
+
+            if (topLeaks.length >= 2) {
+                html += `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-1">
+                    <p class="text-[9px] text-rose-400/80 font-black uppercase tracking-widest mb-3">Your biggest leaks</p>
+                    <div class="flex flex-col gap-2">
+                    ${topLeaks.map(sp => {
+                        const col = sp.acc >= 75 ? 'text-yellow-400' : 'text-rose-400';
+                        const bar = sp.acc;
+                        return `<div class="flex items-center gap-3">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[11px] text-slate-300 font-semibold truncate">${prettySpotName(sp.key)}</div>
+                                <div class="mt-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+                                    <div class="h-1 rounded-full ${sp.acc >= 75 ? 'bg-yellow-500' : 'bg-rose-500'}" style="width:${bar}%"></div>
+                                </div>
+                            </div>
+                            <div class="text-sm font-black ${col} shrink-0">${sp.acc}%</div>
+                            <div class="text-[9px] text-slate-600 shrink-0">${sp.total}h</div>
+                        </div>`;
+                    }).join('')}
+                    </div>
+                </div>`;
+            }
 
             // === TOP HERO CARD: Mastery + Medals side by side ===
             const ringSize = 100, ringStroke = 8;
@@ -6995,7 +7785,8 @@ function _renderChart(pos, target, scenario, oppPos) {
                 `}
             </div>
 
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex flex-col items-center">
+            <div class="grid grid-cols-5 gap-2 mt-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex flex-col items-center">
                     <p class="text-[7px] text-slate-500 uppercase font-bold mb-0.5">Hands</p>
                     <p class="text-base font-black text-slate-200">${total >= 1000 ? (total/1000).toFixed(1)+'k' : total}</p>
                 </div>
@@ -7009,7 +7800,7 @@ function _renderChart(pos, target, scenario, oppPos) {
                 </div>
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex flex-col items-center">
                     <p class="text-[7px] text-slate-500 uppercase font-bold mb-0.5">Due</p>
-                    <p class="text-base font-black ${dueCount > 0 ? 'text-amber-400' : 'text-slate-500'}">${dueCount}</p>
+                    <p class="text-base font-black ${dueCount > 0 ? 'text-amber-400' : 'text-slate-500'}">${dueCount > 20 ? '20+' : dueCount}</p>
                 </div>
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex flex-col items-center">
                     <p class="text-[7px] text-slate-500 uppercase font-bold mb-0.5">Medals</p>
@@ -7139,7 +7930,7 @@ function _renderChart(pos, target, scenario, oppPos) {
                     </div>
                     <div class="flex flex-col gap-2">`;
 
-                ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'].forEach(sc => {
+                ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(sc => {
                     const m = medals[sc];
                     const icon = m ? MEDAL_ICONS[m.medal] : '';
                     const acc = m ? m.accuracy : null;
@@ -7168,7 +7959,7 @@ function _renderChart(pos, target, scenario, oppPos) {
             html += `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
                 <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">By Scenario</p>
                 <div class="flex flex-col gap-3">`;
-            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'].forEach(sc => {
+            ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(sc => {
                 const prefix = sc + '|';
                 const scSpots = allSpots.filter(k => k.startsWith(prefix));
                 const scTiers = { mastered: 0, learning: 0, struggling: 0, unseen: 0 };
