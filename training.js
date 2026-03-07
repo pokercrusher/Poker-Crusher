@@ -1728,9 +1728,37 @@ function generateNextRound() {
         }
         // Render community cards on felt
         renderCommunityCards(state.postflop.flopCards);
-        // Clear preflop card/bet layers
+        // Clear preflop card backs layer (no longer needed on flop)
         const cl = document.getElementById('cards-layer'); if (cl) cl.innerHTML = '';
-        const bl = document.getElementById('bets-layer'); if (bl) bl.innerHTML = '';
+
+        // Place preflop bets on the table to show the pot going to the flop.
+        // SRP: hero raised, villain called, SB folded (dead $1).
+        const bl = document.getElementById('bets-layer');
+        if (bl) {
+            bl.innerHTML = '';
+            try {
+                const heroCoords = getSeatCoords(spot.heroPos, spot.heroPos);
+                const villCoords = getSeatCoords(spot.heroPos, spot.villainPos);
+                const openBB = getOpenSizeBB();
+                // Hero's preflop raise
+                if (heroCoords) animateChip(bl, heroCoords, openBB);
+                // Villain's preflop call
+                if (villCoords) animateChip(bl, villCoords, openBB);
+                // SB dead money (if SB isn't hero or villain)
+                if (spot.heroPos !== 'SB' && spot.villainPos !== 'SB') {
+                    const sbCoords = getSeatCoords(spot.heroPos, 'SB');
+                    if (sbCoords) animateChip(bl, sbCoords, 0.5, '$1');
+                }
+            } catch(_) {}
+        }
+
+        // Show pot size in the sizing hint line
+        try {
+            const open$ = getOpenSize$();
+            const pot$ = open$ * 2 + 1; // hero raise + villain call + SB dead $1
+            setSizingHint(`Pot: ${fmt$(pot$)}`);
+        } catch(_) {}
+
         // Update table seats
         try { updateTable(state.postflop.heroPos, state.postflop.villainPos); } catch(_) {}
         // Render postflop buttons (hidden, then reveal)
@@ -2062,7 +2090,13 @@ function _flopCardsHtml(cards){ return cards.map(c => { const color=flopSuitColo
 
 function renderPostflopButtons(hidden){
     const container=document.getElementById('action-buttons');
-    setSizingHint('');
+    // Show pot and c-bet sizing info
+    try {
+        const open$ = getOpenSize$();
+        const pot$ = open$ * 2 + 1; // hero raise + villain call + SB dead
+        const cbet$ = Math.round(pot$ * 0.33);
+        setSizingHint(`Pot: ${fmt$(pot$)} · C-Bet 33%: ${fmt$(cbet$)}`);
+    } catch(_) { setSizingHint(''); }
     const sc=hidden?'action-buttons-hidden':'action-buttons-revealed';
     const bs=`style="padding:var(--btn-pad, 14px) 0;font-size:var(--btn-font, 14px);"`;
     container.innerHTML=`<div class="grid grid-cols-2 gap-3 ${sc}"><button onclick="handlePostflopInput('CHECK')" ${bs} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">CHECK</button><button onclick="handlePostflopInput('CBET')" ${bs} class="bg-orange-600 rounded-2xl font-black text-white shadow-lg">C-BET</button></div>`;
