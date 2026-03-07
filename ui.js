@@ -1511,6 +1511,32 @@ function hideSessionLog() { document.getElementById('session-log-panel').classLi
 
 function logRowChart(idx) {
     const e = state.sessionLog[idx];
+    // Postflop log entries: show the postflop feedback modal (read-only) instead
+    // of the preflop range chart, which has no handler for postflop spots.
+    if (e.scenario === 'POSTFLOP_CBET') {
+        hideSessionLog();
+        const logSpot = {
+            heroPos: e.pos,
+            villainPos: e.oppPos,
+            positionState: e.positionState || '',
+            boardArchetype: e.archetype || '',
+            flopCards: e.flopCards || [],
+            heroHand: e.heroHand || null,
+            heroHandClass: e.heroHandClass || null,
+            strategy: e.strategy || null
+        };
+        const logResult = {
+            correct: e.correct,
+            grade: e.grade || (e.correct ? 'strong' : 'clear_wrong'),
+            preferredLabel: e.correct
+                ? (ACTION_LABELS[e.action] || e.action)
+                : (ACTION_LABELS[e.correctAction] || e.correctAction),
+            freqPct: e.freqPct || 0,
+            reasoning: e.reasoning || ''
+        };
+        showPostflopFeedback(logSpot, logResult, e.correct);
+        return;
+    }
     _chartIsReview = true;
     // Restore limper bucket for chart
     if (e.limperBucket) state.limperBucket = e.limperBucket;
