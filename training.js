@@ -1024,8 +1024,8 @@ function updateConfigUI() {
         const isSel = state.config.positions.includes(p);
         btn.className = `config-btn py-3 rounded-lg text-xs font-black ${isSel ? 'selected' : ''}`;
     });
-    // Focused drill
-    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'POSTFLOP_CBET'].forEach(s => {
+    // Focused drill — must match the scenario set in buildDrillConfig
+    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(s => {
         const btn = document.getElementById(`drill-sc-${s}`);
         if (!btn) return;
         const isSel = drillState.scenario === s;
@@ -1590,6 +1590,11 @@ function generateNextRound() {
             state.squeezeCaller = p.caller1;
             state.squeezeCaller2 = p.caller2;
             state.oppPos = parts[1];
+        } else if (state.scenario === 'PUSH_FOLD') {
+            state.currentPos = parts[1];
+            state.oppPos = '';
+            const bbStr = parts[2] || '10BB';
+            state.stackBB = parseInt(bbStr) || 10;
         } else {
             // Fallback for any other scenario with a pos_vs_pos key
             const [p, o] = parts[1].split('_vs_');
