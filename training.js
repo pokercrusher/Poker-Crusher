@@ -30,8 +30,148 @@ let dailyRunState = {
     runStreak: 0,           // correct-in-a-row (score)
     ended: false,           // set true on first miss
     shownComplete: false,   // prevent double-modal
-    bySpot: {}              // per-spot attempts in this run (for leak)
+    bySpot: {},             // per-spot attempts in this run (for leak)
+    allowedScenarios: [],   // scenario pool for this run
+    _savedConfig: null,
+    _rerollGuard: 0
 };
+
+// Daily Run difficulty registry.
+//
+// Keep all tier tuning in this one block so future node/tree additions only need:
+// 1) add the scenario key to the appropriate tier array below
+// 2) ensure the scenario is actually supported by the current codebase/range data
+//
+// Pools are cumulative:
+// - easy   = foundational/common spots only
+// - medium = easy + moderately complex spots
+// - hard   = medium + highest-complexity currently supported spots
+const DAILY_RUN_TIER_RULES = {
+    easy: {
+        order: 0,
+        label: 'Warm-Up',
+        scenarios: [
+            'RFI',
+            'FACING_RFI'
+        ]
+    },
+    medium: {
+        order: 1,
+        label: 'Grind',
+        scenarios: [
+            'VS_LIMP',
+            'RFI_VS_3BET'
+        ]
+    },
+    hard: {
+        order: 2,
+        label: 'Boss',
+        scenarios: [
+            'SQUEEZE',
+            'SQUEEZE_2C',
+            'PUSH_FOLD',
+            'POSTFLOP_CBET'
+        ]
+    }
+};
+
+function getDailyRunTierNamesUpTo(option) {
+    const maxOrder = Number((DAILY_RUN_TIER_RULES[option] || {}).order);
+    return Object.keys(DAILY_RUN_TIER_RULES)
+        .filter(name => Number((DAILY_RUN_TIER_RULES[name] || {}).order) <= maxOrder)
+        .sort((a, b) => Number(DAILY_RUN_TIER_RULES[a].order) - Number(DAILY_RUN_TIER_RULES[b].order));
+}
+
+function getDailyRunConfiguredScenariosForOption(option) {
+    const seen = new Set();
+    const ordered = [];
+    getDailyRunTierNamesUpTo(option).forEach(tierName => {
+        const list = (DAILY_RUN_TIER_RULES[tierName] && DAILY_RUN_TIER_RULES[tierName].scenarios) || [];
+        list.forEach(sc => {
+            if (!seen.has(sc)) {
+                seen.add(sc);
+                ordered.push(sc);
+            }
+        });
+    });
+    return ordered;
+}
+
+function applyDailyRunHUDState(active) {
+    try {
+        const dr = document.getElementById('dr-round-counter');
+        const dc = document.getElementById('drill-counter');
+        const sb = document.getElementById('streak-best-block');
+        if (dr) dr.classList.toggle('hidden', !active);
+        if (dc) dc.classList.toggle('hidden', !!active);
+        if (sb) sb.classList.toggle('hidden', !active);
+        if (active) {
+            const bestEl = document.getElementById('streak-best');
+            if (bestEl) bestEl.textContent = String(state.global.bestStreak || 0);
+            updateDRRoundCounter();
+        }
+    } catch(_) {}
+}
+
+function restoreDailyRunConfigIfNeeded() {
+    if (dailyRunState && dailyRunState._savedConfig) {
+        try { state.config = dailyRunState._savedConfig; } catch(_) {}
+    }
+    if (dailyRunState) dailyRunState._savedConfig = null;
+}
+
+function resetDailyRunState(opts) {
+    const options = Object.assign({ restoreConfig: true }, opts || {});
+    if (options.restoreConfig) restoreDailyRunConfigIfNeeded();
+    dailyRunState.active = false;
+    dailyRunState.option = null;
+    dailyRunState.startedAt = 0;
+    dailyRunState.total = 0;
+    dailyRunState.correct = 0;
+    dailyRunState.runStreak = 0;
+    dailyRunState.ended = false;
+    dailyRunState.shownComplete = false;
+    dailyRunState.bySpot = {};
+    dailyRunState.allowedScenarios = [];
+    dailyRunState._rerollGuard = 0;
+    applyDailyRunHUDState(false);
+}
+
+function getDailyRunSupportedScenarios() {
+    const supported = [];
+    if (ALL_POSITIONS.some(p => rfiRanges && rfiRanges[p])) supported.push('RFI');
+    if (typeof facingRfiRanges !== 'undefined' && Object.keys(facingRfiRanges).length) supported.push('FACING_RFI');
+    if (typeof rfiVs3BetRanges !== 'undefined' && Object.keys(rfiVs3BetRanges).length) supported.push('RFI_VS_3BET');
+    if (typeof allFacingLimps !== 'undefined' && Object.keys(allFacingLimps).length) supported.push('VS_LIMP');
+    if (typeof squeezeRanges !== 'undefined' && Object.keys(squeezeRanges).length) supported.push('SQUEEZE');
+    if (typeof squeezeVsRfiTwoCallers !== 'undefined' && Object.keys(squeezeVsRfiTwoCallers).length) supported.push('SQUEEZE_2C');
+    if (typeof PF_PUSH !== 'undefined' && Object.keys(PF_PUSH).length) supported.push('PUSH_FOLD');
+    if (typeof generatePostflopSpot === 'function') supported.push('POSTFLOP_CBET');
+    return supported.filter(s => !!SCENARIO_NAMES[s]);
+}
+
+function getDailyRunScenarioPool(option) {
+    const configured = getDailyRunConfiguredScenariosForOption(option);
+    const supported = new Set(getDailyRunSupportedScenarios());
+    return configured.filter(s => supported.has(s));
+}
+
+function installDailyRunExitPatch() {
+    if (window.__dailyRunExitPatchInstalled) return;
+    if (typeof window.exitToMenu !== 'function') {
+        setTimeout(installDailyRunExitPatch, 0);
+        return;
+    }
+    const original = window.exitToMenu;
+    window.exitToMenu = function() {
+        const shouldReset = !!(dailyRunState && (dailyRunState.active || dailyRunState.ended || dailyRunState._savedConfig));
+        const result = original.apply(this, arguments);
+        if (shouldReset) resetDailyRunState({ restoreConfig: true });
+        return result;
+    };
+    window.__dailyRunExitPatchInstalled = true;
+}
+setTimeout(installDailyRunExitPatch, 0);
 
 function loadDailyRunMeta() {
     const defaults = {
@@ -166,6 +306,7 @@ function hideAllScreens() {
 
 // Show main menu (alias used by several screens)
 function showMenu() {
+    applyDailyRunHUDState(false);
     hideAllScreens();
     const menu = document.getElementById('menu-screen');
     if (menu) menu.classList.remove('hidden');
@@ -173,6 +314,7 @@ function showMenu() {
 }
 
 function showDailyRunMenu() {
+    applyDailyRunHUDState(false);
     hideAllScreens();
     document.getElementById('daily-run-screen').classList.remove('hidden');
     updateDailyRunUI();
@@ -280,6 +422,16 @@ function startDailyRun(option) {
     const { completedToday } = getDailyRunLockInfo();
     if (completedToday[option]) { updateDailyRunUI(); return; }
 
+    const scenarioPool = getDailyRunScenarioPool(option);
+    if (!scenarioPool.length) {
+        console.warn('[DailyRun] No supported scenarios for option:', option);
+        updateDailyRunUI();
+        return;
+    }
+
+    // Clean out any stale state before starting a fresh run.
+    resetDailyRunState({ restoreConfig: true });
+
     dailyRunState.active = true;
     dailyRunState.option = option; // easy|medium|hard
     dailyRunState.startedAt = Date.now();
@@ -289,29 +441,26 @@ function startDailyRun(option) {
     dailyRunState.ended = false;
     dailyRunState.shownComplete = false;
     dailyRunState.bySpot = {};
+    dailyRunState.allowedScenarios = [...scenarioPool];
     dailyRunState._rerollGuard = 0;
+    dailyRunState._savedConfig = JSON.parse(JSON.stringify(state.config));
 
-    // Start trainer session using user's current config (no UI/layout special-casing)
+    // Daily Run owns its own spot pool; do not inherit random user config state.
+    state.config.scenarios = [...scenarioPool];
+    state.config.positions = [...ALL_POSITIONS];
+
+    // Start trainer session using a clean DR-owned config.
     state.sessionStats = { total: 0, correct: 0, streak: 0 };
     state.sessionLog = [];
+    drillState.active = false;
 
     hideAllScreens();
     document.getElementById('trainer-screen').classList.remove('hidden');
 
-    // FIX Bug C: attach ResizeObserver so table layout scales correctly in Daily Run
     const _drFelt = document.getElementById('poker-felt-container');
     if (_drFelt) { try { ro.observe(_drFelt); } catch(_) {} }
 
-    // UX: show DR round counter + best streak, hide focused-drill hands counter
-    try {
-        document.getElementById('dr-round-counter').classList.remove('hidden');
-        document.getElementById('drill-counter').classList.add('hidden');
-        document.getElementById('streak-best-block').classList.remove('hidden');
-        const bestEl = document.getElementById('streak-best');
-        if (bestEl) bestEl.textContent = String(state.global.bestStreak || 0);
-        updateDRRoundCounter();
-    } catch(e) {}
-
+    applyDailyRunHUDState(true);
     updateUI();
     try { updateDrillCounter(); } catch(_) {}
     safeGenerateNextRound();
@@ -327,16 +476,10 @@ function updateDRRoundCounter() {
 
 
 function dailyRunAllowsScenario(scenario) {
-    const opt = dailyRunState ? dailyRunState.option : null;
-    if (!opt) return true;
-    if (opt === 'easy') {
-        return scenario === 'RFI' || scenario === 'FACING_RFI';
-    }
-    if (opt === 'medium') {
-        return scenario === 'RFI' || scenario === 'FACING_RFI' || scenario === 'VS_LIMP' || scenario === 'RFI_VS_3BET';
-    }
-    // hard
-    return scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C' || scenario === 'RFI_VS_3BET' || scenario === 'VS_LIMP' || scenario === 'FACING_RFI' || scenario === 'RFI' || scenario === 'PUSH_FOLD';
+    if (!dailyRunState || !dailyRunState.active) return true;
+    const pool = Array.isArray(dailyRunState.allowedScenarios) ? dailyRunState.allowedScenarios : [];
+    if (!pool.length) return true;
+    return pool.includes(scenario);
 }
 
 function dailyRunSpotAllowedNow() {
@@ -345,14 +488,14 @@ function dailyRunSpotAllowedNow() {
 }
 function checkDailyRunComplete() {
     if (!dailyRunState) return false;
-    // ended can be true even after active=false (set in miss handler)
+    if (!dailyRunState.active && !dailyRunState.ended) return false;
     if (dailyRunState.ended && !dailyRunState.shownComplete) {
         dailyRunState.shownComplete = true;
         dailyRunState.active = false;
         showDailyRunComplete();
         return true;
     }
-    return !!(dailyRunState.ended);
+    return !!(dailyRunState.active && dailyRunState.ended);
 }
 
 function showDailyRunComplete() {
@@ -474,18 +617,21 @@ function showDailyRunComplete() {
         }
     }
 
-    // mark run as finished
+    // mark run as finished but do not clear until the user leaves the DR flow
     dailyRunState.active = false;
 }
 
 function drPlayAgain() {
     const modal = document.getElementById('daily-run-complete-screen');
     if (modal) modal.classList.add('hidden');
+    resetDailyRunState({ restoreConfig: true });
     showDailyRunMenu();
 }
 
 function endDailyRunToMenu() {
-    document.getElementById('daily-run-complete-screen').classList.add('hidden');
+    const modal = document.getElementById('daily-run-complete-screen');
+    if (modal) modal.classList.add('hidden');
+    resetDailyRunState({ restoreConfig: true });
     showMenu();
 }
 
@@ -1673,87 +1819,39 @@ function generateNextRound() {
 
     // 
 
-    // Daily Run: enforce difficulty filter by scenario (low-risk gate).
+    // Daily Run: enforce the run-owned scenario pool strictly.
     if (dailyRunState && dailyRunState.active && !dailyRunAllowsScenario(state.scenario)) {
         dailyRunState._rerollGuard = (dailyRunState._rerollGuard || 0) + 1;
-        if (dailyRunState._rerollGuard < 80) {
+        if (dailyRunState._rerollGuard < 120) {
             return generateNextRound();
-        } else {
-            console.warn('[DailyRun] Could not find an allowed spot after many rerolls. Proceeding with current spot.');
         }
+        console.warn('[DailyRun] Could not build an allowed spot after many rerolls. Resetting guard and trying again.');
+        dailyRunState._rerollGuard = 0;
+        state._reviewHandOverride = null;
+        return generateNextRound();
     }
 // Sample hand using EdgeWeight (edge-case focus), or use review override
     // POSTFLOP: skip hand sampling, render community cards and postflop buttons instead
     if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
         clearToast();
-        const spot = state.postflop;
-
-        // Phase 2: render hero hole cards if available, otherwise clear
+        // Clear preflop card displays
         const handDisplay = document.getElementById('hand-display');
-        if (handDisplay) {
-            if (spot.heroHand && spot.heroHand.cards) {
-                // Store handKey on state for consistency with preflop path
-                state.currentHand = spot.heroHand.handKey || '';
-                // Render concrete hero cards using the same card HTML as preflop
-                const color = (s) => (s === '♥' || s === '♦' || s === 'h' || s === 'd') ? 'text-rose-600' : 'text-slate-900';
-                const suitSym = (s) => SUIT_SYMBOLS[s] || s;
-                const cardHtml = (r, s) => `
-                    <div class="hero-card-wrapper" style="width:var(--hero-card-w, 64px);height:var(--hero-card-h, 96px);">
-                        <div class="hero-card-inner flipped" style="width:100%;height:100%;">
-                            <div class="hero-card-back-face"></div>
-                            <div class="hero-card-front card-display flex flex-col items-center" style="width:100%;height:100%;">
-                                <div class="h-1/2 w-full flex items-end justify-center pb-1"><span class="font-black leading-none ${color(s)}" style="font-size:var(--hero-rank-size, 32px);">${r}</span></div>
-                                <div class="h-1/2 w-full flex items-start justify-center pt-1"><span class="leading-none ${color(s)}" style="font-size:var(--hero-suit-size, 28px);">${suitSym(s)}</span></div>
-                            </div>
-                        </div>
-                    </div>`;
-                handDisplay.innerHTML = cardHtml(spot.heroHand.cards[0].rank, spot.heroHand.cards[0].suit)
-                                      + cardHtml(spot.heroHand.cards[1].rank, spot.heroHand.cards[1].suit);
-            } else {
-                handDisplay.innerHTML = '';
-            }
-        }
-
-        // Show flop info line with hand class label when available
+        if (handDisplay) handDisplay.innerHTML = '';
+        // Show flop info line
         const flopInfoEl = document.getElementById('flop-info-line');
         if (flopInfoEl) {
+            const spot = state.postflop;
             const archLabel = ARCHETYPE_LABELS[spot.boardArchetype] || spot.boardArchetype;
-            let infoHtml = `<span class="text-slate-400">Flop:</span> ${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel})</span>`;
-            flopInfoEl.innerHTML = infoHtml;
+            flopInfoEl.innerHTML = `<span class="text-slate-400">Flop:</span> ${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel})</span>`;
             flopInfoEl.classList.remove('hidden');
         }
-
-        // Render community cards on felt.
+        // Render community cards on felt
         renderCommunityCards(state.postflop.flopCards);
-
-        // updateTable() clears both cards-layer and bets-layer, so run it first.
+        // Clear preflop card/bet layers
+        const cl = document.getElementById('cards-layer'); if (cl) cl.innerHTML = '';
+        const bl = document.getElementById('bets-layer'); if (bl) bl.innerHTML = '';
+        // Update table seats
         try { updateTable(state.postflop.heroPos, state.postflop.villainPos); } catch(_) {}
-
-        // Remove seat card-backs for the settled flop scene.
-        const cl = document.getElementById('cards-layer');
-        if (cl) cl.innerHTML = '';
-
-        // Rebuild the visible preflop money after updateTable() has finished clearing layers.
-        const bl = document.getElementById('bets-layer');
-        if (bl) {
-            bl.innerHTML = '';
-            try {
-                const heroCoords = getSeatCoords(spot.heroPos, spot.heroPos);
-                const villCoords = getSeatCoords(spot.heroPos, spot.villainPos);
-                const openBB = getOpenSizeBB();
-
-                // Hero open and villain flat-call.
-                if (heroCoords) animateChip(bl, heroCoords, openBB);
-                if (villCoords) animateChip(bl, villCoords, openBB);
-
-                // Dead small blind money when SB is not one of the active players.
-                if (spot.heroPos !== 'SB' && spot.villainPos !== 'SB') {
-                    const sbCoords = getSeatCoords(spot.heroPos, 'SB');
-                    if (sbCoords) animateChip(bl, sbCoords, 0.5, '$1');
-                }
-            } catch(_) {}
-        }
-
         // Render postflop buttons (hidden, then reveal)
         renderPostflopButtons(true);
         setTimeout(() => renderPostflopButtons(false), 300);
@@ -2059,10 +2157,7 @@ function _flopCardsHtml(cards){ return cards.map(c => { const color=flopSuitColo
 
 function renderPostflopButtons(hidden){
     const container=document.getElementById('action-buttons');
-    const open$ = getOpenSize$();
-    const pot$ = open$ * 2 + 1; // hero raise + BB call + SB dead money
-    const cbet$ = Math.max(1, Math.round(pot$ * 0.33));
-    setSizingHint(`Pot: ${fmt$(pot$)} · C-Bet 33%: ${fmt$(cbet$)}`);
+    setSizingHint('');
     const sc=hidden?'action-buttons-hidden':'action-buttons-revealed';
     const bs=`style="padding:var(--btn-pad, 14px) 0;font-size:var(--btn-font, 14px);"`;
     container.innerHTML=`<div class="grid grid-cols-2 gap-3 ${sc}"><button onclick="handlePostflopInput('CHECK')" ${bs} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">CHECK</button><button onclick="handlePostflopInput('CBET')" ${bs} class="bg-orange-600 rounded-2xl font-black text-white shadow-lg">C-BET</button></div>`;
