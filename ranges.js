@@ -1385,43 +1385,59 @@ const POSTFLOP_STRATEGY={};
     const OFF={UTG_vs_BB:0.05,LJ_vs_BB:0.03,HJ_vs_BB:0.02,CO_vs_BB:0,BTN_vs_BB:0,BTN_vs_SB:0,SB_vs_BB:0,CO_vs_BTN:-0.03};
     for(const[fk,fi]of Object.entries(POSTFLOP_PREFLOP_FAMILIES)){const base=fi.positionState==='IP'?IP:OOP;const off=OFF[fk]||0;for(const arch of FLOP_ARCHETYPES){const raw=base[arch];if(!raw)continue;const ab=Math.max(0.05,Math.min(0.95,raw.bet33+off));const ac=parseFloat((1-ab).toFixed(2));const actions={check:ac,bet33:parseFloat(ab.toFixed(2))};const pa=ab>=0.50?'bet33':'check';const sk=makePostflopSpotKey({potType:'SRP',preflopFamily:fk,street:'FLOP',heroRole:'PFR',positionState:fi.positionState,nodeType:'CBET_DECISION',boardArchetype:arch});POSTFLOP_STRATEGY[sk]={actions,preferredAction:pa,reasoning:raw.r,simplification:'Phase 1: C-Bet vs Check'};}}
 })();
-function generatePostflopSpot(){
-    const fams=Object.keys(POSTFLOP_PREFLOP_FAMILIES);
-    const fam=fams[Math.floor(Math.random()*fams.length)];
-    const fi=POSTFLOP_PREFLOP_FAMILIES[fam];
-    const arch=pickFlopArchetype();
+// Phase 2: Config-screen postflop training serves ONLY hero-hand-aware spots.
+// Every generated spot must include a real hero hand, a hand class, and a valid
+// POSTFLOP_STRATEGY_V2 entry.  The old archetype-only prototype families are
+// preserved internally (POSTFLOP_STRATEGY) but are NOT exposed through the
+// normal training flow.  Unsupported families will be added in future phases.
+function generatePostflopSpot(maxRetries){
+    maxRetries = maxRetries || 20;
+    // Only pick from hero-hand-aware families (Phase 2 scope: SRP, PFR, IP)
+    const fams = [...HERO_HAND_AWARE_FAMILIES];
 
-    // Phase 2: deal hero hand if this family supports hero-hand-aware training
-    const heroHandAware = HERO_HAND_AWARE_FAMILIES.has(fam);
-    let heroHand = null;
-    let heroHandClass = null;
-    let fc;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
 
-    if (heroHandAware) {
-        // Deal hero hand from the opening range for this position
-        heroHand = _dealPostflopHeroHand(fi.heroPos);
-        // Generate flop that doesn't conflict with hero cards
-        fc = _generateFlopNoConflict(arch, heroHand);
-        heroHandClass = classifyFlopHand(heroHand, fc);
-    } else {
-        fc = generateFlopForArchetype(arch);
+        const arch = pickFlopArchetype();
+        const heroHand = _dealPostflopHeroHand(fi.heroPos);
+        const fc = _generateFlopNoConflict(arch, heroHand);
+        const heroHandClass = classifyFlopHand(heroHand, fc);
+
+        const spot = {
+            potType:'SRP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
+            positionState:fi.positionState, nodeType:'CBET_DECISION',
+            boardArchetype:arch, heroPos:fi.heroPos, villainPos:fi.villainPos,
+            flopCards:fc, flopClassification:classifyFlop(fc),
+            heroHand: heroHand,
+            heroHandClass: heroHandClass
+        };
+        spot.spotKey = makePostflopSpotKeyV2(spot);
+        spot.strategy = POSTFLOP_STRATEGY_V2[spot.spotKey] || null;
+
+        // Only accept spots with a valid Phase 2 strategy entry
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+        // Otherwise retry with a different random family / archetype / hand
     }
 
-    const spot={
-        potType:'SRP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
-        positionState:fi.positionState, nodeType:'CBET_DECISION',
-        boardArchetype:arch, heroPos:fi.heroPos, villainPos:fi.villainPos,
+    // Last resort: force a known-good combination
+    console.warn('[Postflop] All retries exhausted; forcing BTN_vs_BB fallback.');
+    const fi = POSTFLOP_PREFLOP_FAMILIES['BTN_vs_BB'];
+    const arch = 'A_HIGH_DRY';
+    const heroHand = _dealPostflopHeroHand('BTN');
+    const fc = _generateFlopNoConflict(arch, heroHand);
+    const heroHandClass = classifyFlopHand(heroHand, fc);
+    const spot = {
+        potType:'SRP', preflopFamily:'BTN_vs_BB', street:'FLOP', heroRole:'PFR',
+        positionState:'IP', nodeType:'CBET_DECISION',
+        boardArchetype:arch, heroPos:'BTN', villainPos:'BB',
         flopCards:fc, flopClassification:classifyFlop(fc),
         heroHand: heroHand,
         heroHandClass: heroHandClass
     };
-    spot.spotKey = heroHandClass
-        ? makePostflopSpotKeyV2(spot)
-        : makePostflopSpotKey(spot);
-    // Try hero-hand-aware strategy first, fall back to archetype-only
-    spot.strategy = (heroHandClass ? POSTFLOP_STRATEGY_V2[spot.spotKey] : null)
-        || POSTFLOP_STRATEGY[makePostflopSpotKey(spot)]
-        || null;
+    spot.spotKey = makePostflopSpotKeyV2(spot);
+    spot.strategy = POSTFLOP_STRATEGY_V2[spot.spotKey] || null;
     return spot;
 }
 
