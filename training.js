@@ -289,7 +289,9 @@ function formatDuration(ms) {
 function hideAllScreens() {
     const ids = [
         'menu-screen','config-screen','trainer-screen','stats-screen','settings-screen',
-        'challenge-screen','library-screen','daily-run-screen'
+        'challenge-screen','library-screen','daily-run-screen',
+        // end-state screens that can persist across mode transitions
+        'review-preview-screen','review-complete-screen','session-summary-screen'
     ];
     ids.forEach(id => {
         const el = document.getElementById(id);
@@ -308,6 +310,10 @@ function hideAllScreens() {
 function showMenu() {
     applyDailyRunHUDState(false);
     hideAllScreens();
+    // Safety: clear any stale mode flags so they can't contaminate the next session
+    drillState.active = false;
+    drillState.lockedLimperBucket = null;
+    if (typeof challengeState !== 'undefined') challengeState.active = false;
     const menu = document.getElementById('menu-screen');
     if (menu) menu.classList.remove('hidden');
     try { updateMenuUI(); } catch(_) {}
@@ -841,8 +847,9 @@ function startChallengeNode(nodeId) {
 
     // Extra per-node params (e.g., limper bucket)
     if (node.scenario === 'VS_LIMP' && node.limperBucket) {
-        state.limperBucket = node.limperBucket;
         drillState.lockedLimperBucket = node.limperBucket;
+        // Do NOT set state.limperBucket here — generateNextRound() will apply
+        // drillState.lockedLimperBucket each hand, keeping chart browsing isolated.
     } else {
         drillState.lockedLimperBucket = null;
     }
@@ -1507,10 +1514,10 @@ function countCombos(rangeStr) {
 
 function zoomSpot(pos, opp, cat, spotIdx) {
     _chartIsReview = true;
-    if (cat === 'VS_LIMP') {
-        state.limperBucket = libSel.bucket || '1L';
-    }
-    showChart(pos, null, cat, opp);
+    // Pass the library's selected bucket as a chart-local override so we never
+    // mutate state.limperBucket (which belongs to the active training session).
+    const bucket = (cat === 'VS_LIMP') ? (libSel.bucket || '1L') : null;
+    showChart(pos, null, cat, opp, bucket);
 }
 
 // Legacy stub — keep for backward compat with any saved references
@@ -1834,39 +1841,9 @@ function generateNextRound() {
     // POSTFLOP: skip hand sampling, render community cards and postflop buttons instead
     if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
         clearToast();
-        // Render the actual dealt hero hole cards face-up.
-        // spot.heroHand.cards = [{rank, suit}, {rank, suit}] with concrete suits.
-        // We pre-apply the 'flipped' class so they show face-up immediately —
-        // there is no flip animation step in the postflop path.
-        (function() {
-            const spot = state.postflop;
-            const handDisplay = document.getElementById('hand-display');
-            if (!handDisplay) return;
-            if (spot && spot.heroHand && spot.heroHand.cards && spot.heroHand.cards.length === 2) {
-                const mkCard = function(rank, suit) {
-                    const sym = SUIT_SYMBOLS[suit] || suit;
-                    const colorCls = (suit === 'h' || suit === 'd') ? 'text-rose-600' : 'text-slate-900';
-                    return '<div class="hero-card-wrapper" style="width:var(--hero-card-w,64px);height:var(--hero-card-h,96px);">' +
-                        '<div class="hero-card-inner flipped" style="width:100%;height:100%;">' +
-                            '<div class="hero-card-back-face"></div>' +
-                            '<div class="hero-card-front card-display flex flex-col items-center" style="width:100%;height:100%;">' +
-                                '<div class="h-1/2 w-full flex items-end justify-center pb-1">' +
-                                    '<span class="font-black leading-none ' + colorCls + '" style="font-size:var(--hero-rank-size,32px);">' + rank + '</span>' +
-                                '</div>' +
-                                '<div class="h-1/2 w-full flex items-start justify-center pt-1">' +
-                                    '<span class="leading-none ' + colorCls + '" style="font-size:var(--hero-suit-size,28px);">' + sym + '</span>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>';
-                };
-                handDisplay.innerHTML = mkCard(spot.heroHand.cards[0].rank, spot.heroHand.cards[0].suit) +
-                                        mkCard(spot.heroHand.cards[1].rank, spot.heroHand.cards[1].suit);
-            } else {
-                // heroHand data missing — fall back to card backs so layout stays intact
-                renderHeroCardBacks();
-            }
-        })();
+        // Clear preflop card displays
+        const handDisplay = document.getElementById('hand-display');
+        if (handDisplay) handDisplay.innerHTML = '';
         // Show flop info line
         const flopInfoEl = document.getElementById('flop-info-line');
         if (flopInfoEl) {
@@ -2187,25 +2164,10 @@ function _flopCardsHtml(cards){ return cards.map(c => { const color=flopSuitColo
 
 function renderPostflopButtons(hidden){
     const container=document.getElementById('action-buttons');
+    setSizingHint('');
     const sc=hidden?'action-buttons-hidden':'action-buttons-revealed';
     const bs=`style="padding:var(--btn-pad, 14px) 0;font-size:var(--btn-font, 14px);"`;
-
-    // Compute pot and c-bet size from the active postflop spot so the button
-    // shows a dollar amount and the sizing hint explains the math.
-    let cbetLabel = 'C-BET';
-    let hintText = '';
-    try {
-        const spot = state.postflop;
-        if (spot && typeof getScenarioPot$ === 'function') {
-            const pot$ = getScenarioPot$('POSTFLOP_CBET');
-            const cbet$ = Math.round(pot$ * 0.33);
-            cbetLabel = `C-BET $${cbet$}`;
-            hintText = `33% pot · pot = $${pot$}`;
-        }
-    } catch(_) {}
-
-    setSizingHint(hintText);
-    container.innerHTML=`<div class="grid grid-cols-2 gap-3 ${sc}"><button onclick="handlePostflopInput('CHECK')" ${bs} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">CHECK</button><button onclick="handlePostflopInput('CBET')" ${bs} class="bg-orange-600 rounded-2xl font-black text-white shadow-lg">${cbetLabel}</button></div>`;
+    container.innerHTML=`<div class="grid grid-cols-2 gap-3 ${sc}"><button onclick="handlePostflopInput('CHECK')" ${bs} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">CHECK</button><button onclick="handlePostflopInput('CBET')" ${bs} class="bg-orange-600 rounded-2xl font-black text-white shadow-lg">C-BET</button></div>`;
 }
 
 function renderCommunityCards(cards){
@@ -2222,12 +2184,17 @@ function handlePostflopInput(action){
     if(grid){ grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
     const spot=state.postflop;
     if(!spot||!spot.strategy){ __endResolve(); return; }
-    const result=scorePostflopAction(action,spot.strategy,spot);
+    const result=scorePostflopAction(action,spot.strategy);
 
     // Stats
     postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-    const srKey=`${spot.spotKey}|${spot.boardArchetype}`;
+
+    // Fix 1 (Batch 1): use canonical postflop SR key builder instead of inline template.
+    const srKey = buildPostflopSRKey(spot.spotKey, spot.boardArchetype);
     SR.update(srKey, result.correct?'Good':'Again');
+    // Track reviewed hands so they don't show again today (mirrors preflop handleInput).
+    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
+
     if(!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype]={total:0,correct:0};
     postflopStats.byArchetype[spot.boardArchetype].total++;
     if(!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily]={total:0,correct:0};
@@ -2242,7 +2209,36 @@ function handlePostflopInput(action){
     if(!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey]={total:0,correct:0};
     state.global.bySpot[spot.spotKey].total++;
 
-    const logEntry={ scenario:sc, pos:spot.heroPos, oppPos:spot.villainPos, hand:flopStr(spot.flopCards), action, correctAction:result.correct?action:(action==='CBET'?'CHECK':'CBET'), correct:result.correct, spotKey:spot.spotKey, archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback, flopCards:spot.flopCards, heroHand:spot.heroHand, heroHandClass:spot.heroHandClass, strategy:spot.strategy, grade:result.grade, freqPct:result.freqPct, reasoning:result.reasoning };
+    // Fix 4 (Batch 1): track byPos / byPosGroup for postflop (mirrors preflop handleInput).
+    const _pfHero = spot.heroPos;
+    if(!state.global.byPos[_pfHero]) state.global.byPos[_pfHero]={total:0,correct:0};
+    state.global.byPos[_pfHero].total++;
+    const _pfPg = normalizePos(_pfHero);
+    if(!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg]={total:0,correct:0};
+    state.global.byPosGroup[_pfPg].total++;
+
+    // Fix 3 (Batch 1): Daily Run tracking — structurally identical to preflop handleInput block.
+    // Postflop misses must end the run; correct answers must advance the streak counter.
+    if (dailyRunState && dailyRunState.active) {
+        dailyRunState.total++;
+        if (result.correct) {
+            dailyRunState.correct++;
+            dailyRunState.runStreak++;
+            try { updateDRRoundCounter(); } catch(_){}
+            try { if(navigator.vibrate) navigator.vibrate(25); } catch(_){}
+        } else {
+            // First wrong answer ends the Daily Run, exactly like preflop.
+            dailyRunState.ended = true;
+            try { const ov=document.getElementById('miss-flash-overlay'); if(ov){ov.classList.remove('active');void ov.offsetWidth;ov.classList.add('active');} } catch(_){}
+            try { if(navigator.vibrate) navigator.vibrate([40,30,40]); } catch(_){}
+        }
+        const _drSpotKey = spot.spotKey;
+        if (!dailyRunState.bySpot[_drSpotKey]) dailyRunState.bySpot[_drSpotKey] = { total: 0, correct: 0 };
+        dailyRunState.bySpot[_drSpotKey].total++;
+        if (result.correct) dailyRunState.bySpot[_drSpotKey].correct++;
+    }
+
+    const logEntry={ scenario:sc, pos:spot.heroPos, oppPos:spot.villainPos, hand:flopStr(spot.flopCards), action, correctAction:result.correct?action:(action==='CBET'?'CHECK':'CBET'), correct:result.correct, spotKey:spot.spotKey, archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback };
     state.sessionLog.unshift(logEntry);
 
     if(result.correct){
@@ -2254,69 +2250,33 @@ function handlePostflopInput(action){
         postflopStats.byPosition[spot.positionState].correct++;
         state.global.byScenario[sc].correct++;
         state.global.bySpot[spot.spotKey].correct++;
+        // Fix 4 continued: correct-answer increments for new stat paths.
+        state.global.byPos[_pfHero].correct++;
+        state.global.byPosGroup[_pfPg].correct++;
+        showToast(result.grade==='marginal'?"Correct · Close spot":"Correct","correct",result.grade==='marginal'?700:500);
         updateUI(); saveProgress(); savePostflopStats();
-        // Show feedback modal for correct answers — user taps ✕ or backdrop to advance.
-        setTimeout(()=>showPostflopFeedback(spot,result,true),150);
+        window.__roundGuard.nextTimer=setTimeout(()=>{ __endResolve(); if(!checkDrillComplete()&&!checkDailyRunComplete()) safeGenerateNextRound(); },600);
     } else {
         postflopStats.streak=0; state.sessionStats.streak=0;
+        const fb=result.grade==='marginal_wrong'?`Close · ${result.preferredLabel} preferred (${result.freqPct}%)`:`Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
+        showToast(fb,"incorrect",2000);
         updateUI(); saveProgress(); savePostflopStats();
-        // Show feedback modal — no auto-advance; user must close it.
-        setTimeout(()=>showPostflopFeedback(spot,result,false),150);
+        setTimeout(()=>showPostflopFeedback(spot,result),200);
+        setTimeout(()=>{ const m=document.getElementById('postflop-feedback-modal'); if(m&&!m.classList.contains('hidden')) closePostflopFeedback(); if(!checkDrillComplete()&&!checkDailyRunComplete()){ __endResolve(); safeGenerateNextRound(); } },4000);
     }
 }
 
-function showPostflopFeedback(spot,result,isCorrect){
+function showPostflopFeedback(spot,result){
     let modal=document.getElementById('postflop-feedback-modal');
-    if(!modal){ modal=document.createElement('div'); modal.id='postflop-feedback-modal'; modal.className='fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6'; document.body.appendChild(modal); }
-    // Backdrop tap closes (and advances round when in active session)
-    modal.onclick=function(e){ if(e.target===modal) closePostflopFeedback(true); };
-
+    if(!modal){ modal=document.createElement('div'); modal.id='postflop-feedback-modal'; modal.className='fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6'; modal.onclick=e=>{if(e.target===modal) closePostflopFeedback();}; document.body.appendChild(modal); }
     const archLabel=ARCHETYPE_LABELS[spot.boardArchetype]||spot.boardArchetype;
-    const strat=spot.strategy||{actions:{bet33:0,check:0},reasoning:''};
-    const betFreq=Math.round((strat.actions.bet33||0)*100);
-    const checkFreq=Math.round((strat.actions.check||0)*100);
-
-    // Header verdict line
-    const handClassLabel = spot.heroHandClass ? (HAND_CLASS_LABELS[spot.heroHandClass]||spot.heroHandClass) : null;
-    let verdictHtml, borderCls;
-    if(isCorrect){
-        const gradeTxt = result.grade==='marginal' ? 'Correct · Close spot' : 'Correct';
-        verdictHtml=`<span class="text-emerald-400 font-black">✓ ${gradeTxt}</span>${handClassLabel?` <span class="text-slate-500 text-[10px]">[${handClassLabel}]</span>`:''}`;
-        borderCls='border-emerald-800/60';
-    } else {
-        const gradeTxt = result.grade==='marginal_wrong' ? 'Close' : 'Incorrect';
-        verdictHtml=`<span class="text-rose-400 font-black">✗ ${gradeTxt}</span>${handClassLabel?` <span class="text-slate-500 text-[10px]">[${handClassLabel}]</span>`:''}`;
-        borderCls='border-rose-900/60';
-    }
-
-    // Hero hand html
-    const heroCardHtml = (spot.heroHand&&spot.heroHand.cards&&spot.heroHand.cards.length===2)
-        ? spot.heroHand.cards.map(c=>{const col=flopSuitColor(c.suit);return `<span style="color:${col};font-weight:900;">${c.rank}${SUIT_SYMBOLS[c.suit]}</span>`;}).join(' ')
-        : '';
-
-    // Your action vs preferred
-    const yourActionLabel = result.correct ? (result.preferredLabel) : (result.preferredLabel==='C-Bet'?'Check':'C-Bet');
-    const correctLabel = result.preferredLabel;
-
-    modal.innerHTML=`<div class="bg-slate-900 border ${borderCls} rounded-2xl p-5 max-w-sm w-full shadow-2xl">
-        <div class="flex items-center justify-between mb-3">
-            <div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}</div>
-            <button onclick="closePostflopFeedback(true)" class="text-slate-500 hover:text-white text-lg font-bold leading-none">✕</button>
-        </div>
-        <div class="flex items-center gap-3 mb-3">
-            ${heroCardHtml ? `<div class="text-sm font-black text-white">${heroCardHtml}</div><div class="text-slate-600 text-xs">on</div>` : ''}
-            <div class="text-sm font-bold text-slate-200">${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
-        </div>
-        <div class="text-sm mb-3">${verdictHtml}${!isCorrect?` · <span class="text-slate-400 text-xs">Correct: <span class="text-emerald-400 font-bold">${correctLabel}</span></span>`:''}</div>
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-2.5 overflow-hidden"><div class="h-full bg-orange-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-orange-400 w-14 text-right">C-Bet ${betFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-2.5 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-14 text-right">Check ${checkFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${strat.reasoning||''}</div>
-        <div class="mt-4 text-center"><button onclick="closePostflopFeedback(true)" class="text-xs text-slate-500 hover:text-white font-bold uppercase tracking-widest">Tap anywhere to continue</button></div>
-    </div>`;
+    const betFreq=Math.round((spot.strategy.actions.bet33||0)*100); const checkFreq=Math.round((spot.strategy.actions.check||0)*100);
+    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
+        <div class="text-sm font-bold text-slate-200 mb-2">${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
+        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-orange-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-orange-400 w-12 text-right">C-Bet ${betFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Check ${checkFreq}%</div></div>
+        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning}</div></div>`;
     modal.classList.remove('hidden');
 }
-function closePostflopFeedback(andAdvance){
-    const m=document.getElementById('postflop-feedback-modal');
-    if(m) m.classList.add('hidden');
-    if(andAdvance){ __endResolve(); if(!checkDrillComplete()&&!checkDailyRunComplete()) safeGenerateNextRound(); }
-}
+function closePostflopFeedback(){ const m=document.getElementById('postflop-feedback-modal'); if(m) m.classList.add('hidden'); }
