@@ -907,6 +907,8 @@ function _startReviewWithQueue(candidates) {
     state.sessionLog = [];
     hideAllScreens();
     document.getElementById('trainer-screen').classList.remove('hidden');
+    // Start layout observer — review session was previously missing this call.
+    if (typeof window._trainerLayoutBoot === 'function') window._trainerLayoutBoot();
     try { ensureTableLayers(true); } catch(_) {}
     updateUI();
     safeGenerateNextRound();
@@ -936,7 +938,8 @@ function getAllSpotKeys() {
     return keys;
 }
 
-// Legacy alias — keeps the ResizeObserver patch in the IIFE working
+// startReviewSession: public entry point — shows the preview screen.
+// The actual trainer launch happens in _startReviewWithQueue via launchReviewSession().
 function startReviewSession() {
     showReviewPreview();
 }
