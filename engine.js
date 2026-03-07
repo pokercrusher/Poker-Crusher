@@ -21,6 +21,213 @@ window.RANGE_AUTO_FIX = false;
 window.SR_EDGE_DEBUG = false;
 
 // ============================================================
+// SHARED UTILITIES (Phase 1 refactor)
+// ============================================================
+// Canonical home for helpers used across engine.js, training.js, and ui.js.
+// Placed after state + dev flags, before SR IIFE, so all downstream code
+// (SR, EdgeWeight, training.js, ui.js) can reference these as plain globals.
+// ranges.js and cloud.js have already executed at this point.
+
+/**
+ * checkRangeHelper — canonical definition.
+ * Returns true if `hand` (e.g. 'AKs') is in the given range `list` (array of range tokens).
+ * Moved here from ui.js; ui.js retains a one-line alias for backward compat.
+ */
+function checkRangeHelper(hand, list) {
+    if (!list) return false;
+    const r1 = hand[0], r2 = hand[1], type = hand[2] || '';
+    const ri1 = RANKS.indexOf(r1), ri2 = RANKS.indexOf(r2);
+
+    for (let item of list) {
+        if (item === hand) return true;
+        if (item.length === 2 && !item.endsWith('+')) {
+            const ir1 = item[0], ir2 = item[1];
+            if (r1 === ir1 && r2 === ir2 && r1 !== r2) return true;
+        }
+        if (item.endsWith('+')) {
+            const base = item.slice(0, -1);
+            const bSuffix = base.endsWith('s') ? 's' : base.endsWith('o') ? 'o' : '';
+            const bR1 = base[0], bR2 = base[1];
+            const bRi1 = RANKS.indexOf(bR1), bRi2 = RANKS.indexOf(bR2);
+            if (bR1 === bR2 && bSuffix === '') {
+                if (r1 === r2 && type === '' && ri1 <= bRi1) return true;
+            } else if (bSuffix === 's') {
+                if (type === 's' && r1 === bR1 && ri2 <= bRi2) return true;
+            } else if (bSuffix === 'o') {
+                if (type === 'o' && r1 === bR1 && ri2 <= bRi2) return true;
+            } else {
+                if (r1 === bR1 && r2 === bR2 && ri2 <= bRi2) return true;
+            }
+        }
+        if (item.includes('-') && !item.endsWith('+')) {
+            const dashIdx = item.indexOf('-');
+            const s = item.slice(0, dashIdx);
+            const e = item.slice(dashIdx + 1);
+            const sSuffix = s.endsWith('s') ? 's' : s.endsWith('o') ? 'o' : '';
+            const eSuffix = e.endsWith('s') ? 's' : e.endsWith('o') ? 'o' : '';
+            const sR1 = s[0], sR2 = s[1];
+            const eR1 = e[0], eR2 = e[1];
+            const sRi1 = RANKS.indexOf(sR1), sRi2 = RANKS.indexOf(sR2);
+            const eRi1 = RANKS.indexOf(eR1), eRi2 = RANKS.indexOf(eR2);
+            if (sR1 === sR2 && sSuffix === '' && eR1 === eR2 && eSuffix === '') {
+                if (r1 === r2 && type === '' && ri1 >= sRi1 && ri1 <= eRi1) return true;
+            } else if (sSuffix === 's' && eSuffix === 's' && sR1 === eR1) {
+                if (type === 's' && r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
+            } else if (sSuffix === 'o' && eSuffix === 'o' && sR1 === eR1) {
+                if (type === 'o' && r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
+            } else if (sSuffix === '' && eSuffix === '' && sR1 !== sR2) {
+                if (r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * buildSRKey — canonical SR (hand-level) key construction.
+ * Replaces inline string templates duplicated across generateNextRound, handleInput,
+ * handlePostflopInput, and EdgeWeight.sampleHand.
+ */
+function buildSRKey(scenario, heroPos, oppPos, limperBucket, stackBB, hand) {
+    const spotKey = buildSpotKey(scenario, heroPos, oppPos, limperBucket, stackBB);
+    return `${spotKey}|${hand}`;
+}
+
+/**
+ * buildSpotKey — canonical spot-level key construction.
+ * Replaces the long inline ternary in handleInput (line 1827) and duplicated logic elsewhere.
+ */
+function buildSpotKey(scenario, heroPos, oppPos, limperBucket, stackBB) {
+    if (scenario === 'RFI') return `${scenario}|${heroPos}`;
+    if (scenario === 'VS_LIMP') return `${scenario}|${heroPos}_vs_${oppPos}_Limp|${limperBucket || '1L'}`;
+    if (scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C') return `${scenario}|${oppPos}`;
+    if (scenario === 'PUSH_FOLD') return `${scenario}|${heroPos}|${stackBB}BB`;
+    // FACING_RFI, RFI_VS_3BET, and any future two-position scenarios
+    return `${scenario}|${heroPos}_vs_${oppPos}`;
+}
+
+/**
+ * Postflop key convention constants and builder.
+ * Formalizes the ad-hoc pattern used in handlePostflopInput and isPostflopSpotKey.
+ */
+const POSTFLOP_KEY_PREFIX_LIST = ['SRP', '3BP', 'LIMP_POT'];
+
+function buildPostflopSRKey(spotKey, archetype) {
+    return `${spotKey}|${archetype}`;
+}
+
+/**
+ * computeCorrectAction — derive the correct action for a hand in a given spot.
+ * Used by HandState construction and available as a standalone helper.
+ * Mirrors the logic in handleInput and EdgeWeight.getCorrectAction.
+ */
+function computeCorrectAction(hand, scenario, heroPos, oppPos, limperBucket) {
+    if (scenario === 'RFI') {
+        return checkRangeHelper(hand, rfiRanges[heroPos]) ? 'RAISE' : 'FOLD';
+    } else if (scenario === 'FACING_RFI') {
+        const data = facingRfiRanges[`${heroPos}_vs_${oppPos}`];
+        if (!data) return 'FOLD';
+        if (checkRangeHelper(hand, data["3-bet"])) return '3BET';
+        if (data["Call"] && data["Call"].length > 0 && checkRangeHelper(hand, data["Call"])) return 'CALL';
+        return 'FOLD';
+    } else if (scenario === 'VS_LIMP') {
+        const data = getLimpDataForBucket(heroPos, oppPos, limperBucket || '1L') || allFacingLimps[`${heroPos}_vs_${oppPos}_Limp`];
+        if (!data) return 'FOLD';
+        if (checkRangeHelper(hand, getLimpRaise(data))) return 'ISO';
+        if (isLimpBBSpot(data)) return 'OVERLIMP';
+        if (checkRangeHelper(hand, getLimpPassive(data))) return 'OVERLIMP';
+        return 'FOLD';
+    } else if (scenario === 'SQUEEZE') {
+        const data = squeezeRanges[oppPos];
+        if (!data) return 'FOLD';
+        if (checkRangeHelper(hand, data["Squeeze"])) return 'SQUEEZE';
+        if (data["Call"] && checkRangeHelper(hand, data["Call"])) return 'CALL';
+        return 'FOLD';
+    } else if (scenario === 'SQUEEZE_2C') {
+        const data = squeezeVsRfiTwoCallers[oppPos];
+        if (!data) return 'FOLD';
+        if (checkRangeHelper(hand, data["Squeeze"])) return 'SQUEEZE';
+        if (data["Call"] && checkRangeHelper(hand, data["Call"])) return 'CALL';
+        return 'FOLD';
+    } else if (scenario === 'PUSH_FOLD') {
+        const pfRange = PF_PUSH[state.stackBB] && PF_PUSH[state.stackBB][heroPos];
+        return (pfRange && checkRangeHelper(hand, pfRange)) ? 'SHOVE' : 'FOLD';
+    } else {
+        // RFI_VS_3BET and fallback
+        const data = rfiVs3BetRanges[`${heroPos}_vs_${oppPos}`];
+        if (!data) return 'FOLD';
+        if (checkRangeHelper(hand, data["4-bet"])) return '4BET';
+        if (checkRangeHelper(hand, data["Call"])) return 'CALL';
+        return 'FOLD';
+    }
+}
+
+/**
+ * buildHandState — create lightweight HandState object for the current round.
+ * Stored as state._handState. Provides cached correctAction and edge category.
+ */
+function buildHandState(hand, scenario, heroPos, oppPos, limperBucket, stackBB) {
+    const spotKey = buildSpotKey(scenario, heroPos, oppPos, limperBucket, stackBB);
+    const srKey = buildSRKey(scenario, heroPos, oppPos, limperBucket, stackBB, hand);
+    const correctAction = computeCorrectAction(hand, scenario, heroPos, oppPos, limperBucket);
+    let edgeCategory = 'NORMAL';
+    try {
+        const edgeOpp = scenario === 'VS_LIMP' && limperBucket && limperBucket !== '1L'
+            ? oppPos + '|' + limperBucket : oppPos;
+        const { category } = EdgeWeight.classify(hand, scenario, heroPos, edgeOpp, null);
+        edgeCategory = category;
+    } catch (_) {}
+    return { hand, correctAction, srKey, spotKey, edgeCategory };
+}
+
+/**
+ * buildSpotContext — create lightweight SpotContext for the current round.
+ * Stored as state._spotContext.
+ */
+function buildSpotContext(scenario, heroPos, oppPos, limperBucket, limperPositions, stackBB, squeezeOpener, squeezeCaller, squeezeCaller2) {
+    return {
+        scenario,
+        heroPos,
+        oppPos,
+        limperBucket: limperBucket || '1L',
+        limperPositions: limperPositions ? [...limperPositions] : [],
+        stackBB: stackBB || 0,
+        squeezeOpener: squeezeOpener || '',
+        squeezeCaller: squeezeCaller || '',
+        squeezeCaller2: squeezeCaller2 || '',
+        spotKey: buildSpotKey(scenario, heroPos, oppPos, limperBucket, stackBB)
+    };
+}
+
+/**
+ * buildDecisionNode — create a structured log entry after answer evaluation.
+ * Field names are shimmed to match what showSessionLog and logRowChart in ui.js expect.
+ */
+function buildDecisionNode(spotContext, handState, userAction, correct, extras) {
+    const sc = spotContext.scenario;
+    const node = {
+        hand: handState.hand,
+        pos: spotContext.heroPos,
+        oppPos: spotContext.oppPos,
+        scenario: sc,
+        action: userAction,
+        correctAction: handState.correctAction,
+        correct: correct,
+        spotKey: spotContext.spotKey,
+        isBluff: (extras && extras.isBluff) || false,
+        limperBucket: spotContext.limperBucket,
+        limperPositions: spotContext.limperPositions ? [...spotContext.limperPositions] : []
+    };
+    // Merge any extra fields (archetype, positionState, feedback for postflop)
+    if (extras) {
+        for (const k of Object.keys(extras)) {
+            if (!(k in node)) node[k] = extras[k];
+        }
+    }
+    return node;
+}
+
+// ============================================================
 // SPACED REPETITION ENGINE
 // ============================================================
 const SR = (function() {
@@ -489,14 +696,15 @@ const EdgeWeight = (function() {
                 else hand = r2 + r1 + 'o';
                 const oppSuffix = scenario === 'VS_LIMP' ? '_Limp' : '';
                 let handSRKey;
-                if (scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C') handSRKey = `${scenario}|${oppPos}|${hand}`;
-                else if (scenario === 'VS_LIMP') {
-                    // oppPos may carry bucket info as "UTG|2L"
+                // Use buildSRKey for canonical key construction.
+                // VS_LIMP: oppPos may carry bucket info as "UTG|2L" — parse it.
+                if (scenario === 'VS_LIMP') {
                     let lOpp = oppPos, lBucket = '1L';
                     if (oppPos && oppPos.includes('|')) { const pp = oppPos.split('|'); lOpp = pp[0]; lBucket = pp[1]; }
-                    handSRKey = `${scenario}|${heroPos}_vs_${lOpp}_Limp|${lBucket}|${hand}`;
+                    handSRKey = buildSRKey(scenario, heroPos, lOpp, lBucket, null, hand);
+                } else {
+                    handSRKey = buildSRKey(scenario, heroPos, oppPos, null, null, hand);
                 }
-                else handSRKey = `${scenario}|${heroPos}${oppPos ? '_vs_' + oppPos + oppSuffix : ''}|${hand}`;
                 const srRec = srDb[handSRKey] || null;
                 let { weight } = classify(hand, scenario, heroPos, oppPos, srRec);
 
