@@ -181,6 +181,16 @@ function updateTable(heroPos, oppPos) {
             if (pos === state.squeezeCaller2) betAmount = openBB;
         }
 
+        // Postflop: show the preflop money each player put in (both contributed openSize).
+        // This overrides the blind-only amounts set above for those seats.
+        if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
+            const pf = state.postflop;
+            betAmount = 0; // clear blind defaults for all seats
+            if (pos === pf.heroPos || pos === pf.villainPos) {
+                betAmount = getOpenSize$() / BB_DOLLARS;
+            }
+        }
+
         if (betAmount > 0) {
             const betDiv = document.createElement('div');
             betDiv.className = 'absolute flex items-center gap-1 z-35 -translate-x-1/2 -translate-y-1/2 pointer-events-none';
@@ -721,6 +731,18 @@ return ORDER.indexOf(heroPos) > ORDER.indexOf(oppPos);
 
 function getOpenSize$() { return (state && state.config && state.config.openSize) ? state.config.openSize : 15; } // reads from config
 function getOpenSizeBB() { return getOpenSize$() / BB_DOLLARS; } // = 5bb
+
+// Postflop SRP pot = hero open + villain call + dead money from folded blinds.
+// Dead money by preflop family (in $, at $1/$3):
+//   vs BB families (BTN/CO/HJ/LJ/UTG_vs_BB): SB dead $1
+//   SB_vs_BB: heads-up, no dead money
+//   BTN_vs_SB: BB dead $3
+//   CO_vs_BTN: SB+BB dead $4
+function getSRPPot$(preflopFamily) {
+    const dead = { BTN_vs_BB:1, CO_vs_BB:1, HJ_vs_BB:1, LJ_vs_BB:1, UTG_vs_BB:1,
+                   SB_vs_BB:0, BTN_vs_SB:3, CO_vs_BTN:4 };
+    return getOpenSize$() * 2 + (dead[preflopFamily] !== undefined ? dead[preflopFamily] : 1);
+}
 
 // Villain open size: randomized per-hand from a realistic 1/3 pool.
 // Pool weighted toward $15 (most common), but includes the full range you'll face.
