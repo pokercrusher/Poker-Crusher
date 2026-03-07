@@ -1385,11 +1385,416 @@ const POSTFLOP_STRATEGY={};
     const OFF={UTG_vs_BB:0.05,LJ_vs_BB:0.03,HJ_vs_BB:0.02,CO_vs_BB:0,BTN_vs_BB:0,BTN_vs_SB:0,SB_vs_BB:0,CO_vs_BTN:-0.03};
     for(const[fk,fi]of Object.entries(POSTFLOP_PREFLOP_FAMILIES)){const base=fi.positionState==='IP'?IP:OOP;const off=OFF[fk]||0;for(const arch of FLOP_ARCHETYPES){const raw=base[arch];if(!raw)continue;const ab=Math.max(0.05,Math.min(0.95,raw.bet33+off));const ac=parseFloat((1-ab).toFixed(2));const actions={check:ac,bet33:parseFloat(ab.toFixed(2))};const pa=ab>=0.50?'bet33':'check';const sk=makePostflopSpotKey({potType:'SRP',preflopFamily:fk,street:'FLOP',heroRole:'PFR',positionState:fi.positionState,nodeType:'CBET_DECISION',boardArchetype:arch});POSTFLOP_STRATEGY[sk]={actions,preferredAction:pa,reasoning:raw.r,simplification:'Phase 1: C-Bet vs Check'};}}
 })();
-function generatePostflopSpot(){const fams=Object.keys(POSTFLOP_PREFLOP_FAMILIES);const fam=fams[Math.floor(Math.random()*fams.length)];const fi=POSTFLOP_PREFLOP_FAMILIES[fam];const arch=pickFlopArchetype();const fc=generateFlopForArchetype(arch);const spot={potType:'SRP',preflopFamily:fam,street:'FLOP',heroRole:'PFR',positionState:fi.positionState,nodeType:'CBET_DECISION',boardArchetype:arch,heroPos:fi.heroPos,villainPos:fi.villainPos,flopCards:fc,flopClassification:classifyFlop(fc)};spot.spotKey=makePostflopSpotKey(spot);spot.strategy=POSTFLOP_STRATEGY[spot.spotKey]||null;return spot;}
-function scorePostflopAction(playerAction,strategy){if(!strategy)return{correct:false,grade:'unknown',feedback:'No strategy data.'};const preferred=strategy.preferredAction;const playerKey=playerAction==='CBET'?'bet33':'check';const playerFreq=strategy.actions[playerKey]||0;const isCorrect=playerKey===preferred;let grade;if(playerFreq>=0.75)grade='strong';else if(playerFreq>=0.50)grade='marginal';else if(playerFreq>=0.36)grade='marginal_wrong';else grade='clear_wrong';const preferredLabel=preferred==='check'?'Check':'C-Bet';const freqPct=Math.round((strategy.actions[preferred]||0)*100);let feedback;if(isCorrect&&grade==='strong')feedback=`Correct. ${preferredLabel} (${freqPct}%).`;else if(isCorrect&&grade==='marginal')feedback=`Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;else if(!isCorrect&&grade==='marginal_wrong')feedback=`Close, but ${preferredLabel} is preferred here (${freqPct}%).`;else feedback=`${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;return{correct:isCorrect,grade,feedback,preferredLabel,freqPct,reasoning:strategy.reasoning};}
+function generatePostflopSpot(){
+    const fams=Object.keys(POSTFLOP_PREFLOP_FAMILIES);
+    const fam=fams[Math.floor(Math.random()*fams.length)];
+    const fi=POSTFLOP_PREFLOP_FAMILIES[fam];
+    const arch=pickFlopArchetype();
+
+    // Phase 2: deal hero hand if this family supports hero-hand-aware training
+    const heroHandAware = HERO_HAND_AWARE_FAMILIES.has(fam);
+    let heroHand = null;
+    let heroHandClass = null;
+    let fc;
+
+    if (heroHandAware) {
+        // Deal hero hand from the opening range for this position
+        heroHand = _dealPostflopHeroHand(fi.heroPos);
+        // Generate flop that doesn't conflict with hero cards
+        fc = _generateFlopNoConflict(arch, heroHand);
+        heroHandClass = classifyFlopHand(heroHand, fc);
+    } else {
+        fc = generateFlopForArchetype(arch);
+    }
+
+    const spot={
+        potType:'SRP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
+        positionState:fi.positionState, nodeType:'CBET_DECISION',
+        boardArchetype:arch, heroPos:fi.heroPos, villainPos:fi.villainPos,
+        flopCards:fc, flopClassification:classifyFlop(fc),
+        heroHand: heroHand,
+        heroHandClass: heroHandClass
+    };
+    spot.spotKey = heroHandClass
+        ? makePostflopSpotKeyV2(spot)
+        : makePostflopSpotKey(spot);
+    // Try hero-hand-aware strategy first, fall back to archetype-only
+    spot.strategy = (heroHandClass ? POSTFLOP_STRATEGY_V2[spot.spotKey] : null)
+        || POSTFLOP_STRATEGY[makePostflopSpotKey(spot)]
+        || null;
+    return spot;
+}
+
+function scorePostflopAction(playerAction, strategy, spot) {
+    if (!strategy) return {correct:false, grade:'unknown', feedback:'No strategy data.'};
+    const preferred = strategy.preferredAction;
+    const playerKey = playerAction === 'CBET' ? 'bet33' : 'check';
+    const playerFreq = strategy.actions[playerKey] || 0;
+    const isCorrect = playerKey === preferred;
+    let grade;
+    if (playerFreq >= 0.75) grade = 'strong';
+    else if (playerFreq >= 0.50) grade = 'marginal';
+    else if (playerFreq >= 0.36) grade = 'marginal_wrong';
+    else grade = 'clear_wrong';
+    const preferredLabel = preferred === 'check' ? 'Check' : 'C-Bet';
+    const freqPct = Math.round((strategy.actions[preferred] || 0) * 100);
+    let feedback;
+    if (isCorrect && grade === 'strong') feedback = `Correct. ${preferredLabel} (${freqPct}%).`;
+    else if (isCorrect && grade === 'marginal') feedback = `Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;
+    else if (!isCorrect && grade === 'marginal_wrong') feedback = `Close, but ${preferredLabel} is preferred here (${freqPct}%).`;
+    else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
+    // Phase 2: add hand class label to feedback when available
+    const handClassLabel = (spot && spot.heroHandClass) ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : null;
+    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    return {correct:isCorrect, grade, feedback, preferredLabel, freqPct, reasoning:strategy.reasoning};
+}
+
+// ============================================================
+// PHASE 2: Hero-Hand-Aware Postflop
+// ============================================================
+
+// Families that support hero-hand-aware training (Phase 2 scope)
+const HERO_HAND_AWARE_FAMILIES = new Set(['BTN_vs_BB', 'CO_vs_BB']);
+
+// --- Flop hand classification ---
+const HAND_CLASS_LABELS = {
+    OVERPAIR:'Overpair', TOP_PAIR:'Top pair', SECOND_PAIR:'Second pair',
+    UNDERPAIR:'Underpair', SET:'Set', TWO_PAIR_PLUS:'Two pair+',
+    OESD:'OESD', GUTSHOT:'Gutshot', NFD:'Nut flush draw',
+    FD:'Flush draw', COMBO_DRAW:'Combo draw', ACE_HIGH_BACKDOOR:'Ace-high / backdoor',
+    AIR:'Air'
+};
+
+/**
+ * classifyFlopHand — classify hero's hand on the flop.
+ * heroHand: { rank1, rank2, suited } (abstract) or { cards: [{rank,suit},{rank,suit}] } (concrete)
+ * flopCards: array of {rank, suit}
+ * Returns a string hand class.
+ */
+function classifyFlopHand(heroHand, flopCards) {
+    const hr = heroHand.cards || _heroHandToCards(heroHand);
+    const h1 = RANK_NUM[hr[0].rank], h2 = RANK_NUM[hr[1].rank];
+    const hHigh = Math.max(h1, h2), hLow = Math.min(h1, h2);
+    const hSuited = hr[0].suit === hr[1].suit;
+    const hSuit = hSuited ? hr[0].suit : null;
+
+    const fRanks = flopCards.map(c => RANK_NUM[c.rank]).sort((a,b) => b - a);
+    const fSuits = flopCards.map(c => c.suit);
+    const flopTop = fRanks[0], flopMid = fRanks[1], flopBot = fRanks[2];
+
+    // Count how many board cards match each hero rank
+    const matchHigh = fRanks.filter(r => r === hHigh).length;
+    const matchLow = fRanks.filter(r => r === hLow).length;
+
+    // --- Made hands (strongest first) ---
+
+    // Set: hero has a pocket pair that matches a board card
+    if (hHigh === hLow && matchHigh >= 1) return 'SET';
+
+    // Two pair+: both hero ranks match board cards (and hero is not paired)
+    if (hHigh !== hLow && matchHigh >= 1 && matchLow >= 1) return 'TWO_PAIR_PLUS';
+
+    // Overpair: pocket pair above the top board card
+    if (hHigh === hLow && hHigh > flopTop) return 'OVERPAIR';
+
+    // Top pair: one hero card matches the highest board rank
+    if (matchHigh >= 1 && hHigh === flopTop) return 'TOP_PAIR';
+    if (matchLow >= 1 && hLow === flopTop) return 'TOP_PAIR';
+
+    // Underpair: pocket pair below the bottom board card
+    if (hHigh === hLow && hHigh < flopBot) return 'UNDERPAIR';
+
+    // Second pair: hero matches the second-highest board rank
+    if (matchHigh >= 1 && hHigh === flopMid) return 'SECOND_PAIR';
+    if (matchLow >= 1 && hLow === flopMid) return 'SECOND_PAIR';
+
+    // Pocket pair between board cards (not overpair, not underpair)
+    if (hHigh === hLow) return 'UNDERPAIR'; // catch-all for mid-pairs
+
+    // --- Draws ---
+    const allRanks = [hHigh, hLow, ...fRanks].sort((a,b) => b - a);
+    const uniqueRanks = [...new Set(allRanks)].sort((a,b) => b - a);
+    const hasFlushDraw = _countSuitOnBoard(hSuit, fSuits) >= 2 && hSuited;
+    const hasBackdoorFD = hSuited && _countSuitOnBoard(hSuit, fSuits) === 1;
+    const straightInfo = _straightDrawType(uniqueRanks);
+    const hasOESD = straightInfo === 'OESD';
+    const hasGutshot = straightInfo === 'GUTSHOT';
+
+    // Nut flush draw: suited hand with 2+ matching suits on board
+    const isNFD = hasFlushDraw && (hHigh === 14 || (hHigh >= 13 && _highestFlushCardOnBoard(hSuit, flopCards) < hHigh));
+
+    // Combo draw: flush draw + straight draw
+    if (hasFlushDraw && (hasOESD || hasGutshot)) return 'COMBO_DRAW';
+    if (isNFD) return 'NFD';
+    if (hasFlushDraw) return 'FD';
+    if (hasOESD) return 'OESD';
+    if (hasGutshot) return 'GUTSHOT';
+
+    // Ace-high with backdoor equity
+    if (hHigh === 14 && (hasBackdoorFD || hasGutshot)) return 'ACE_HIGH_BACKDOOR';
+    if (hHigh === 14) return 'ACE_HIGH_BACKDOOR'; // Ace-high no pair still has some showdown
+
+    return 'AIR';
+}
+
+function _countSuitOnBoard(suit, boardSuits) {
+    if (!suit) return 0;
+    return boardSuits.filter(s => s === suit).length;
+}
+
+function _highestFlushCardOnBoard(suit, flopCards) {
+    let best = 0;
+    for (const c of flopCards) { if (c.suit === suit) best = Math.max(best, RANK_NUM[c.rank]); }
+    return best;
+}
+
+/**
+ * Check for straight draws using hero + board ranks.
+ * Returns 'OESD', 'GUTSHOT', or null.
+ * Checks every 5-card straight window to see if we have 4 of 5 (OESD) or 4 of 5 with gap (gutshot).
+ */
+function _straightDrawType(sortedUniqueRanks) {
+    const ranks = [...sortedUniqueRanks];
+    // Add ace as 1 for wheel draws
+    if (ranks.includes(14)) ranks.push(1);
+    const unique = [...new Set(ranks)];
+
+    let bestDraw = null;
+
+    // Check every possible 5-card straight (A-5 through T-A)
+    // A straight window is [low, low+1, low+2, low+3, low+4]
+    for (let low = 1; low <= 10; low++) {
+        const window5 = [low, low+1, low+2, low+3, low+4];
+        const have = window5.filter(r => unique.includes(r)).length;
+        if (have >= 4) {
+            // 4 of 5 in a straight window
+            // Check if it's open-ended (both ends available) or gutshot (one gap inside)
+            const missing = window5.filter(r => !unique.includes(r));
+            if (missing.length === 1) {
+                const gap = missing[0];
+                // Open-ended: missing card is at an end of the window
+                if (gap === low || gap === low + 4) {
+                    bestDraw = 'OESD';
+                } else {
+                    // Gutshot: missing card is in the middle
+                    if (!bestDraw || bestDraw === 'GUTSHOT') bestDraw = 'GUTSHOT';
+                }
+            } else if (missing.length === 0) {
+                // Already have a made straight — for classification purposes, no draw needed
+                // (but this shouldn't matter for our use case; treat as strong)
+                bestDraw = 'OESD'; // having 5 is even better
+            }
+        }
+    }
+    return bestDraw;
+}
+
+// Convert abstract heroHand {rank1, rank2, suited} into concrete cards if needed
+function _heroHandToCards(h) {
+    if (h.cards) return h.cards;
+    return [
+        { rank: h.rank1, suit: h.suit1 || 's' },
+        { rank: h.rank2, suit: h.suit2 || (h.suited ? 's' : 'h') }
+    ];
+}
+
+// --- Hero hand generation ---
+
+/**
+ * Deal a concrete hero hand from the RFI range for a given position.
+ * Returns { cards: [{rank, suit}, {rank, suit}], handKey: 'AKs' }
+ */
+function _dealPostflopHeroHand(heroPos) {
+    const range = rfiRanges[heroPos];
+    if (!range || range.length === 0) {
+        // Fallback: random broadway hand
+        return _concreteHand('AK', true);
+    }
+    // Flatten range into hand keys, pick one
+    const allHands = [];
+    for (const token of range) {
+        for (const h of _expandSingle(token)) allHands.push(h);
+    }
+    const handKey = allHands[Math.floor(Math.random() * allHands.length)];
+    const suited = handKey.endsWith('s');
+    const offsuit = handKey.endsWith('o');
+    const isPair = handKey.length === 2 || (!suited && !offsuit && handKey[0] === handKey[1]);
+    return _concreteHand(handKey, suited);
+}
+
+/**
+ * Expand a single range token into hand keys (simplified — reuses RANKS indexing).
+ * This is a lightweight version for hero dealing; not the full validator expandToken.
+ */
+function _expandSingle(token) {
+    const hands = [];
+    const t = token.trim();
+    // Exact hand
+    if (t.length <= 3 && !t.includes('+') && !t.includes('-')) { hands.push(t); return hands; }
+    // XX+ pairs
+    if (t.endsWith('+')) {
+        const base = t.slice(0, -1);
+        const suf = base.endsWith('s') ? 's' : base.endsWith('o') ? 'o' : '';
+        const r1 = base[0], r2 = suf ? base[1] : base[1];
+        const i1 = RANKS.indexOf(r1), i2 = RANKS.indexOf(r2);
+        if (r1 === r2 && !suf) { for (let i = 0; i <= i1; i++) hands.push(RANKS[i]+RANKS[i]); }
+        else { for (let i = 0; i <= i2; i++) { if (RANKS[i] !== r1) hands.push(r1+RANKS[i]+(suf||'s')); } }
+        return hands;
+    }
+    // XX-YY ranges
+    if (t.includes('-')) {
+        const dash = t.indexOf('-');
+        const s = t.slice(0,dash), e = t.slice(dash+1);
+        const suf = s.endsWith('s')?'s':s.endsWith('o')?'o':'';
+        const sR1=s[0],sR2=s[1],eR2=e[1];
+        const si1=RANKS.indexOf(sR1),si2=RANKS.indexOf(sR2),ei2=RANKS.indexOf(eR2);
+        if (sR1===sR2&&!suf) { for(let i=si1;i<=ei2;i++) hands.push(RANKS[i]+RANKS[i]); }
+        else { for(let i=si2;i<=ei2;i++) { if(RANKS[i]!==sR1) hands.push(sR1+RANKS[i]+suf); } }
+        return hands;
+    }
+    // "AK" shorthand
+    if (t.length===2 && t[0]!==t[1]) { hands.push(t+'s'); hands.push(t+'o'); return hands; }
+    hands.push(t);
+    return hands;
+}
+
+/**
+ * Convert a hand key like 'AKs' into concrete cards with random suits.
+ */
+function _concreteHand(handKey, suited) {
+    const r1 = handKey[0], r2 = handKey[1];
+    const isPair = r1 === r2;
+    const allSuits = ['s','h','d','c'];
+    const s1 = allSuits[Math.floor(Math.random()*4)];
+    let s2;
+    if (isPair) {
+        const others = allSuits.filter(s => s !== s1);
+        s2 = others[Math.floor(Math.random()*others.length)];
+    } else if (suited) {
+        s2 = s1;
+    } else {
+        const others = allSuits.filter(s => s !== s1);
+        s2 = others[Math.floor(Math.random()*others.length)];
+    }
+    return {
+        cards: [{rank:r1, suit:s1}, {rank:r2, suit:s2}],
+        handKey: handKey
+    };
+}
+
+/**
+ * Generate flop that doesn't conflict with hero hole cards.
+ */
+function _generateFlopNoConflict(archetype, heroHand, maxAttempts) {
+    maxAttempts = maxAttempts || 300;
+    const hCards = heroHand.cards || [];
+    const blocked = new Set(hCards.map(c => c.rank + c.suit));
+    for (let i = 0; i < maxAttempts; i++) {
+        const f = _randomFlop();
+        // Check no flop card matches a hero card
+        const conflict = f.some(c => blocked.has(c.rank + c.suit));
+        if (conflict) continue;
+        if (classifyFlop(f).archetype === archetype) return f;
+    }
+    // Fallback: use fallback flop, filter conflicts
+    const fb = _fallbackFlop(archetype);
+    return fb.map(c => blocked.has(c.rank+c.suit) ? {rank:c.rank, suit:SUITS.find(s=>!blocked.has(c.rank+s))||c.suit} : c);
+}
+
+// --- Hero-hand-aware spot key ---
+
+/**
+ * makePostflopSpotKeyV2 — includes heroHandClass for hero-hand-aware spots.
+ */
+function makePostflopSpotKeyV2(spot) {
+    return `${spot.potType}|${spot.preflopFamily}|${spot.street}|${spot.heroRole}|${spot.positionState}|${spot.nodeType}|${spot.boardArchetype}|${spot.heroHandClass}`;
+}
+
+// --- Hero-hand-aware strategy registry (Phase 2) ---
+// Covers BTN_vs_BB and CO_vs_BB, SRP, IP, FLOP, PFR, CBET_DECISION
+// Frequencies are approximate GTO-inspired values; stronger hands bet more.
+
+const POSTFLOP_STRATEGY_V2 = {};
+
+(function() {
+    const HAND_CLASSES = [
+        'OVERPAIR','TOP_PAIR','SECOND_PAIR','UNDERPAIR','SET','TWO_PAIR_PLUS',
+        'OESD','GUTSHOT','NFD','FD','COMBO_DRAW','ACE_HIGH_BACKDOOR','AIR'
+    ];
+
+    // Base c-bet frequencies by hand class × board archetype (IP PFR)
+    // Format: { handClass: { archetype: bet33 freq } }
+    // Missing combos inherit a default per hand class.
+    const BASE = {
+        SET:              { _default: 0.90, LOW_CONNECTED: 0.80, MONOTONE: 0.75, TRIPS: 0.50 },
+        TWO_PAIR_PLUS:    { _default: 0.85, LOW_CONNECTED: 0.75, MONOTONE: 0.70, TRIPS: 0.50 },
+        OVERPAIR:         { _default: 0.85, A_HIGH_DRY: 0.90, A_HIGH_DYNAMIC: 0.75, BROADWAY_STATIC: 0.85, BROADWAY_DYNAMIC: 0.70, MID_CONNECTED: 0.65, LOW_CONNECTED: 0.55, MONOTONE: 0.50 },
+        TOP_PAIR:         { _default: 0.70, A_HIGH_DRY: 0.80, A_HIGH_DYNAMIC: 0.60, BROADWAY_STATIC: 0.75, BROADWAY_DYNAMIC: 0.55, MID_DISCONNECTED: 0.65, MID_CONNECTED: 0.50, LOW_DISCONNECTED: 0.55, LOW_CONNECTED: 0.40, MONOTONE: 0.40, PAIRED_HIGH: 0.60, PAIRED_LOW: 0.55 },
+        SECOND_PAIR:      { _default: 0.35, A_HIGH_DRY: 0.45, BROADWAY_STATIC: 0.40, MID_DISCONNECTED: 0.35, MID_CONNECTED: 0.25, LOW_DISCONNECTED: 0.30, LOW_CONNECTED: 0.20, MONOTONE: 0.20 },
+        UNDERPAIR:        { _default: 0.30, A_HIGH_DRY: 0.40, BROADWAY_STATIC: 0.35, MID_DISCONNECTED: 0.30, MID_CONNECTED: 0.20, LOW_DISCONNECTED: 0.25, LOW_CONNECTED: 0.15, MONOTONE: 0.15 },
+        COMBO_DRAW:       { _default: 0.80, A_HIGH_DRY: 0.60, BROADWAY_STATIC: 0.65, MID_CONNECTED: 0.85, LOW_CONNECTED: 0.80, MONOTONE: 0.75 },
+        NFD:              { _default: 0.70, A_HIGH_DRY: 0.50, BROADWAY_STATIC: 0.55, MID_CONNECTED: 0.75, LOW_CONNECTED: 0.70, MONOTONE: 0.60 },
+        FD:               { _default: 0.55, A_HIGH_DRY: 0.40, BROADWAY_STATIC: 0.45, MID_CONNECTED: 0.60, LOW_CONNECTED: 0.55, MONOTONE: 0.45 },
+        OESD:             { _default: 0.60, A_HIGH_DRY: 0.45, BROADWAY_DYNAMIC: 0.65, MID_CONNECTED: 0.65, LOW_CONNECTED: 0.60 },
+        GUTSHOT:          { _default: 0.40, A_HIGH_DRY: 0.35, BROADWAY_DYNAMIC: 0.45, MID_CONNECTED: 0.45, LOW_CONNECTED: 0.40 },
+        ACE_HIGH_BACKDOOR:{ _default: 0.45, A_HIGH_DRY: 0.70, A_HIGH_DYNAMIC: 0.55, BROADWAY_STATIC: 0.55, BROADWAY_DYNAMIC: 0.40, MID_DISCONNECTED: 0.40, MID_CONNECTED: 0.30, LOW_DISCONNECTED: 0.35, LOW_CONNECTED: 0.25, MONOTONE: 0.25 },
+        AIR:              { _default: 0.30, A_HIGH_DRY: 0.45, BROADWAY_STATIC: 0.35, MID_DISCONNECTED: 0.30, MID_CONNECTED: 0.15, LOW_DISCONNECTED: 0.25, LOW_CONNECTED: 0.10, MONOTONE: 0.15, PAIRED_HIGH: 0.30, PAIRED_LOW: 0.25, TRIPS: 0.20 }
+    };
+
+    // Reasoning templates per hand class
+    const REASONING = {
+        SET: 'Sets are strong; bet for value and protection.',
+        TWO_PAIR_PLUS: 'Two pair+ is strong; bet for value.',
+        OVERPAIR: 'Overpairs are premium made hands; bet for value and protection.',
+        TOP_PAIR: 'Top pair should usually bet for value, but check on dynamic boards.',
+        SECOND_PAIR: 'Second pair has showdown value; check to control pot, or thin value bet on dry boards.',
+        UNDERPAIR: 'Underpairs are marginal; mostly check to realize equity.',
+        COMBO_DRAW: 'Combo draws have great equity and fold equity; bet aggressively.',
+        NFD: 'Nut flush draws have strong equity; semi-bluff frequently.',
+        FD: 'Flush draws have decent equity; semi-bluff on favorable textures.',
+        OESD: 'Open-ended straight draws have ~32% equity; semi-bluff on many textures.',
+        GUTSHOT: 'Gutshots have some equity but low hit rate; selective bluffs.',
+        ACE_HIGH_BACKDOOR: 'Ace-high with backdoor equity; can bet on favorable textures as a bluff.',
+        AIR: 'No made hand or draw; bet as a bluff on PFR-favorable boards, check otherwise.'
+    };
+
+    // Small family offset (CO slightly tighter than BTN)
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.03 };
+
+    for (const fam of HERO_HAND_AWARE_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+
+        for (const arch of FLOP_ARCHETYPES) {
+            for (const hc of HAND_CLASSES) {
+                const baseFreqs = BASE[hc];
+                if (!baseFreqs) continue;
+                const raw = baseFreqs[arch] !== undefined ? baseFreqs[arch] : baseFreqs._default;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet33' : 'check';
+                const sk = makePostflopSpotKeyV2({
+                    potType:'SRP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
+                    positionState:fi.positionState, nodeType:'CBET_DECISION',
+                    boardArchetype:arch, heroHandClass:hc
+                });
+                POSTFLOP_STRATEGY_V2[sk] = {
+                    actions: { check: chk, bet33: bet },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Phase 2: Hero-hand-aware C-Bet'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[PostflopV2] Built ${Object.keys(POSTFLOP_STRATEGY_V2).length} hero-hand-aware strategy entries.`);
+    }
+})();
 const ARCHETYPE_LABELS={A_HIGH_DRY:'A-high dry',A_HIGH_DYNAMIC:'A-high dynamic',BROADWAY_STATIC:'Broadway static',BROADWAY_DYNAMIC:'Broadway dynamic',MID_DISCONNECTED:'Mid disconnected',MID_CONNECTED:'Mid connected',LOW_DISCONNECTED:'Low disconnected',LOW_CONNECTED:'Low connected',PAIRED_HIGH:'Paired high',PAIRED_LOW:'Paired low',MONOTONE:'Monotone',TRIPS:'Trips'};
 function flopCardStr(card){return card.rank+(SUIT_SYMBOLS[card.suit]||card.suit);}
 function flopStr(cards){return cards.map(flopCardStr).join(' ');}
 function flopSuitColor(suit){return(suit==='h'||suit==='d')?'#ef4444':'#e2e8f0';}
 function isPostflopSpotKey(key){return key.startsWith('SRP|')||key.startsWith('3BP|')||key.startsWith('LIMP_POT|');}
-
