@@ -2196,8 +2196,8 @@ function renderPostflopButtons(hidden){
     let hintText = '';
     try {
         const spot = state.postflop;
-        if (spot && typeof getSRPPot$ === 'function') {
-            const pot$ = getSRPPot$(spot.preflopFamily);
+        if (spot && typeof getScenarioPot$ === 'function') {
+            const pot$ = getScenarioPot$('POSTFLOP_CBET');
             const cbet$ = Math.round(pot$ * 0.33);
             cbetLabel = `C-BET $${cbet$}`;
             hintText = `33% pot · pot = $${pot$}`;
