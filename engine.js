@@ -117,9 +117,8 @@ function buildPostflopSRKey(spotKey, archetype) {
 }
 
 /**
- * computeCorrectAction — derive the correct action for a hand in a given spot.
- * Used by HandState construction and available as a standalone helper.
- * Mirrors the logic in handleInput and EdgeWeight.getCorrectAction.
+ * computeCorrectAction — THE single source of truth for correct preflop action derivation.
+ * All grading paths (handleInput, EdgeWeight, chart tooltips) must route through this function.
  */
 function computeCorrectAction(hand, scenario, heroPos, oppPos, limperBucket) {
     if (scenario === 'RFI') {
@@ -556,47 +555,18 @@ const SR = (function() {
 const EdgeWeight = (function() {
     // Given a spotKey and hand, return weight category and weight value
     // Uses neighbor-based approach on the 13x13 matrix
+    /**
+     * getCorrectAction — thin wrapper around the canonical computeCorrectAction.
+     * Handles the EdgeWeight convention where VS_LIMP oppPos may carry a bucket
+     * suffix like "UTG|2L" that needs parsing before delegation.
+     */
     function getCorrectAction(hand, scenario, heroPos, oppPos) {
-        if (scenario === 'RFI') {
-            return checkRangeHelper(hand, rfiRanges[heroPos]) ? 'RAISE' : 'FOLD';
-        } else if (scenario === 'FACING_RFI') {
-            const data = facingRfiRanges[`${heroPos}_vs_${oppPos}`];
-            if (!data) return 'FOLD';
-            if (checkRangeHelper(hand, data["3-bet"])) return '3BET';
-            if (data["Call"] && checkRangeHelper(hand, data["Call"])) return 'CALL';
-            return 'FOLD';
-        } else if (scenario === 'VS_LIMP') {
-            // oppPos may include bucket suffix like "UTG|2L" - parse it
-            let limpOpp = oppPos, limpBucket = '1L';
-            if (oppPos && oppPos.includes('|')) {
-                const pp = oppPos.split('|');
-                limpOpp = pp[0]; limpBucket = pp[1] || '1L';
-            }
-            const data = getLimpDataForBucket(heroPos, limpOpp, limpBucket) || allFacingLimps[`${heroPos}_vs_${limpOpp}_Limp`];
-            if (!data) return 'FOLD';
-            if (checkRangeHelper(hand, getLimpRaise(data))) return 'ISO';
-            if (isLimpBBSpot(data)) return 'OVERLIMP'; // BB can't fold; everything else is check
-            if (checkRangeHelper(hand, getLimpPassive(data))) return 'OVERLIMP';
-            return 'FOLD';
-        } else if (scenario === 'SQUEEZE') {
-            const data = squeezeRanges[oppPos];
-            if (!data) return 'FOLD';
-            if (checkRangeHelper(hand, data["Squeeze"])) return 'SQUEEZE';
-            if (data["Call"] && checkRangeHelper(hand, data["Call"])) return 'CALL';
-            return 'FOLD';
-        } else if (scenario === 'SQUEEZE_2C') {
-            const data = squeezeVsRfiTwoCallers[oppPos];
-            if (!data) return 'FOLD';
-            if (checkRangeHelper(hand, data["Squeeze"])) return 'SQUEEZE';
-            if (data["Call"] && checkRangeHelper(hand, data["Call"])) return 'CALL';
-            return 'FOLD';
-        } else {
-            const data = rfiVs3BetRanges[`${heroPos}_vs_${oppPos}`];
-            if (!data) return 'FOLD';
-            if (checkRangeHelper(hand, data["4-bet"])) return '4BET';
-            if (checkRangeHelper(hand, data["Call"])) return 'CALL';
-            return 'FOLD';
+        // VS_LIMP: oppPos may include bucket suffix like "UTG|2L" — parse it
+        if (scenario === 'VS_LIMP' && oppPos && oppPos.includes('|')) {
+            const pp = oppPos.split('|');
+            return computeCorrectAction(hand, scenario, heroPos, pp[0], pp[1] || '1L');
         }
+        return computeCorrectAction(hand, scenario, heroPos, oppPos, null);
     }
 
     function getNeighborHands(i, j) {
