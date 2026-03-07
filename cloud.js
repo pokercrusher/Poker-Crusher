@@ -590,7 +590,7 @@ function renderUserStats() {
     const medals = loadMedals();
     const total = g.totalHands || 0, correct = g.totalCorrect || 0;
     const pct = total ? Math.round(correct / total * 100) : 0;
-    const SCENARIO_LABELS = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C' };
+    const SCENARIO_LABELS = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold', POSTFLOP_CBET: 'Flop C-Bet' };
 
     function classifySpot(key) { return SR.classifySpot(key, edgeClassify); }
 
@@ -913,9 +913,12 @@ function renderUserStats() {
     html += `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
         <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">By Scenario</p>
         <div class="flex flex-col gap-3">`;
-    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(sc => {
-        const prefix = sc + '|';
-        const scSpots = allSpots.filter(k => k.startsWith(prefix));
+    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET'].forEach(sc => {
+        const prefix = sc === 'POSTFLOP_CBET' ? '' : sc + '|';
+        // Postflop spots use SRP|, 3BP|, LIMP_POT| prefixes — filter them via getAllSpotKeys
+        const scSpots = sc === 'POSTFLOP_CBET'
+            ? allSpots.filter(k => POSTFLOP_KEY_PREFIX_LIST && POSTFLOP_KEY_PREFIX_LIST.some(p => k.startsWith(p + '|')))
+            : allSpots.filter(k => k.startsWith(prefix));
         const scTiers = { mastered: 0, learning: 0, struggling: 0, unseen: 0 };
         scSpots.forEach(k => scTiers[classifySpot(k)]++);
         const scMastery = scSpots.length ? Math.round(scTiers.mastered / scSpots.length * 100) : 0;
