@@ -143,66 +143,14 @@ function updateTable(heroPos, oppPos) {
             if (bT < 50) bT += 5; else bT -= 5;
             btnEl.style.left = bL + '%'; btnEl.style.top = bT + '%';
         }
-
-        let betAmount = 0;
-
-        const openBB = getOpenSizeBB();
-
-        // Blinds (displayed in $ via formatter)
-        if (pos === 'SB') betAmount = 0.5;
-        if (pos === 'BB') betAmount = 1;
-
-        // Facing RFI: opponent opened with their random size
-        if (state.scenario === 'FACING_RFI' && pos === oppPos) betAmount = getVillainOpenSize$() / BB_DOLLARS;
-
-        // Hero opened, facing 3-bet
-        if ((state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') ) {
-            if (pos === heroPos) betAmount = openBB;
-            if (pos === oppPos) {
-                const villainIP = postflopIP(oppPos, heroPos);
-                betAmount = (villainIP ? 3 : 4) * openBB;
-            }
-        }
-
-        // Vs limpers: show limpers + BB posted
-        if (state.scenario === 'VS_LIMP') {
-            if (state.limperPositions && state.limperPositions.includes(pos)) betAmount = 1;
-            else if (pos === oppPos) betAmount = 1;
-        }
-
-        // Squeeze: show opener size and callers matching that size
-        if (state.scenario === 'SQUEEZE') {
-            if (pos === state.squeezeOpener) betAmount = openBB;
-            if (pos === state.squeezeCaller) betAmount = openBB;
-        }
-        if (state.scenario === 'SQUEEZE_2C') {
-            if (pos === state.squeezeOpener) betAmount = openBB;
-            if (pos === state.squeezeCaller) betAmount = openBB;
-            if (pos === state.squeezeCaller2) betAmount = openBB;
-        }
-
-        // Postflop: show the preflop money each player put in (both contributed openSize).
-        // This overrides the blind-only amounts set above for those seats.
-        if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
-            const pf = state.postflop;
-            betAmount = 0; // clear blind defaults for all seats
-            if (pos === pf.heroPos || pos === pf.villainPos) {
-                betAmount = getOpenSize$() / BB_DOLLARS;
-            }
-        }
-
-        if (betAmount > 0) {
-            const betDiv = document.createElement('div');
-            betDiv.className = 'absolute flex items-center gap-1 z-35 -translate-x-1/2 -translate-y-1/2 pointer-events-none';
-            let betL = parseFloat(coords.left), betT = parseFloat(coords.top);
-            const bOff = SEAT_COORDS === SEAT_COORDS_MOBILE ? 8 : 12;
-            if (betL < 45) betL += bOff; else if (betL > 55) betL -= bOff;
-            if (betT < 45) betT += bOff; else if (betT > 55) betT -= bOff;
-            betDiv.style.left = betL + '%'; betDiv.style.top = betT + '%';
-            betDiv.innerHTML = `<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);" class="rounded-full bg-rose-600 border border-white/20"></div><span style="font-size:var(--chip-font,9px);" class="font-black text-yellow-400 bg-black/40 px-1 rounded">${fmt$(betAmount * BB_DOLLARS)}</span>`;
-            betsLayer.appendChild(betDiv);
-        }
     });
+
+    // Render a single central pot badge instead of per-seat chips.
+    // This is used by the static/postflop path; the animation path (runTableAnimation)
+    // collects chips into the pot at the end of its animation sequence.
+    if (state.scenario) {
+        try { renderPotBadge(betsLayer, getScenarioPot$(state.scenario)); } catch(_) {}
+    }
 }
 
 // Animated table sequence — positions the seats instantly, then plays the action animation
@@ -546,6 +494,12 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             }
             await delay(150);
         }
+        // Collect all per-seat chips into a single central pot badge.
+        // The individual chips showed each player's action; now they belong to the pot.
+        if (!isStale()) {
+            betsLayer.innerHTML = '';
+            try { renderPotBadge(betsLayer, getScenarioPot$(scenario)); } catch(_) {}
+        }
         if (onDone && !isStale()) { __doneCalled = true; onDone(); }
         } catch (e) {
             if (e === STALE) return; // silently abort stale animations
@@ -732,16 +686,80 @@ return ORDER.indexOf(heroPos) > ORDER.indexOf(oppPos);
 function getOpenSize$() { return (state && state.config && state.config.openSize) ? state.config.openSize : 15; } // reads from config
 function getOpenSizeBB() { return getOpenSize$() / BB_DOLLARS; } // = 5bb
 
-// Postflop SRP pot = hero open + villain call + dead money from folded blinds.
-// Dead money by preflop family (in $, at $1/$3):
-//   vs BB families (BTN/CO/HJ/LJ/UTG_vs_BB): SB dead $1
-//   SB_vs_BB: heads-up, no dead money
-//   BTN_vs_SB: BB dead $3
-//   CO_vs_BTN: SB+BB dead $4
+// ---------------------------------------------------------------------------
+// Central pot display helpers
+// ---------------------------------------------------------------------------
+
+// Total committed money (in $) at hero's decision point, per scenario.
+// Used by both the animation end-state and the static updateTable renderer.
+function getScenarioPot$(scenario) {
+    const open$ = getOpenSize$();
+    const villain$ = getVillainOpenSize$();
+    const blinds$ = 4; // $1 SB + $3 BB always dead or posted
+
+    if (scenario === 'RFI') {
+        // Blinds only — hero hasn't committed yet
+        return blinds$;
+    }
+    if (scenario === 'FACING_RFI') {
+        // Villain opened + both blinds in pot
+        return villain$ + blinds$;
+    }
+    if (scenario === 'RFI_VS_3BET' || scenario === 'RFI_VS_3') {
+        // Hero open + villain 3-bet + dead SB ($1); villain is typically BB so already counted in 3-bet
+        const threeBet$ = get3betSize$(state.oppPos, state.currentPos || state.heroPos || 'BTN');
+        return open$ + threeBet$ + 1; // $1 dead SB
+    }
+    if (scenario === 'VS_LIMP') {
+        // Each limper called 1BB ($3) + SB ($1) + BB ($3)
+        const limpers = (state.limperPositions && state.limperPositions.length) || 1;
+        return limpers * BB_DOLLARS + blinds$;
+    }
+    if (scenario === 'SQUEEZE') {
+        // Opener + 1 caller + blinds
+        return villain$ * 2 + blinds$;
+    }
+    if (scenario === 'SQUEEZE_2C') {
+        // Opener + 2 callers + blinds
+        return villain$ * 3 + blinds$;
+    }
+    if (scenario === 'PUSH_FOLD') {
+        // Just the blinds before hero shoves
+        return blinds$;
+    }
+    if (scenario === 'POSTFLOP_CBET') {
+        // SRP pot: hero open + villain call + dead money by family
+        if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
+        return open$ * 2 + 1; // fallback
+    }
+    return blinds$;
+}
+
+// Pot size for a SRP (Single Raised Pot) heading into the flop.
+// Dead money (folded blinds) differs by preflop family.
 function getSRPPot$(preflopFamily) {
     const dead = { BTN_vs_BB:1, CO_vs_BB:1, HJ_vs_BB:1, LJ_vs_BB:1, UTG_vs_BB:1,
                    SB_vs_BB:0, BTN_vs_SB:3, CO_vs_BTN:4 };
     return getOpenSize$() * 2 + (dead[preflopFamily] !== undefined ? dead[preflopFamily] : 1);
+}
+
+// Render a single central pot badge on the felt — positioned above community cards
+// (which sit at top:50%) but below the top seats (top:8-20%).
+// Safe zone: top ~38% desktop, ~36% mobile.
+function renderPotBadge(betsLayer, total$) {
+    const isMob = (SEAT_COORDS === SEAT_COORDS_MOBILE);
+    const potTop = isMob ? 36 : 38;
+    const badge = document.createElement('div');
+    badge.id = 'pot-badge';
+    badge.className = 'absolute z-35 pointer-events-none flex items-center gap-1.5';
+    badge.style.cssText = `left:50%;top:${potTop}%;transform:translate(-50%,-50%);`;
+    badge.innerHTML =
+        `<div style="width:var(--pot-chip,18px);height:var(--pot-chip,18px);" ` +
+        `class="rounded-full bg-amber-500 border-2 border-white/30 shadow-md flex-shrink-0"></div>` +
+        `<span style="font-size:var(--chip-font,9px);" ` +
+        `class="font-black text-amber-300 bg-black/60 px-1.5 py-0.5 rounded-full whitespace-nowrap">` +
+        `POT $${total$}</span>`;
+    betsLayer.appendChild(badge);
 }
 
 // Villain open size: randomized per-hand from a realistic 1/3 pool.
