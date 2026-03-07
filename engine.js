@@ -803,6 +803,10 @@ function buildReviewQueue() {
         if (reviewSession.todayDoneKeys.has(k)) return; // skip already done today
         const lastPipe = k.lastIndexOf('|');
         const spotKey = k.substring(0, lastPipe);
+        // Batch 1: Postflop review is not yet fully supported — the review route-decoder
+        // in generateNextRound has no handler for SRP/3BP/LIMP_POT keys and would render
+        // a blank table. Exclude postflop SR keys explicitly and cleanly until Batch 2.
+        if (POSTFLOP_KEY_PREFIX_LIST.includes(spotKey.split('|')[0])) return;
         if (!allSpotKeys.includes(spotKey)) return;
         if (r.dueAt > now) return; // not yet due
         // Score: higher = more urgent. Combine overdueness + error rate
