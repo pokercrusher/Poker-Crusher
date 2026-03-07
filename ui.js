@@ -876,72 +876,11 @@ function revealButtons() {
     }
 }
 
-function checkRangeHelper(hand, list) {
-    if (!list) return false;
-    const r1 = hand[0], r2 = hand[1], type = hand[2] || ''; // type: '' = pair, 's' = suited, 'o' = offsuit
-    const ri1 = RANKS.indexOf(r1), ri2 = RANKS.indexOf(r2);
-
-    for (let item of list) {
-        // Exact match
-        if (item === hand) return true;
-
-        // "AK" shorthand (no suffix) = matches AKs and AKo
-        if (item.length === 2 && !item.endsWith('+')) {
-            const ir1 = item[0], ir2 = item[1];
-            if (r1 === ir1 && r2 === ir2 && r1 !== r2) return true;
-        }
-
-        // "XX+" — pairs (e.g. QQ+) or suited/offsuit (e.g. ATs+)
-        if (item.endsWith('+')) {
-            const base = item.slice(0, -1);
-            const bSuffix = base.endsWith('s') ? 's' : base.endsWith('o') ? 'o' : '';
-            const bR1 = base[0], bR2 = base[1];
-            const bRi1 = RANKS.indexOf(bR1), bRi2 = RANKS.indexOf(bR2);
-
-            if (bR1 === bR2 && bSuffix === '') {
-                // Pair range: e.g. QQ+ means QQ and above
-                if (r1 === r2 && type === '' && ri1 <= bRi1) return true;
-            } else if (bSuffix === 's') {
-                // Suited: e.g. ATs+ means ATs, AJs, AQs, AKs
-                if (type === 's' && r1 === bR1 && ri2 <= bRi2) return true;
-            } else if (bSuffix === 'o') {
-                // Offsuit: e.g. ATo+
-                if (type === 'o' && r1 === bR1 && ri2 <= bRi2) return true;
-            } else {
-                // No suffix, two different ranks: "AK+" matches AKs+AKo
-                if (r1 === bR1 && r2 === bR2 && ri2 <= bRi2) return true;
-            }
-        }
-
-        // "XX-YY" — ranges (e.g. JJ-77, ATs-A8s, AJo-ATo)
-        if (item.includes('-') && !item.endsWith('+')) {
-            const dashIdx = item.indexOf('-');
-            const s = item.slice(0, dashIdx);
-            const e = item.slice(dashIdx + 1);
-            const sSuffix = s.endsWith('s') ? 's' : s.endsWith('o') ? 'o' : '';
-            const eSuffix = e.endsWith('s') ? 's' : e.endsWith('o') ? 'o' : '';
-            const sR1 = s[0], sR2 = s[1];
-            const eR1 = e[0], eR2 = e[1];
-            const sRi1 = RANKS.indexOf(sR1), sRi2 = RANKS.indexOf(sR2);
-            const eRi1 = RANKS.indexOf(eR1), eRi2 = RANKS.indexOf(eR2);
-
-            if (sR1 === sR2 && sSuffix === '' && eR1 === eR2 && eSuffix === '') {
-                // Pair range: e.g. JJ-77
-                if (r1 === r2 && type === '' && ri1 >= sRi1 && ri1 <= eRi1) return true;
-            } else if (sSuffix === 's' && eSuffix === 's' && sR1 === eR1) {
-                // Suited kicker range: e.g. ATs-A8s
-                if (type === 's' && r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
-            } else if (sSuffix === 'o' && eSuffix === 'o' && sR1 === eR1) {
-                // Offsuit kicker range: e.g. AJo-ATo
-                if (type === 'o' && r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
-            } else if (sSuffix === '' && eSuffix === '' && sR1 !== sR2) {
-                // No suffix range: e.g. "AK-AJ" matches AKs, AKo, AQs, AQo, AJs, AJo
-                if (r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
-            }
-        }
-    }
-    return false;
-}
+// checkRangeHelper — alias to canonical definition in engine.js
+// All callers in ui.js continue to work without modification.
+// (Canonical definition moved to engine.js Phase 1 refactor.)
+// checkRangeHelper is now a global defined in engine.js; no alias needed here.
+// This comment block preserves the location for reference.
 
 // Store chart context so bucket toggle can re-render
 let _chartCtx = { pos: null, target: null, scenario: null, oppPos: null };
