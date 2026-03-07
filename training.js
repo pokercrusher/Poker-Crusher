@@ -2207,7 +2207,7 @@ function handlePostflopInput(action){
     if(grid){ grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
     const spot=state.postflop;
     if(!spot||!spot.strategy){ __endResolve(); return; }
-    const result=scorePostflopAction(action,spot.strategy);
+    const result=scorePostflopAction(action,spot.strategy,spot);
 
     // Stats
     postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
