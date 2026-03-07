@@ -1874,13 +1874,8 @@ function generateNextRound() {
         state.currentHand = EdgeWeight.sampleHand(state.scenario, state.currentPos,
             state.scenario === 'VS_LIMP' ? state.oppPos + '|' + state.limperBucket : state.oppPos,
             srDb, missBoostData);
-        // Track for variety guard
-        const oppSuffix = state.scenario === 'VS_LIMP' ? '_Limp' : '';
-        let curSRKey;
-        if (state.scenario === 'SQUEEZE' || state.scenario === 'SQUEEZE_2C') curSRKey = `${state.scenario}|${state.oppPos}|${state.currentHand}`;
-        else if (state.scenario === 'VS_LIMP') curSRKey = `${state.scenario}|${state.currentPos}_vs_${state.oppPos}_Limp|${state.limperBucket}|${state.currentHand}`;
-        else if (state.scenario === 'PUSH_FOLD') curSRKey = `${state.scenario}|${state.currentPos}|${state.stackBB}BB|${state.currentHand}`;
-        else curSRKey = `${state.scenario}|${state.currentPos}${state.oppPos ? '_vs_' + state.oppPos + oppSuffix : ''}|${state.currentHand}`;
+        // Track for variety guard — use canonical key builder
+        const curSRKey = buildSRKey(state.scenario, state.currentPos, state.oppPos, state.limperBucket, state.stackBB, state.currentHand);
         state.recentHandKeys.push(curSRKey);
         if (state.recentHandKeys.length > 10) state.recentHandKeys = state.recentHandKeys.slice(-10);
     }
@@ -1935,39 +1930,8 @@ function handleInput(action) {
     const grid = document.querySelector('#action-buttons > div');
     if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
 
-    let correctAction;
-    if (state.scenario === 'RFI') {
-        correctAction = checkRangeHelper(state.currentHand, rfiRanges[state.currentPos]) ? 'RAISE' : 'FOLD';
-    } else if (state.scenario === 'FACING_RFI') {
-        const data = facingRfiRanges[`${state.currentPos}_vs_${state.oppPos}`];
-        if (checkRangeHelper(state.currentHand, data["3-bet"])) correctAction = "3BET";
-        else if (data["Call"].length > 0 && checkRangeHelper(state.currentHand, data["Call"])) correctAction = "CALL";
-        else correctAction = "FOLD";
-    } else if (state.scenario === 'VS_LIMP') {
-        const data = getLimpDataForBucket(state.currentPos, state.oppPos, state.limperBucket) || allFacingLimps[`${state.currentPos}_vs_${state.oppPos}_Limp`];
-        if (checkRangeHelper(state.currentHand, getLimpRaise(data))) correctAction = "ISO";
-        else if (isLimpBBSpot(data)) correctAction = "OVERLIMP"; // BB can't fold
-        else if (checkRangeHelper(state.currentHand, getLimpPassive(data))) correctAction = "OVERLIMP";
-        else correctAction = "FOLD";
-    } else if (state.scenario === 'SQUEEZE') {
-        const data = squeezeRanges[state.oppPos];
-        if (data && checkRangeHelper(state.currentHand, data["Squeeze"])) correctAction = "SQUEEZE";
-        else if (data && data["Call"] && checkRangeHelper(state.currentHand, data["Call"])) correctAction = "CALL";
-        else correctAction = "FOLD";
-    } else if (state.scenario === 'SQUEEZE_2C') {
-        const data = squeezeVsRfiTwoCallers[state.oppPos];
-        if (data && checkRangeHelper(state.currentHand, data["Squeeze"])) correctAction = "SQUEEZE";
-        else if (data && data["Call"] && checkRangeHelper(state.currentHand, data["Call"])) correctAction = "CALL";
-        else correctAction = "FOLD";
-    } else if (state.scenario === 'PUSH_FOLD') {
-        const pfRange = PF_PUSH[state.stackBB] && PF_PUSH[state.stackBB][state.currentPos];
-        correctAction = (pfRange && checkRangeHelper(state.currentHand, pfRange)) ? 'SHOVE' : 'FOLD';
-    } else {
-        const data = rfiVs3BetRanges[`${state.currentPos}_vs_${state.oppPos}`];
-        if (checkRangeHelper(state.currentHand, data["4-bet"])) correctAction = "4BET";
-        else if (checkRangeHelper(state.currentHand, data["Call"])) correctAction = "CALL";
-        else correctAction = "FOLD";
-    }
+    // Use the canonical single source of truth for correct action derivation
+    const correctAction = computeCorrectAction(state.currentHand, state.scenario, state.currentPos, state.oppPos, state.limperBucket);
 
     const correct = action === correctAction;
     state.sessionStats.total++; state.global.totalHands++;
@@ -1975,7 +1939,7 @@ function handleInput(action) {
     // Track per-scenario stats
     const sc = state.scenario;
     const hp = state.currentPos;
-    const spotKey = sc === 'RFI' ? `${sc}|${hp}` : sc === 'VS_LIMP' ? `${sc}|${hp}_vs_${state.oppPos}_Limp|${state.limperBucket}` : (sc === 'SQUEEZE' || sc === 'SQUEEZE_2C') ? `${sc}|${state.oppPos}` : sc === 'PUSH_FOLD' ? `${sc}|${hp}|${state.stackBB}BB` : `${sc}|${hp}_vs_${state.oppPos}`;
+    const spotKey = buildSpotKey(sc, hp, state.oppPos, state.limperBucket, state.stackBB);
 
 
     // Daily Run tracking (UI wrapper only — does not affect SR or core stats)
@@ -1998,7 +1962,7 @@ function handleInput(action) {
     }
 
     // Update SR for this hand within the spot
-    const handSRKey = `${spotKey}|${state.currentHand}`;
+    const handSRKey = buildSRKey(sc, hp, state.oppPos, state.limperBucket, state.stackBB, state.currentHand);
     const srGrade = correct ? 'Good' : 'Again';
     SR.update(handSRKey, srGrade);
     // Track reviewed hands so they don't show again today
@@ -2015,15 +1979,14 @@ function handleInput(action) {
     if (!state.global.bySpot[spotKey]) state.global.bySpot[spotKey] = { total: 0, correct: 0 };
     state.global.bySpot[spotKey].total++;
 
-    // Track per-hand stats within a spot (e.g. "RFI|BTN|AKs")
-    const handKey = `${spotKey}|${state.currentHand}`;
-    if (!state.global.byHand[handKey]) state.global.byHand[handKey] = { total: 0, correct: 0 };
-    state.global.byHand[handKey].total++;
+    // Track per-hand stats within a spot (e.g. "RFI|BTN|AKs") — reuse canonical handSRKey
+    if (!state.global.byHand[handSRKey]) state.global.byHand[handSRKey] = { total: 0, correct: 0 };
+    state.global.byHand[handSRKey].total++;
 
     // Track miss metadata for mistake-prioritization (does not touch SR)
     if (!correct) {
-        state.global.byHand[handKey].lastMissedAt = Date.now();
-        state.global.byHand[handKey].recentMissCount = (state.global.byHand[handKey].recentMissCount || 0) + 1;
+        state.global.byHand[handSRKey].lastMissedAt = Date.now();
+        state.global.byHand[handSRKey].recentMissCount = (state.global.byHand[handSRKey].recentMissCount || 0) + 1;
     }
 
     // Detect squeeze bluffs
@@ -2049,7 +2012,7 @@ function handleInput(action) {
         state.global.byPos[hp].correct++;
         state.global.byPosGroup[normalizePos(hp)].correct++;
         state.global.bySpot[spotKey].correct++;
-        state.global.byHand[handKey].correct++;
+        state.global.byHand[handSRKey].correct++;
         if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
         // Tag bluff squeezes in correct toast
         if (correctAction === 'SQUEEZE' && (sc === 'SQUEEZE' || sc === 'SQUEEZE_2C')) {
