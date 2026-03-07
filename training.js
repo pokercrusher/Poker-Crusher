@@ -2181,8 +2181,13 @@ function handlePostflopInput(action){
 
     // Stats
     postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-    const srKey=`${spot.spotKey}|${spot.boardArchetype}`;
+
+    // Fix 1 (Batch 1): use canonical postflop SR key builder instead of inline template.
+    const srKey = buildPostflopSRKey(spot.spotKey, spot.boardArchetype);
     SR.update(srKey, result.correct?'Good':'Again');
+    // Track reviewed hands so they don't show again today (mirrors preflop handleInput).
+    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
+
     if(!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype]={total:0,correct:0};
     postflopStats.byArchetype[spot.boardArchetype].total++;
     if(!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily]={total:0,correct:0};
@@ -2197,6 +2202,35 @@ function handlePostflopInput(action){
     if(!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey]={total:0,correct:0};
     state.global.bySpot[spot.spotKey].total++;
 
+    // Fix 4 (Batch 1): track byPos / byPosGroup for postflop (mirrors preflop handleInput).
+    const _pfHero = spot.heroPos;
+    if(!state.global.byPos[_pfHero]) state.global.byPos[_pfHero]={total:0,correct:0};
+    state.global.byPos[_pfHero].total++;
+    const _pfPg = normalizePos(_pfHero);
+    if(!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg]={total:0,correct:0};
+    state.global.byPosGroup[_pfPg].total++;
+
+    // Fix 3 (Batch 1): Daily Run tracking — structurally identical to preflop handleInput block.
+    // Postflop misses must end the run; correct answers must advance the streak counter.
+    if (dailyRunState && dailyRunState.active) {
+        dailyRunState.total++;
+        if (result.correct) {
+            dailyRunState.correct++;
+            dailyRunState.runStreak++;
+            try { updateDRRoundCounter(); } catch(_){}
+            try { if(navigator.vibrate) navigator.vibrate(25); } catch(_){}
+        } else {
+            // First wrong answer ends the Daily Run, exactly like preflop.
+            dailyRunState.ended = true;
+            try { const ov=document.getElementById('miss-flash-overlay'); if(ov){ov.classList.remove('active');void ov.offsetWidth;ov.classList.add('active');} } catch(_){}
+            try { if(navigator.vibrate) navigator.vibrate([40,30,40]); } catch(_){}
+        }
+        const _drSpotKey = spot.spotKey;
+        if (!dailyRunState.bySpot[_drSpotKey]) dailyRunState.bySpot[_drSpotKey] = { total: 0, correct: 0 };
+        dailyRunState.bySpot[_drSpotKey].total++;
+        if (result.correct) dailyRunState.bySpot[_drSpotKey].correct++;
+    }
+
     const logEntry={ scenario:sc, pos:spot.heroPos, oppPos:spot.villainPos, hand:flopStr(spot.flopCards), action, correctAction:result.correct?action:(action==='CBET'?'CHECK':'CBET'), correct:result.correct, spotKey:spot.spotKey, archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback };
     state.sessionLog.unshift(logEntry);
 
@@ -2209,6 +2243,9 @@ function handlePostflopInput(action){
         postflopStats.byPosition[spot.positionState].correct++;
         state.global.byScenario[sc].correct++;
         state.global.bySpot[spot.spotKey].correct++;
+        // Fix 4 continued: correct-answer increments for new stat paths.
+        state.global.byPos[_pfHero].correct++;
+        state.global.byPosGroup[_pfPg].correct++;
         showToast(result.grade==='marginal'?"Correct · Close spot":"Correct","correct",result.grade==='marginal'?700:500);
         updateUI(); saveProgress(); savePostflopStats();
         window.__roundGuard.nextTimer=setTimeout(()=>{ __endResolve(); if(!checkDrillComplete()&&!checkDailyRunComplete()) safeGenerateNextRound(); },600);
