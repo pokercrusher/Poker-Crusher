@@ -1828,9 +1828,12 @@ function generateNextRound() {
     // POSTFLOP: skip hand sampling, render community cards and postflop buttons instead
     if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
         clearToast();
-        // Clear preflop card displays
-        const handDisplay = document.getElementById('hand-display');
-        if (handDisplay) handDisplay.innerHTML = '';
+        // Set currentHand from the generated postflop hero hand so cards render correctly
+        state.currentHand = (state.postflop.heroHand && state.postflop.heroHand.handKey)
+            ? state.postflop.heroHand.handKey
+            : null;
+        // Show card backs immediately so the layout is stable while the table animates
+        if (state.currentHand) renderHeroCardBacks();
         // Show flop info line
         const flopInfoEl = document.getElementById('flop-info-line');
         if (flopInfoEl) {
@@ -1846,9 +1849,15 @@ function generateNextRound() {
         const bl = document.getElementById('bets-layer'); if (bl) bl.innerHTML = '';
         // Update table seats
         try { updateTable(state.postflop.heroPos, state.postflop.villainPos); } catch(_) {}
-        // Render postflop buttons (hidden, then reveal)
+        // Render postflop buttons hidden, then reveal; simultaneously flip hero cards
         renderPostflopButtons(true);
-        setTimeout(() => renderPostflopButtons(false), 300);
+        setTimeout(() => {
+            if (state.currentHand) {
+                try { renderHand(state.currentHand); } catch(_) {}
+                try { requestAnimationFrame(() => { try { flipHeroCards(); } catch(_) {} }); } catch(_) {}
+            }
+            renderPostflopButtons(false);
+        }, 300);
         return;
     }
     // Clear postflop UI elements if we're in a preflop round
