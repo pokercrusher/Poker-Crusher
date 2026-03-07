@@ -1690,15 +1690,40 @@ function generateNextRound() {
     // POSTFLOP: skip hand sampling, render community cards and postflop buttons instead
     if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
         clearToast();
-        // Clear preflop card displays
+        const spot = state.postflop;
+
+        // Phase 2: render hero hole cards if available, otherwise clear
         const handDisplay = document.getElementById('hand-display');
-        if (handDisplay) handDisplay.innerHTML = '';
-        // Show flop info line
+        if (handDisplay) {
+            if (spot.heroHand && spot.heroHand.cards) {
+                // Store handKey on state for consistency with preflop path
+                state.currentHand = spot.heroHand.handKey || '';
+                // Render concrete hero cards using the same card HTML as preflop
+                const color = (s) => (s === '♥' || s === '♦' || s === 'h' || s === 'd') ? 'text-rose-600' : 'text-slate-900';
+                const suitSym = (s) => SUIT_SYMBOLS[s] || s;
+                const cardHtml = (r, s) => `
+                    <div class="hero-card-wrapper" style="width:var(--hero-card-w, 64px);height:var(--hero-card-h, 96px);">
+                        <div class="hero-card-inner flipped" style="width:100%;height:100%;">
+                            <div class="hero-card-back-face"></div>
+                            <div class="hero-card-front card-display flex flex-col items-center" style="width:100%;height:100%;">
+                                <div class="h-1/2 w-full flex items-end justify-center pb-1"><span class="font-black leading-none ${color(s)}" style="font-size:var(--hero-rank-size, 32px);">${r}</span></div>
+                                <div class="h-1/2 w-full flex items-start justify-center pt-1"><span class="leading-none ${color(s)}" style="font-size:var(--hero-suit-size, 28px);">${suitSym(s)}</span></div>
+                            </div>
+                        </div>
+                    </div>`;
+                handDisplay.innerHTML = cardHtml(spot.heroHand.cards[0].rank, spot.heroHand.cards[0].suit)
+                                      + cardHtml(spot.heroHand.cards[1].rank, spot.heroHand.cards[1].suit);
+            } else {
+                handDisplay.innerHTML = '';
+            }
+        }
+
+        // Show flop info line with hand class label when available
         const flopInfoEl = document.getElementById('flop-info-line');
         if (flopInfoEl) {
-            const spot = state.postflop;
             const archLabel = ARCHETYPE_LABELS[spot.boardArchetype] || spot.boardArchetype;
-            flopInfoEl.innerHTML = `<span class="text-slate-400">Flop:</span> ${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel})</span>`;
+            let infoHtml = `<span class="text-slate-400">Flop:</span> ${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel})</span>`;
+            flopInfoEl.innerHTML = infoHtml;
             flopInfoEl.classList.remove('hidden');
         }
         // Render community cards on felt
@@ -2057,11 +2082,14 @@ function handlePostflopInput(action){
     if(grid){ grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
     const spot=state.postflop;
     if(!spot||!spot.strategy){ __endResolve(); return; }
-    const result=scorePostflopAction(action,spot.strategy);
+    const result=scorePostflopAction(action,spot.strategy,spot);
 
     // Stats
     postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-    const srKey=buildPostflopSRKey(spot.spotKey, spot.boardArchetype);
+    // Phase 2: SR key includes hand class for hero-hand-aware spots
+    const srKeyBase = spot.heroHandClass ? spot.spotKey : spot.spotKey;
+    const srKeySuffix = spot.heroHandClass ? spot.heroHand.handKey : spot.boardArchetype;
+    const srKey=buildPostflopSRKey(srKeyBase, srKeySuffix);
     SR.update(srKey, result.correct?'Good':'Again');
     if(!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype]={total:0,correct:0};
     postflopStats.byArchetype[spot.boardArchetype].total++;
@@ -2079,9 +2107,9 @@ function handlePostflopInput(action){
 
     const logEntry=buildDecisionNode(
         { scenario:sc, heroPos:spot.heroPos, oppPos:spot.villainPos, limperBucket:'1L', limperPositions:[], spotKey:spot.spotKey },
-        { hand:flopStr(spot.flopCards), correctAction:result.correct?action:(action==='CBET'?'CHECK':'CBET'), srKey:srKey, spotKey:spot.spotKey, edgeCategory:'NORMAL' },
+        { hand: spot.heroHand ? spot.heroHand.handKey : flopStr(spot.flopCards), correctAction:result.correct?action:(action==='CBET'?'CHECK':'CBET'), srKey:srKey, spotKey:spot.spotKey, edgeCategory:'NORMAL' },
         action, result.correct,
-        { archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback }
+        { archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback, heroHandClass:spot.heroHandClass||null, flopCards:flopStr(spot.flopCards) }
     );
     state.sessionLog.unshift(logEntry);
 
@@ -2112,9 +2140,12 @@ function showPostflopFeedback(spot,result){
     if(!modal){ modal=document.createElement('div'); modal.id='postflop-feedback-modal'; modal.className='fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6'; modal.onclick=e=>{if(e.target===modal) closePostflopFeedback();}; document.body.appendChild(modal); }
     const archLabel=ARCHETYPE_LABELS[spot.boardArchetype]||spot.boardArchetype;
     const betFreq=Math.round((spot.strategy.actions.bet33||0)*100); const checkFreq=Math.round((spot.strategy.actions.check||0)*100);
+    const handClassLine = spot.heroHandClass ? `<div class="text-[11px] font-black text-indigo-400 mb-2">${(typeof HAND_CLASS_LABELS!=='undefined'&&HAND_CLASS_LABELS[spot.heroHandClass])||spot.heroHandClass}</div>` : '';
+    const heroHandLine = spot.heroHand ? `<span class="text-white text-xs font-bold ml-2">${spot.heroHand.handKey}</span>` : '';
     modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
+        <div class="text-sm font-bold text-slate-200 mb-2">${_flopCardsHtml(spot.flopCards)} <span class="text-slate-500 text-xs">(${archLabel})</span>${heroHandLine}</div>
+        ${handClassLine}
         <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-orange-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-orange-400 w-12 text-right">C-Bet ${betFreq}%</div></div>
         <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Check ${checkFreq}%</div></div>
         <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning}</div></div>`;
