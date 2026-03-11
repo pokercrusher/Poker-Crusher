@@ -1475,8 +1475,11 @@ function scorePostflopAction(playerAction, strategy, spot) {
 // PHASE 2: Hero-Hand-Aware Postflop
 // ============================================================
 
-// Families that support hero-hand-aware training (V3 scope: BTN_vs_BB, CO_vs_BB, SB_vs_BB)
-const HERO_HAND_AWARE_FAMILIES = new Set(['BTN_vs_BB', 'CO_vs_BB', 'SB_vs_BB']);
+// Families that support hero-hand-aware training (V3: all SRP families)
+const HERO_HAND_AWARE_FAMILIES = new Set([
+    'BTN_vs_BB', 'CO_vs_BB', 'HJ_vs_BB', 'LJ_vs_BB',
+    'SB_vs_BB', 'BTN_vs_SB', 'CO_vs_BTN', 'UTG_vs_BB'
+]);
 
 // --- Flop hand classification ---
 const HAND_CLASS_LABELS = {
@@ -1811,9 +1814,17 @@ const POSTFLOP_STRATEGY_V2 = {};
         AIR: 'No made hand or draw; bet as a bluff on PFR-favorable boards, check otherwise.'
     };
 
-    // Family offsets: small adjustments per family
-    // CO is slightly tighter than BTN; SB is handled via OOP base tables
-    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.03, SB_vs_BB: 0 };
+    // Family offsets: small adjustments per family on top of IP/OOP base tables
+    // BTN is the widest/most aggressive opener → baseline (0)
+    // CO slightly tighter, HJ/LJ tighter still, UTG tightest (strongest range → can bet more)
+    // OOP families: SB_vs_BB uses OOP base (0 offset), CO_vs_BTN slightly negative (tighter range OOP)
+    const FAMILY_OFF = {
+        BTN_vs_BB: 0, CO_vs_BB: -0.03, HJ_vs_BB: -0.02, LJ_vs_BB: -0.01,
+        UTG_vs_BB: 0.02,   // UTG has the strongest range → slight bet frequency boost
+        BTN_vs_SB: 0.02,   // BTN vs SB: tighter caller, PFR has bigger advantage
+        SB_vs_BB: 0,        // OOP base already accounts for positional penalty
+        CO_vs_BTN: -0.03    // OOP + wider caller range → bet a touch less
+    };
 
     for (const fam of HERO_HAND_AWARE_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
