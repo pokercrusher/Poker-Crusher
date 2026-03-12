@@ -686,81 +686,83 @@
         </div>
     </div>
 
-<!-- CONFIGURATION SCREEN -->
-    <div id="config-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl z-50 p-6 flex flex-col items-center justify-start overflow-y-auto">
-        <div class="w-full max-w-sm flex flex-col gap-6 pt-6 pb-12">
-            <!-- Mode Tabs -->
-            <div class="flex gap-2 bg-slate-900/50 p-1 rounded-xl">
-                <button onclick="setDrillMode('open')" id="mode-open" class="mode-tab active">Open Training</button>
-                <button onclick="setDrillMode('focused')" id="mode-focused" class="mode-tab">Focused Drill</button>
-            </div>
-            <div id="mode-desc" class="text-[11px] text-slate-500 text-center -mt-3 px-2">Mix scenarios &amp; positions — great for general practice.</div>
+<!-- UNIFIED SESSION BUILDER -->
+    <div id="config-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl z-50 flex flex-col items-center justify-start overflow-y-auto">
+        <div class="w-full max-w-sm flex flex-col gap-5 px-6 pt-6 pb-12">
 
-            <!-- Open Training Options -->
-            <div id="config-open" class="flex flex-col gap-6">
+            <!-- Header -->
+            <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Scenarios</p>
-                    <div class="grid grid-cols-1 gap-2">
-                        <button onclick="toggleConfig('scenario', 'RFI')" id="cfg-RFI" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">RFI (Unopened) <span>✓</span></button>
-                        <button onclick="toggleConfig('scenario', 'FACING_RFI')" id="cfg-FACING_RFI" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Defending vs RFI <span>✓</span></button>
-                        <button onclick="toggleConfig('scenario', 'RFI_VS_3BET')" id="cfg-RFI_VS_3BET" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">vs 3-Bet Situations <span>✓</span></button>
-                        <button onclick="toggleConfig('scenario', 'VS_LIMP')" id="cfg-VS_LIMP" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Vs Limpers (1–3+) <span>✓</span></button>
-                        <button onclick="toggleConfig('scenario', 'SQUEEZE')" id="cfg-SQUEEZE" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Squeeze <span>✓</span></button>
-                        <button onclick="toggleConfig('scenario', 'SQUEEZE_2C')" id="cfg-SQUEEZE_2C" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Squeeze vs 2 Callers <span>✓</span></button>
-                        <button onclick="toggleConfig('scenario', 'PUSH_FOLD')" id="cfg-PUSH_FOLD" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center">Push / Fold (Short Stack) <span></span></button>
-                        <button onclick="toggleConfig('scenario', 'POSTFLOP_CBET')" id="cfg-POSTFLOP_CBET" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center border-l-4 border-orange-600/60">Flop C-Bet (Postflop) <span></span></button>
-                        <button onclick="toggleConfig('scenario', 'POSTFLOP_DEFEND')" id="cfg-POSTFLOP_DEFEND" class="config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center border-l-4 border-cyan-600/60">Defend vs C-Bet (Postflop) <span></span></button>
-                    </div>
+                    <p class="text-[10px] text-indigo-400/80 font-bold uppercase tracking-[0.25em]">Train Now</p>
+                    <h2 class="text-2xl font-black tracking-tight">Session Builder</h2>
                 </div>
-                <div id="limper-mix-section" class="hidden">
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Limpers Mix</p>
-                    <div class="grid grid-cols-3 gap-2" id="limper-mix-btns">
-                        <button onclick="setLimperMix('mostly1')" id="lmix-mostly1" class="config-btn py-3 rounded-lg text-[10px] font-bold">Tight</button>
-                        <button onclick="setLimperMix('liveish')" id="lmix-liveish" class="config-btn py-3 rounded-lg text-[10px] font-bold">Live 1/3</button>
-                        <button onclick="setLimperMix('multiway')" id="lmix-multiway" class="config-btn py-3 rounded-lg text-[10px] font-bold selected">Active</button>
-                    </div>
-                    <p class="text-[9px] text-slate-600 mt-1.5 ml-1">1 limper / 2 limpers / 3+ limpers — Tight: 70/22/8 · Live: 50/32/18 · Active: 38/40/22</p>
-                </div>
-                <div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Hero Position</p>
-                    <div class="grid grid-cols-3 gap-2" id="config-pos-open">
-                        <button onclick="toggleConfig('pos', 'UTG')" id="cfg-pos-UTG" class="config-btn py-3 rounded-lg text-xs font-black">UTG</button>
-                        <button onclick="toggleConfig('pos', 'UTG1')" id="cfg-pos-UTG1" class="config-btn py-3 rounded-lg text-xs font-black">UTG+1</button>
-                        <button onclick="toggleConfig('pos', 'UTG2')" id="cfg-pos-UTG2" class="config-btn py-3 rounded-lg text-xs font-black">UTG+2</button>
-                        <button onclick="toggleConfig('pos', 'LJ')" id="cfg-pos-LJ" class="config-btn py-3 rounded-lg text-xs font-black">LJ</button>
-                        <button onclick="toggleConfig('pos', 'HJ')" id="cfg-pos-HJ" class="config-btn py-3 rounded-lg text-xs font-black">HJ</button>
-                        <button onclick="toggleConfig('pos', 'CO')" id="cfg-pos-CO" class="config-btn py-3 rounded-lg text-xs font-black">CO</button>
-                        <button onclick="toggleConfig('pos', 'BTN')" id="cfg-pos-BTN" class="config-btn py-3 rounded-lg text-xs font-black">BTN</button>
-                        <button onclick="toggleConfig('pos', 'SB')" id="cfg-pos-SB" class="config-btn py-3 rounded-lg text-xs font-black">SB</button>
-                        <button onclick="toggleConfig('pos', 'BB')" id="cfg-pos-BB" class="config-btn py-3 rounded-lg text-xs font-black">BB</button>
-                    </div>
+                <button onclick="hideConfigMenu()" class="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-bold">Back</button>
+            </div>
+
+            <!-- Section 1: Module -->
+            <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Module</p>
+                <div class="flex gap-2">
+                    <button onclick="setSessionModule('PREFLOP')" id="mod-PREFLOP" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn selected">Preflop</button>
+                    <button id="mod-POSTFLOP" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn opacity-50 cursor-not-allowed" disabled>
+                        <span>Postflop</span>
+                        <span class="block text-[8px] font-bold text-slate-600 mt-0.5">Coming soon</span>
+                    </button>
+                    <button id="mod-FULL_HAND" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn opacity-50 cursor-not-allowed" disabled>
+                        <span>Full Hand</span>
+                        <span class="block text-[8px] font-bold text-slate-600 mt-0.5">Coming soon</span>
+                    </button>
                 </div>
             </div>
 
-            <!-- Focused Drill Options (hidden by default) -->
-            <div id="config-focused" class="hidden flex flex-col gap-6">
-                <div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Choose Scenario</p>
-                    <div class="grid grid-cols-1 gap-2" id="drill-scenario-list"></div>
+            <!-- Section 2: Spot Families -->
+            <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Spots</p>
+                <div id="family-chips" class="flex flex-wrap gap-2">
+                    <!-- Injected by renderFamilyChips() -->
                 </div>
-                <div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Hands</p>
+            </div>
+
+            <!-- Section 3: Dynamic Filters -->
+            <div id="dynamic-filters" class="flex flex-col gap-4">
+                <!-- Hero Positions -->
+                <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Hero Position</p>
+                    <div class="grid grid-cols-3 gap-2" id="cfg-positions">
+                        <!-- Injected by renderPositionChips() -->
+                    </div>
+                </div>
+
+                <!-- Limper Mix (conditional) -->
+                <div id="filter-limper-mix" class="hidden bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Limper Table Mix</p>
                     <div class="grid grid-cols-3 gap-2">
-                        <button onclick="setDrillCount(10)" id="drill-ct-10" class="count-btn">10</button>
-                        <button onclick="setDrillCount(25)" id="drill-ct-25" class="count-btn selected">25</button>
-                        <button onclick="setDrillCount(50)" id="drill-ct-50" class="count-btn">50</button>
+                        <button onclick="setLimperMix('mostly1')" id="lmix-mostly1" class="config-btn py-2.5 rounded-xl text-[11px] font-bold">Tight</button>
+                        <button onclick="setLimperMix('liveish')" id="lmix-liveish" class="config-btn py-2.5 rounded-xl text-[11px] font-bold">Live 1/3</button>
+                        <button onclick="setLimperMix('multiway')" id="lmix-multiway" class="config-btn py-2.5 rounded-xl text-[11px] font-bold selected">Active</button>
                     </div>
-                </div>
-                <div>
-                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3 ml-1">Hero Position</p>
-                    <div class="grid grid-cols-3 gap-2" id="drill-pos-list"></div>
+                    <p class="text-[9px] text-slate-600 mt-2 leading-snug">1L / 2L / 3+ — Tight: 70/22/8 · Live: 50/32/18 · Active: 38/40/22</p>
                 </div>
             </div>
 
-            <!-- Buttons -->
-            <div class="flex flex-col gap-3 mt-2">
-                <button onclick="startConfiguredTraining()" id="cfg-start-btn" class="w-full py-5 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black text-xl transition-all shadow-lg">START</button>
-                <button onclick="hideConfigMenu()" class="w-full py-4 bg-slate-900 border border-slate-800 rounded-2xl font-bold text-sm text-slate-500">Back</button>
+            <!-- Section 4: Session Length -->
+            <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Session Length</p>
+                <div class="flex gap-2">
+                    <button onclick="setSessionLength('ENDLESS')" id="slen-ENDLESS" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">&#8734; Endless</button>
+                    <button onclick="setSessionLength(10)" id="slen-10" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">10</button>
+                    <button onclick="setSessionLength(25)" id="slen-25" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">25</button>
+                    <button onclick="setSessionLength(50)" id="slen-50" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">50</button>
+                </div>
+            </div>
+
+            <!-- Pool validation message -->
+            <div id="cfg-pool-msg" class="hidden text-[11px] text-rose-400 font-bold text-center px-2 -mt-2"></div>
+
+            <!-- CTA -->
+            <div class="flex flex-col gap-3 mt-1">
+                <button onclick="startConfiguredTraining()" id="cfg-start-btn" class="w-full py-5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-xl transition-all shadow-lg">START TRAINING</button>
+                <button onclick="hideConfigMenu()" class="w-full py-3 bg-slate-900 border border-slate-800 rounded-2xl font-bold text-sm text-slate-500">Back</button>
             </div>
         </div>
     </div>
