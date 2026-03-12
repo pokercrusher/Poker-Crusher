@@ -2137,3 +2137,675 @@ function scoreDefenderAction(playerAction, strategy, spot) {
 
     return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
 }
+
+// ============================================================
+// SRP POSTFLOP PHASE 2 — TURN ARCHITECTURE
+// ============================================================
+// Covers: turn card family classification, turn hand reclassification,
+// turn strategy (PFR barrel + defender response), turn spot generation.
+// Only SRP is implemented. 3BP / limp-pot / squeeze-pot left for future phases.
+
+// --- Turn card family constants ---
+const TURN_FAMILIES = [
+    'BRICK', 'LOW_BLANK', 'OVERCARD', 'ACE_OVERCARD', 'BROADWAY_OVERCARD',
+    'BOARD_PAIR', 'FLUSH_COMPLETE', 'STRAIGHT_COMPLETE', 'DYNAMIC_CONNECTOR'
+];
+
+const TURN_FAMILY_LABELS = {
+    BRICK: 'Brick', LOW_BLANK: 'Low blank', OVERCARD: 'Overcard',
+    ACE_OVERCARD: 'Ace overcard', BROADWAY_OVERCARD: 'Broadway overcard',
+    BOARD_PAIR: 'Board pair', FLUSH_COMPLETE: 'Flush card',
+    STRAIGHT_COMPLETE: 'Straight card', DYNAMIC_CONNECTOR: 'Dynamic connector'
+};
+
+// Turn hand classes — extended from flop to capture improved / completed hands
+const TURN_HAND_CLASSES = [
+    'FLUSH', 'STRAIGHT', 'SET', 'TWO_PAIR', 'OVERPAIR',
+    'TOP_PAIR', 'SECOND_PAIR', 'THIRD_PAIR', 'UNDERPAIR',
+    'COMBO_DRAW', 'STRONG_DRAW', 'OESD', 'GUTSHOT',
+    'ACE_HIGH', 'OVERCARDS', 'AIR'
+];
+
+const TURN_HAND_CLASS_LABELS = {
+    FLUSH: 'Flush', STRAIGHT: 'Straight', SET: 'Set', TWO_PAIR: 'Two pair',
+    OVERPAIR: 'Overpair', TOP_PAIR: 'Top pair', SECOND_PAIR: 'Second pair',
+    THIRD_PAIR: 'Third pair', UNDERPAIR: 'Underpair',
+    COMBO_DRAW: 'Combo draw', STRONG_DRAW: 'Flush draw (turn)',
+    OESD: 'OESD', GUTSHOT: 'Gutshot',
+    ACE_HIGH: 'Ace-high', OVERCARDS: 'Overcards', AIR: 'Air'
+};
+
+// --- Helper: check if sortedUniqueRanks contains a made straight (5 consecutive) ---
+function _hasMadeStraight(sortedUniqueRanks) {
+    const ranks = [...sortedUniqueRanks];
+    if (ranks.includes(14)) ranks.push(1); // ace can play low
+    const unique = [...new Set(ranks)];
+    for (let low = 1; low <= 10; low++) {
+        const window5 = [low, low+1, low+2, low+3, low+4];
+        const have = window5.filter(r => unique.includes(r)).length;
+        if (have >= 5) return true;
+    }
+    return false;
+}
+
+// --- Helper: check if 4-card board (3 flop + turn) enables obvious straight ---
+function _turnBoardHasStraightDanger(allBoardRanks) {
+    const ranks = [...allBoardRanks];
+    if (ranks.includes(14)) ranks.push(1);
+    const unique = [...new Set(ranks)];
+    for (let low = 1; low <= 10; low++) {
+        const window5 = [low, low+1, low+2, low+3, low+4];
+        const have = window5.filter(r => unique.includes(r)).length;
+        if (have >= 4) return true;
+    }
+    return false;
+}
+
+/**
+ * classifyTurnCard — classify the turn card relative to the flop.
+ * turnCard: { rank, suit }
+ * flopCards: array of 3 { rank, suit }
+ * Returns a TURN_FAMILIES key.
+ */
+function classifyTurnCard(turnCard, flopCards) {
+    const fRanks = flopCards.map(c => RANK_NUM[c.rank]).sort((a, b) => b - a);
+    const fSuits = flopCards.map(c => c.suit);
+    const tRank = RANK_NUM[turnCard.rank];
+    const tSuit = turnCard.suit;
+    const fTop = fRanks[0];
+    const fBot = fRanks[2];
+
+    // BOARD_PAIR: turn card pairs one of the flop cards
+    if (fRanks.includes(tRank)) return 'BOARD_PAIR';
+
+    // FLUSH_COMPLETE: 3 flop cards of one suit + turn brings 4th; or 2+2 two-tone flop + matching turn
+    const suitCount = {};
+    for (const s of fSuits) suitCount[s] = (suitCount[s] || 0) + 1;
+    for (const [s, cnt] of Object.entries(suitCount)) {
+        if (cnt >= 2 && tSuit === s) return 'FLUSH_COMPLETE';
+    }
+
+    // STRAIGHT_COMPLETE: turn + flop creates 4 cards in a 5-card straight window
+    const allBoardRanks = [...fRanks, tRank];
+    if (_turnBoardHasStraightDanger(allBoardRanks)) return 'STRAIGHT_COMPLETE';
+
+    // ACE_OVERCARD: ace not previously on board
+    if (tRank === 14 && !fRanks.includes(14)) return 'ACE_OVERCARD';
+
+    // BROADWAY_OVERCARD: T/J/Q/K overcard above flop top
+    if (tRank > fTop && tRank >= 10) return 'BROADWAY_OVERCARD';
+
+    // OVERCARD: any card above flop top
+    if (tRank > fTop) return 'OVERCARD';
+
+    // LOW_BLANK: low card (≤5) well below the flop
+    if (tRank <= 5 && tRank < fBot) return 'LOW_BLANK';
+
+    // DYNAMIC_CONNECTOR: mid-range card close to flop ranks (adds draws)
+    if (tRank >= 4 && tRank <= 9) {
+        const minGap = Math.min(...fRanks.map(r => Math.abs(r - tRank)));
+        if (minGap <= 3) return 'DYNAMIC_CONNECTOR';
+    }
+
+    return 'BRICK';
+}
+
+/**
+ * classifyTurnHand — classify hero's hand on the turn (4 community cards).
+ * heroHand: { cards: [{rank, suit}, {rank, suit}] } or abstract form
+ * flopCards: array of 3 { rank, suit }
+ * turnCard: { rank, suit }
+ * Returns a TURN_HAND_CLASSES key.
+ */
+function classifyTurnHand(heroHand, flopCards, turnCard) {
+    const hr = heroHand.cards || _heroHandToCards(heroHand);
+    const h1 = RANK_NUM[hr[0].rank], h2 = RANK_NUM[hr[1].rank];
+    const hHigh = Math.max(h1, h2), hLow = Math.min(h1, h2);
+    const hSuited = hr[0].suit === hr[1].suit;
+    const hSuit = hSuited ? hr[0].suit : null;
+    const isPocket = hHigh === hLow;
+
+    const boardCards = [...flopCards, turnCard];
+    const bRanks = boardCards.map(c => RANK_NUM[c.rank]).sort((a, b) => b - a);
+    const bSuits = boardCards.map(c => c.suit);
+
+    const matchHigh = bRanks.filter(r => r === hHigh).length;
+    const matchLow  = bRanks.filter(r => r === hLow).length;
+
+    // --- Made hands, strongest first ---
+
+    // Flush: suited hand + 3 or more board cards of same suit
+    if (hSuited) {
+        const suitedBoard = bSuits.filter(s => s === hSuit).length;
+        if (suitedBoard >= 3) return 'FLUSH';
+    }
+
+    // Straight: hero + 4-card board contains 5 consecutive ranks
+    const allRanks = [hHigh, hLow, ...bRanks];
+    const uniqueRanks = [...new Set(allRanks)].sort((a, b) => b - a);
+    if (_hasMadeStraight(uniqueRanks)) return 'STRAIGHT';
+
+    // Set: pocket pair matching a board rank
+    if (isPocket && matchHigh >= 1) return 'SET';
+
+    // Two pair: both hero ranks on board (and hero is not paired)
+    if (!isPocket && matchHigh >= 1 && matchLow >= 1) return 'TWO_PAIR';
+
+    // Overpair: pocket pair above board top
+    if (isPocket && hHigh > bRanks[0]) return 'OVERPAIR';
+
+    // Pairs ranked against 4-card board
+    const bTop = bRanks[0], bSec = bRanks[1], bThird = bRanks[2];
+    if ((matchHigh >= 1 && hHigh === bTop) || (matchLow >= 1 && hLow === bTop)) return 'TOP_PAIR';
+    if ((matchHigh >= 1 && hHigh === bSec) || (matchLow >= 1 && hLow === bSec)) return 'SECOND_PAIR';
+    if ((matchHigh >= 1 && hHigh === bThird) || (matchLow >= 1 && hLow === bThird)) return 'THIRD_PAIR';
+    if (isPocket) return 'UNDERPAIR'; // pocket pair not hitting board = underpair or between board cards
+
+    // --- Draws (remaining equity hands) ---
+    // Flush draw on the turn: exactly 2 board cards matching hero's suit (one more needed on river)
+    const hasFlushDraw = hSuited && _countSuitOnBoard(hSuit, bSuits) === 2;
+    const straightInfo = _straightDrawType(uniqueRanks);
+    const hasOESD    = straightInfo === 'OESD';
+    const hasGutshot = straightInfo === 'GUTSHOT';
+
+    if (hasFlushDraw && (hasOESD || hasGutshot)) return 'COMBO_DRAW';
+    if (hasFlushDraw) return 'STRONG_DRAW';
+    if (hasOESD)    return 'OESD';
+    if (hasGutshot) return 'GUTSHOT';
+
+    // No made hand, no draw
+    if (hHigh === 14) return 'ACE_HIGH';
+    if (hHigh > bRanks[0] && hLow > bRanks[0]) return 'OVERCARDS';
+    return 'AIR';
+}
+
+// --- Deal a random turn card not conflicting with flop or hero hand ---
+function _dealTurnCard(flopCards, heroHand) {
+    const blocked = new Set();
+    for (const c of flopCards) blocked.add(c.rank + c.suit);
+    const hCards = (heroHand && heroHand.cards) ? heroHand.cards : [];
+    for (const c of hCards) blocked.add(c.rank + c.suit);
+    const deck = [];
+    for (const r of RANKS) for (const s of SUITS) { if (!blocked.has(r + s)) deck.push({ rank: r, suit: s }); }
+    if (!deck.length) return { rank: '2', suit: 'c' }; // ultra-rare fallback
+    return deck[Math.floor(Math.random() * deck.length)];
+}
+
+// --- Turn spot key builders ---
+
+/**
+ * makeTurnCBetSpotKeyV1 — PFR firing turn after flop c-bet was called.
+ * Key: SRP|{family}|TURN|PFR|{positionState}|TURN_CBET_DECISION|{turnFamily}|{heroHandClass}
+ */
+function makeTurnCBetSpotKeyV1(spot) {
+    return `SRP|${spot.preflopFamily}|TURN|PFR|${spot.positionState}|TURN_CBET_DECISION|${spot.turnFamily}|${spot.heroHandClass}`;
+}
+
+/**
+ * makeTurnDefendSpotKeyV1 — defender (BB) facing a turn bet after calling flop c-bet.
+ * Key: SRP|{family}|TURN|DEFENDER|OOP|TURN_VS_BET_DECISION|{turnFamily}|{heroHandClass}
+ */
+function makeTurnDefendSpotKeyV1(spot) {
+    return `SRP|${spot.preflopFamily}|TURN|DEFENDER|OOP|TURN_VS_BET_DECISION|${spot.turnFamily}|${spot.heroHandClass}`;
+}
+
+// --- Turn strategy: PFR barrel (bet50 vs check) ---
+const POSTFLOP_TURN_STRATEGY = {};
+
+(function() {
+    // Base IP frequencies for bet50 (50% pot) on the turn
+    // Format: { handClass: { turnFamily: freq } }  _default is fallback
+    const BASE_IP = {
+        FLUSH:         { _default: 0.85, FLUSH_COMPLETE: 0.80 },
+        STRAIGHT:      { _default: 0.78 },
+        SET:           { _default: 0.85, FLUSH_COMPLETE: 0.75, STRAIGHT_COMPLETE: 0.70 },
+        TWO_PAIR:      { _default: 0.78, FLUSH_COMPLETE: 0.65, STRAIGHT_COMPLETE: 0.62, ACE_OVERCARD: 0.70 },
+        OVERPAIR:      { _default: 0.70, ACE_OVERCARD: 0.30, FLUSH_COMPLETE: 0.55, STRAIGHT_COMPLETE: 0.50,
+                         BROADWAY_OVERCARD: 0.58, OVERCARD: 0.55, BOARD_PAIR: 0.65, DYNAMIC_CONNECTOR: 0.62 },
+        TOP_PAIR:      { _default: 0.58, BRICK: 0.62, LOW_BLANK: 0.65, ACE_OVERCARD: 0.35,
+                         FLUSH_COMPLETE: 0.40, STRAIGHT_COMPLETE: 0.38, BROADWAY_OVERCARD: 0.45,
+                         OVERCARD: 0.45, BOARD_PAIR: 0.52, DYNAMIC_CONNECTOR: 0.48 },
+        SECOND_PAIR:   { _default: 0.28, BRICK: 0.32, LOW_BLANK: 0.35, ACE_OVERCARD: 0.18,
+                         FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.15, BROADWAY_OVERCARD: 0.22,
+                         OVERCARD: 0.20, BOARD_PAIR: 0.25, DYNAMIC_CONNECTOR: 0.25 },
+        THIRD_PAIR:    { _default: 0.18, BRICK: 0.22, LOW_BLANK: 0.25, ACE_OVERCARD: 0.10,
+                         FLUSH_COMPLETE: 0.10, STRAIGHT_COMPLETE: 0.08, BOARD_PAIR: 0.18 },
+        UNDERPAIR:     { _default: 0.20, BRICK: 0.24, LOW_BLANK: 0.28, ACE_OVERCARD: 0.10,
+                         FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10, BOARD_PAIR: 0.20 },
+        COMBO_DRAW:    { _default: 0.75, BRICK: 0.78, FLUSH_COMPLETE: 0.55, STRAIGHT_COMPLETE: 0.55,
+                         ACE_OVERCARD: 0.65, BROADWAY_OVERCARD: 0.70, DYNAMIC_CONNECTOR: 0.80 },
+        STRONG_DRAW:   { _default: 0.65, BRICK: 0.68, LOW_BLANK: 0.70, FLUSH_COMPLETE: 0.50,
+                         STRAIGHT_COMPLETE: 0.50, ACE_OVERCARD: 0.55, BROADWAY_OVERCARD: 0.58,
+                         DYNAMIC_CONNECTOR: 0.72, BOARD_PAIR: 0.62 },
+        OESD:          { _default: 0.52, BRICK: 0.55, LOW_BLANK: 0.58, FLUSH_COMPLETE: 0.38,
+                         STRAIGHT_COMPLETE: 0.35, ACE_OVERCARD: 0.45, BROADWAY_OVERCARD: 0.48 },
+        GUTSHOT:       { _default: 0.32, BRICK: 0.35, LOW_BLANK: 0.38, FLUSH_COMPLETE: 0.22,
+                         STRAIGHT_COMPLETE: 0.20, ACE_OVERCARD: 0.28, BROADWAY_OVERCARD: 0.30 },
+        ACE_HIGH:      { _default: 0.42, BRICK: 0.48, LOW_BLANK: 0.50, ACE_OVERCARD: 0.30,
+                         FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.25, BROADWAY_OVERCARD: 0.38,
+                         OVERCARD: 0.35, BOARD_PAIR: 0.40, DYNAMIC_CONNECTOR: 0.38 },
+        OVERCARDS:     { _default: 0.28, BRICK: 0.32, LOW_BLANK: 0.35, ACE_OVERCARD: 0.18,
+                         FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.15, BROADWAY_OVERCARD: 0.22,
+                         OVERCARD: 0.20, BOARD_PAIR: 0.25, DYNAMIC_CONNECTOR: 0.25 },
+        AIR:           { _default: 0.22, BRICK: 0.26, LOW_BLANK: 0.30, ACE_OVERCARD: 0.12,
+                         FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10, BROADWAY_OVERCARD: 0.18,
+                         OVERCARD: 0.15, BOARD_PAIR: 0.20, DYNAMIC_CONNECTOR: 0.18 }
+    };
+
+    // OOP PFR: reduce bet frequency ~12-15pp across the board
+    const BASE_OOP = {
+        FLUSH:         { _default: 0.75, FLUSH_COMPLETE: 0.68 },
+        STRAIGHT:      { _default: 0.68 },
+        SET:           { _default: 0.75, FLUSH_COMPLETE: 0.62, STRAIGHT_COMPLETE: 0.58 },
+        TWO_PAIR:      { _default: 0.66, FLUSH_COMPLETE: 0.52, STRAIGHT_COMPLETE: 0.50 },
+        OVERPAIR:      { _default: 0.56, ACE_OVERCARD: 0.22, FLUSH_COMPLETE: 0.42, STRAIGHT_COMPLETE: 0.38,
+                         BROADWAY_OVERCARD: 0.44, OVERCARD: 0.42, BOARD_PAIR: 0.50 },
+        TOP_PAIR:      { _default: 0.44, BRICK: 0.48, LOW_BLANK: 0.52, ACE_OVERCARD: 0.25,
+                         FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.25, BROADWAY_OVERCARD: 0.32,
+                         OVERCARD: 0.30, BOARD_PAIR: 0.38, DYNAMIC_CONNECTOR: 0.35 },
+        SECOND_PAIR:   { _default: 0.18, BRICK: 0.22, LOW_BLANK: 0.25, ACE_OVERCARD: 0.10,
+                         FLUSH_COMPLETE: 0.10, STRAIGHT_COMPLETE: 0.08 },
+        THIRD_PAIR:    { _default: 0.10, BRICK: 0.14, ACE_OVERCARD: 0.05, FLUSH_COMPLETE: 0.05 },
+        UNDERPAIR:     { _default: 0.12, BRICK: 0.16, ACE_OVERCARD: 0.05, FLUSH_COMPLETE: 0.06 },
+        COMBO_DRAW:    { _default: 0.62, BRICK: 0.65, FLUSH_COMPLETE: 0.44, STRAIGHT_COMPLETE: 0.42,
+                         ACE_OVERCARD: 0.52, BROADWAY_OVERCARD: 0.56, DYNAMIC_CONNECTOR: 0.68 },
+        STRONG_DRAW:   { _default: 0.52, BRICK: 0.55, FLUSH_COMPLETE: 0.38, STRAIGHT_COMPLETE: 0.36,
+                         ACE_OVERCARD: 0.42, BROADWAY_OVERCARD: 0.46, DYNAMIC_CONNECTOR: 0.58 },
+        OESD:          { _default: 0.40, BRICK: 0.44, FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.24,
+                         ACE_OVERCARD: 0.34, BROADWAY_OVERCARD: 0.36 },
+        GUTSHOT:       { _default: 0.22, BRICK: 0.26, FLUSH_COMPLETE: 0.14, STRAIGHT_COMPLETE: 0.12,
+                         ACE_OVERCARD: 0.18 },
+        ACE_HIGH:      { _default: 0.30, BRICK: 0.36, LOW_BLANK: 0.40, ACE_OVERCARD: 0.20,
+                         FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.14 },
+        OVERCARDS:     { _default: 0.18, BRICK: 0.22, LOW_BLANK: 0.26, ACE_OVERCARD: 0.10,
+                         FLUSH_COMPLETE: 0.10, STRAIGHT_COMPLETE: 0.08 },
+        AIR:           { _default: 0.14, BRICK: 0.18, LOW_BLANK: 0.22, ACE_OVERCARD: 0.06,
+                         FLUSH_COMPLETE: 0.06, STRAIGHT_COMPLETE: 0.04 }
+    };
+
+    const TURN_REASONING = {
+        FLUSH:        'Flush made — bet for value. Occasionally check back to balance.',
+        STRAIGHT:     'Straight made — bet for value on most turns.',
+        SET:          'Set is extremely strong — value bet consistently. Slow-play on scary boards.',
+        TWO_PAIR:     'Two pair is strong — bet for value and protection.',
+        OVERPAIR:     'Overpair remains strong on blank turns, but scary turns (ace, flush) reduce frequency.',
+        TOP_PAIR:     'Top pair is a core value hand on blank turns. Check back on dynamic turns.',
+        SECOND_PAIR:  'Second pair has limited value. Check is usually preferred on the turn.',
+        THIRD_PAIR:   'Third pair is weak — mostly check to see the river cheaply.',
+        UNDERPAIR:    'Underpair is marginal — mostly check for pot control and showdown value.',
+        COMBO_DRAW:   'Combo draw has excellent equity — semi-bluff frequently.',
+        STRONG_DRAW:  'Flush draw on the turn (~18% equity) — semi-bluff on favorable turns.',
+        OESD:         'OESD (~32% equity on turn) — semi-bluff as balanced barrel.',
+        GUTSHOT:      'Gutshot (~17% equity) — selective bluffs only, mostly check.',
+        ACE_HIGH:     'Ace-high with no pair — bluff on blank turns, check on scary ones.',
+        OVERCARDS:    'Overcards only — bluff occasionally on blank turns, mostly check.',
+        AIR:          'No hand — semi-bluff or give up depending on turn card and opponent profile.'
+    };
+
+    // Family offsets (applied to IP base — OOP already uses lower base)
+    const FAMILY_OFF = {
+        BTN_vs_BB: 0, CO_vs_BB: -0.03, HJ_vs_BB: -0.02, LJ_vs_BB: -0.01,
+        UTG_vs_BB: 0.02, BTN_vs_SB: 0.02, SB_vs_BB: 0, CO_vs_BTN: -0.03
+    };
+
+    for (const fam of HERO_HAND_AWARE_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+
+        for (const tf of TURN_FAMILIES) {
+            for (const hc of TURN_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[tf] !== undefined) ? baseFreqs[tf] : baseFreqs._default;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeTurnCBetSpotKeyV1({
+                    preflopFamily: fam, positionState: fi.positionState,
+                    turnFamily: tf, heroHandClass: hc
+                });
+                POSTFLOP_TURN_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: preferred,
+                    reasoning: TURN_REASONING[hc] || '',
+                    simplification: 'Phase 2: Turn Barrel (50% pot)'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[TurnV1] Built ${Object.keys(POSTFLOP_TURN_STRATEGY).length} PFR turn strategy entries.`);
+    }
+})();
+
+// --- Turn strategy: defender vs turn bet ---
+const POSTFLOP_TURN_DEFEND_STRATEGY = {};
+
+(function() {
+    const BASE = {
+        FLUSH:        { _default: { fold: 0.00, call: 0.30, raise: 0.70 } },
+        STRAIGHT:     { _default: { fold: 0.00, call: 0.35, raise: 0.65 } },
+        SET:          { _default: { fold: 0.00, call: 0.38, raise: 0.62 },
+                        FLUSH_COMPLETE: { fold: 0.00, call: 0.30, raise: 0.70 } },
+        TWO_PAIR:     { _default: { fold: 0.00, call: 0.50, raise: 0.50 },
+                        FLUSH_COMPLETE: { fold: 0.05, call: 0.55, raise: 0.40 },
+                        STRAIGHT_COMPLETE: { fold: 0.05, call: 0.58, raise: 0.37 } },
+        OVERPAIR:     { _default: { fold: 0.00, call: 0.72, raise: 0.28 },
+                        ACE_OVERCARD: { fold: 0.00, call: 0.80, raise: 0.20 },
+                        FLUSH_COMPLETE: { fold: 0.05, call: 0.72, raise: 0.23 },
+                        STRAIGHT_COMPLETE: { fold: 0.08, call: 0.72, raise: 0.20 },
+                        BROADWAY_OVERCARD: { fold: 0.00, call: 0.76, raise: 0.24 } },
+        TOP_PAIR:     { _default: { fold: 0.08, call: 0.78, raise: 0.14 },
+                        BRICK: { fold: 0.05, call: 0.82, raise: 0.13 },
+                        LOW_BLANK: { fold: 0.04, call: 0.83, raise: 0.13 },
+                        ACE_OVERCARD: { fold: 0.18, call: 0.72, raise: 0.10 },
+                        FLUSH_COMPLETE: { fold: 0.20, call: 0.68, raise: 0.12 },
+                        STRAIGHT_COMPLETE: { fold: 0.22, call: 0.67, raise: 0.11 },
+                        BROADWAY_OVERCARD: { fold: 0.15, call: 0.73, raise: 0.12 } },
+        SECOND_PAIR:  { _default: { fold: 0.40, call: 0.50, raise: 0.10 },
+                        BRICK: { fold: 0.35, call: 0.55, raise: 0.10 },
+                        ACE_OVERCARD: { fold: 0.52, call: 0.40, raise: 0.08 },
+                        FLUSH_COMPLETE: { fold: 0.55, call: 0.38, raise: 0.07 },
+                        STRAIGHT_COMPLETE: { fold: 0.58, call: 0.35, raise: 0.07 } },
+        THIRD_PAIR:   { _default: { fold: 0.60, call: 0.33, raise: 0.07 },
+                        BRICK: { fold: 0.55, call: 0.38, raise: 0.07 },
+                        FLUSH_COMPLETE: { fold: 0.70, call: 0.23, raise: 0.07 } },
+        UNDERPAIR:    { _default: { fold: 0.65, call: 0.28, raise: 0.07 },
+                        BRICK: { fold: 0.60, call: 0.33, raise: 0.07 } },
+        COMBO_DRAW:   { _default: { fold: 0.02, call: 0.50, raise: 0.48 },
+                        FLUSH_COMPLETE: { fold: 0.08, call: 0.50, raise: 0.42 },
+                        STRAIGHT_COMPLETE: { fold: 0.08, call: 0.48, raise: 0.44 } },
+        STRONG_DRAW:  { _default: { fold: 0.08, call: 0.62, raise: 0.30 },
+                        FLUSH_COMPLETE: { fold: 0.12, call: 0.60, raise: 0.28 },
+                        BRICK: { fold: 0.06, call: 0.65, raise: 0.29 } },
+        OESD:         { _default: { fold: 0.18, call: 0.62, raise: 0.20 },
+                        STRAIGHT_COMPLETE: { fold: 0.10, call: 0.52, raise: 0.38 }, // improved
+                        BRICK: { fold: 0.15, call: 0.65, raise: 0.20 } },
+        GUTSHOT:      { _default: { fold: 0.48, call: 0.42, raise: 0.10 },
+                        BRICK: { fold: 0.42, call: 0.48, raise: 0.10 } },
+        ACE_HIGH:     { _default: { fold: 0.52, call: 0.38, raise: 0.10 },
+                        BRICK: { fold: 0.45, call: 0.44, raise: 0.11 } },
+        OVERCARDS:    { _default: { fold: 0.65, call: 0.28, raise: 0.07 },
+                        BRICK: { fold: 0.58, call: 0.34, raise: 0.08 } },
+        AIR:          { _default: { fold: 0.82, call: 0.12, raise: 0.06 },
+                        BRICK: { fold: 0.75, call: 0.16, raise: 0.09 } }
+    };
+
+    const REASONING = {
+        FLUSH:        'Made flush — raise for value. Slow-play is also fine to trap.',
+        STRAIGHT:     'Made straight — raise for value, or flat to keep bluffs in.',
+        SET:          'Set is very strong — raise or flat to build the pot.',
+        TWO_PAIR:     'Two pair — raise for value, call on scary runouts.',
+        OVERPAIR:     'Overpair is strong — mostly call, raise on wet turns for protection.',
+        TOP_PAIR:     'Top pair is a solid calling hand on the turn. Fold only to ace overcards.',
+        SECOND_PAIR:  'Second pair is marginal on the turn — call only on blank turns.',
+        THIRD_PAIR:   'Third pair is weak — mostly fold facing a second barrel.',
+        UNDERPAIR:    'Underpair is too weak for most turn calls — fold is usually correct.',
+        COMBO_DRAW:   'Combo draw — raise as semi-bluff; you have outs and fold equity.',
+        STRONG_DRAW:  'Flush draw — call often; raise as semi-bluff occasionally.',
+        OESD:         'OESD — call with good pot odds. Raise on very favorable turns.',
+        GUTSHOT:      'Gutshot alone — thin equity; mostly fold unless pot odds are excellent.',
+        ACE_HIGH:     'Ace-high — fold to most turn bets without a draw.',
+        OVERCARDS:    'Overcards only — usually fold on the turn.',
+        AIR:          'No hand — fold. Raise-bluff is occasionally correct on safe boards.'
+    };
+
+    // Small family offsets: SB_vs_BB and CO_vs_BB defenders defend slightly wider
+    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+
+    for (const fam of DEFENDER_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const off = FAM_OFF[fam] || 0;
+
+        for (const tf of TURN_FAMILIES) {
+            for (const hc of TURN_HAND_CLASSES) {
+                const hcData = BASE[hc];
+                if (!hcData) continue;
+                const raw = hcData[tf] || hcData._default;
+                if (!raw) continue;
+
+                let fold  = Math.max(0, raw.fold - off);
+                let call  = raw.call + off * 0.5;
+                let raise = raw.raise + off * 0.5;
+                const total = fold + call + raise;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+
+                const sk = makeTurnDefendSpotKeyV1({
+                    preflopFamily: fam, turnFamily: tf, heroHandClass: hc
+                });
+                POSTFLOP_TURN_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Phase 2: Turn Defender vs Bet'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[TurnV1] Built ${Object.keys(POSTFLOP_TURN_DEFEND_STRATEGY).length} defender turn strategy entries.`);
+    }
+})();
+
+// --- Turn spot generators ---
+
+/**
+ * generateTurnCBetSpot — generate a PFR turn barrel decision spot.
+ * Simulates: SRP flop, PFR c-bets, gets called, now faces turn.
+ */
+function generateTurnCBetSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fi  = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+
+        const flopArch    = pickFlopArchetype();
+        const heroHand    = _dealPostflopHeroHand(fi.heroPos);
+        const fc          = _generateFlopNoConflict(flopArch, heroHand);
+        const turnCard    = _dealTurnCard(fc, heroHand);
+        const turnFamily  = classifyTurnCard(turnCard, fc);
+        const turnHandCls = classifyTurnHand(heroHand, fc, turnCard);
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fam, street: 'TURN', heroRole: 'PFR',
+            positionState: fi.positionState, nodeType: 'TURN_CBET_DECISION',
+            flopArchetype: flopArch, boardArchetype: flopArch,
+            turnFamily: turnFamily, heroHandClass: turnHandCls,
+            flopHandClass: classifyFlopHand(heroHand, fc),
+            heroPos: fi.heroPos, villainPos: fi.villainPos,
+            flopCards: fc, flopClassification: classifyFlop(fc),
+            turnCard: turnCard, heroHand: heroHand,
+            actionHistory: ['FLOP_CBET', 'FLOP_CALLED'],
+            potSize: null, // set below
+            effectiveStack: 200
+        };
+        // Approximate turn pot: SRP flop pot + 33% c-bet amount was called = pot × 1.66
+        // We round to nearest live dollar increment for realism
+        spot.potSize = null; // ui.js computes display pot from getSRPPot$; stored for metadata
+        spot.spotKey = makeTurnCBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_TURN_STRATEGY[spot.spotKey] || null;
+
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    // Last-resort fallback
+    console.warn('[TurnCBet] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fi   = POSTFLOP_PREFLOP_FAMILIES['BTN_vs_BB'];
+    const heroHand = _dealPostflopHeroHand('BTN');
+    const fc   = _generateFlopNoConflict('A_HIGH_DRY', heroHand);
+    const turnCard   = _dealTurnCard(fc, heroHand);
+    const turnFamily = classifyTurnCard(turnCard, fc);
+    const spot = {
+        potType: 'SRP', preflopFamily: 'BTN_vs_BB', street: 'TURN', heroRole: 'PFR',
+        positionState: 'IP', nodeType: 'TURN_CBET_DECISION',
+        flopArchetype: 'A_HIGH_DRY', boardArchetype: 'A_HIGH_DRY',
+        turnFamily: turnFamily, heroHandClass: classifyTurnHand(heroHand, fc, turnCard),
+        flopHandClass: classifyFlopHand(heroHand, fc),
+        heroPos: 'BTN', villainPos: 'BB',
+        flopCards: fc, flopClassification: classifyFlop(fc),
+        turnCard: turnCard, heroHand: heroHand,
+        actionHistory: ['FLOP_CBET', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
+    };
+    spot.spotKey = makeTurnCBetSpotKeyV1(spot);
+    spot.strategy = POSTFLOP_TURN_STRATEGY[spot.spotKey] || null;
+    return spot;
+}
+
+/**
+ * generateTurnDefendSpot — generate a defender (BB) turn decision spot.
+ * Simulates: SRP flop, PFR c-bets, BB calls, PFR fires turn — BB must decide.
+ */
+function generateTurnDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...DEFENDER_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fi  = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+
+        const villainPos  = fi.heroPos; // fi.heroPos is the PFR (villain for defender)
+        const heroHand    = _dealDefenderHeroHand(villainPos);
+        if (!heroHand) continue;
+        const flopArch    = pickFlopArchetype();
+        const fc          = _generateFlopNoConflict(flopArch, heroHand);
+        const turnCard    = _dealTurnCard(fc, heroHand);
+        const turnFamily  = classifyTurnCard(turnCard, fc);
+        const turnHandCls = classifyTurnHand(heroHand, fc, turnCard);
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fam, street: 'TURN', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'TURN_VS_BET_DECISION',
+            flopArchetype: flopArch, boardArchetype: flopArch,
+            turnFamily: turnFamily, heroHandClass: turnHandCls,
+            flopHandClass: classifyFlopHand(heroHand, fc),
+            heroPos: 'BB', villainPos: villainPos,
+            flopCards: fc, flopClassification: classifyFlop(fc),
+            turnCard: turnCard, heroHand: heroHand,
+            actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeTurnDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_TURN_DEFEND_STRATEGY[spot.spotKey] || null;
+
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    // Fallback
+    console.warn('[TurnDefend] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const heroHand = _dealDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fc   = _generateFlopNoConflict('A_HIGH_DRY', heroHand);
+    const turnCard   = _dealTurnCard(fc, heroHand);
+    const turnFamily = classifyTurnCard(turnCard, fc);
+    const spot = {
+        potType: 'SRP', preflopFamily: 'BTN_vs_BB', street: 'TURN', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'TURN_VS_BET_DECISION',
+        flopArchetype: 'A_HIGH_DRY', boardArchetype: 'A_HIGH_DRY',
+        turnFamily: turnFamily, heroHandClass: classifyTurnHand(heroHand, fc, turnCard),
+        flopHandClass: classifyFlopHand(heroHand, fc),
+        heroPos: 'BB', villainPos: 'BTN',
+        flopCards: fc, flopClassification: classifyFlop(fc),
+        turnCard: turnCard, heroHand: heroHand,
+        actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
+    };
+    spot.spotKey = makeTurnDefendSpotKeyV1(spot);
+    spot.strategy = POSTFLOP_TURN_DEFEND_STRATEGY[spot.spotKey] || null;
+    return spot;
+}
+
+// --- Turn action scoring ---
+
+/**
+ * scoreTurnAction — score PFR's turn bet/check decision.
+ * playerAction: 'BARREL' or 'CHECK'
+ */
+function scoreTurnAction(playerAction, strategy, spot) {
+    if (!strategy) return { correct: false, grade: 'unknown', feedback: 'No strategy data.' };
+    const preferred   = strategy.preferredAction; // 'bet50' or 'check'
+    const playerKey   = playerAction === 'BARREL' ? 'bet50' : 'check';
+    const playerFreq  = strategy.actions[playerKey] || 0;
+    const isCorrect   = playerKey === preferred;
+
+    let grade;
+    if (playerFreq >= 0.75) grade = 'strong';
+    else if (playerFreq >= 0.50) grade = 'marginal';
+    else if (playerFreq >= 0.35) grade = 'marginal_wrong';
+    else grade = 'clear_wrong';
+
+    const preferredLabel  = preferred === 'check' ? 'Check' : 'Barrel (50%)';
+    const freqPct         = Math.round((strategy.actions[preferred] || 0) * 100);
+    const turnFamilyLabel = (spot && spot.turnFamily) ? (TURN_FAMILY_LABELS[spot.turnFamily] || spot.turnFamily) : '';
+    const handClassLabel  = (spot && spot.heroHandClass) ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
+
+    let feedback;
+    if (isCorrect && grade === 'strong') feedback = `Correct. ${preferredLabel} (${freqPct}%).`;
+    else if (isCorrect && grade === 'marginal') feedback = `Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;
+    else if (!isCorrect && grade === 'marginal_wrong') feedback = `Close, but ${preferredLabel} is preferred here (${freqPct}%).`;
+    else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
+
+    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    if (turnFamilyLabel && !isCorrect) feedback += ` · Turn: ${turnFamilyLabel}`;
+
+    return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
+}
+
+/**
+ * scoreTurnDefenderAction — score defender's turn fold/call/raise decision.
+ * playerAction: 'fold', 'call', or 'raise'
+ */
+function scoreTurnDefenderAction(playerAction, strategy, spot) {
+    if (!strategy) return { correct: false, grade: 'unknown', feedback: 'No strategy data.' };
+    const actions     = strategy.actions;
+    const preferred   = strategy.preferredAction;
+    const playerKey   = playerAction.toLowerCase();
+    const playerFreq  = actions[playerKey] || 0;
+    const isCorrect   = playerKey === preferred;
+
+    let grade;
+    if (playerFreq >= 0.50) grade = 'strong';
+    else if (playerFreq >= 0.30) grade = 'marginal';
+    else if (playerFreq >= 0.15) grade = 'marginal_wrong';
+    else grade = 'clear_wrong';
+
+    const preferredLabel = preferred.charAt(0).toUpperCase() + preferred.slice(1);
+    const freqPct        = Math.round((actions[preferred] || 0) * 100);
+    const handClassLabel = (spot && spot.heroHandClass) ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
+    const turnFamilyLabel = (spot && spot.turnFamily) ? (TURN_FAMILY_LABELS[spot.turnFamily] || spot.turnFamily) : '';
+
+    let feedback;
+    if (isCorrect && grade === 'strong') feedback = `Correct. ${preferredLabel} (${freqPct}%).`;
+    else if (isCorrect && grade === 'marginal') feedback = `Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;
+    else if (!isCorrect && grade === 'marginal_wrong') feedback = `Close, but ${preferredLabel} is preferred here (${freqPct}%).`;
+    else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
+
+    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    if (turnFamilyLabel && !isCorrect) feedback += ` · Turn: ${turnFamilyLabel}`;
+
+    return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
+}
