@@ -10,8 +10,56 @@ const MEDAL_THRESHOLDS = {
 const MEDAL_ICONS = { gold: '🥇', silver: '🥈', bronze: '🥉', none: '' };
 const MEDAL_COLORS = { gold: 'text-yellow-400', silver: 'text-slate-300', bronze: 'text-amber-600', none: 'text-slate-600' };
 
+// ============================================================
+// FAMILY MAPPING MODEL — drives the unified session builder
+// ============================================================
+const FAMILY_MODEL = {
+    PREFLOP: [
+        { id: 'OPEN',     label: 'Open',      scenarios: ['RFI'] },
+        { id: 'DEFEND',   label: 'Defend',     scenarios: ['FACING_RFI'] },
+        { id: 'VS_3BET',  label: 'vs 3bet',    scenarios: ['RFI_VS_3BET'] },
+        { id: 'LIMPERS',  label: 'Limpers',    scenarios: ['VS_LIMP'] },
+        { id: 'SQUEEZE',  label: 'Squeeze',    scenarios: ['SQUEEZE', 'SQUEEZE_2C'] },
+        { id: 'PUSH_FOLD',label: 'Push/Fold',  scenarios: ['PUSH_FOLD'] },
+    ]
+    // Future: POSTFLOP: [...], FULL_HAND: [...]
+};
+// Convenience: 'Mixed' is UI-only shortcut = all families selected
+
+// Resolve selected family IDs → engine scenario keys
+function familiesToScenarios(module, familyIds) {
+    const families = FAMILY_MODEL[module] || [];
+    const out = [];
+    for (const fam of families) {
+        if (familyIds.includes(fam.id)) {
+            for (const sc of fam.scenarios) out.push(sc);
+        }
+    }
+    return out;
+}
+// Reverse: scenario keys → family IDs (for loading saved config)
+function scenariosToFamilies(module, scenarios) {
+    const families = FAMILY_MODEL[module] || [];
+    const ids = new Set();
+    const scSet = new Set(scenarios);
+    for (const fam of families) {
+        if (fam.scenarios.some(s => scSet.has(s))) ids.add(fam.id);
+    }
+    return [...ids];
+}
+
+// ============================================================
+// UNIFIED SESSION BUILDER STATE
+// ============================================================
+let sessionBuilder = {
+    module: 'PREFLOP',
+    families: ['OPEN', 'DEFEND', 'VS_3BET', 'LIMPERS', 'SQUEEZE'],  // default active families
+    sessionLength: 'ENDLESS'  // 'ENDLESS' | 10 | 25 | 50
+};
+
+// drillState kept as backward-compat shim for challenge.js and internal systems
 let drillState = {
-    mode: 'open', // 'open' | 'focused'
+    mode: 'open', // legacy — mapped from sessionBuilder
     active: false,
     scenario: 'RFI',
     handCount: 25,
@@ -300,6 +348,7 @@ function showMenu() {
     hideAllScreens();
     // Safety: clear any stale mode flags so they can't contaminate the next session
     drillState.active = false;
+    drillState.mode = 'open';
     drillState.lockedLimperBucket = null;
     if (typeof challengeState !== 'undefined') challengeState.active = false;
     const menu = document.getElementById('menu-screen');
@@ -662,107 +711,224 @@ function getMedalForResult(hands, accuracy) {
 }
 function medalRank(m) { return { gold: 3, silver: 2, bronze: 1, none: 0 }[m] || 0; }
 
-// Config toggle (open training)
+// ============================================================
+// UNIFIED SESSION BUILDER — Config UI functions
+// ============================================================
+
+// --- Module selector ---
+function setSessionModule(mod) {
+    sessionBuilder.module = mod;
+    renderSessionBuilderUI();
+    saveSessionConfig();
+}
+
+// --- Family chip toggling ---
+function toggleFamily(familyId) {
+    const families = FAMILY_MODEL[sessionBuilder.module] || [];
+    const allIds = families.map(f => f.id);
+    if (familyId === 'MIXED') {
+        // Mixed = select all if not all selected, else deselect all back to default
+        const allSelected = allIds.every(id => sessionBuilder.families.includes(id));
+        sessionBuilder.families = allSelected ? [allIds[0]] : [...allIds];
+    } else {
+        const idx = sessionBuilder.families.indexOf(familyId);
+        if (idx > -1) {
+            if (sessionBuilder.families.length > 1) sessionBuilder.families.splice(idx, 1);
+        } else {
+            sessionBuilder.families.push(familyId);
+        }
+    }
+    // Sync to state.config.scenarios for engine compatibility
+    syncSessionToConfig();
+    renderSessionBuilderUI();
+    saveSessionConfig();
+}
+
+// --- Position toggling (unified) ---
 function toggleConfig(type, value) {
-    const list = type === 'scenario' ? state.config.scenarios : state.config.positions;
-    const index = list.indexOf(value);
-    if (index > -1) { if (list.length > 1) list.splice(index, 1); } else { list.push(value); }
-    updateConfigUI();
+    if (type === 'pos') {
+        const list = state.config.positions;
+        const index = list.indexOf(value);
+        if (index > -1) { if (list.length > 1) list.splice(index, 1); } else { list.push(value); }
+    }
+    renderSessionBuilderUI();
     saveConfig();
 }
-// Drill toggle (focused drill — single select for scenario)
-function toggleDrillScenario(sc) {
-    drillState.scenario = sc;
-    updateConfigUI();
+
+// --- Session length ---
+function setSessionLength(len) {
+    sessionBuilder.sessionLength = len;
+    renderSessionBuilderUI();
+    saveSessionConfig();
 }
-function toggleDrillPos(pos) {
-    const list = drillState.positions;
-    const index = list.indexOf(pos);
-    if (index > -1) { if (list.length > 1) list.splice(index, 1); } else { list.push(pos); }
-    updateConfigUI();
+
+// --- Sync session builder → state.config.scenarios ---
+function syncSessionToConfig() {
+    state.config.scenarios = familiesToScenarios(sessionBuilder.module, sessionBuilder.families);
+    if (state.config.scenarios.length === 0) {
+        // Fallback: at least one family must be active
+        const firstFam = (FAMILY_MODEL[sessionBuilder.module] || [])[0];
+        if (firstFam) {
+            sessionBuilder.families = [firstFam.id];
+            state.config.scenarios = [...firstFam.scenarios];
+        }
+    }
+}
+
+// --- Limper mix (preserved behavior) ---
+function setLimperMix(preset) {
+    limperMixPreset = preset;
+    saveLimperMix();
+    renderSessionBuilderUI();
+}
+
+// --- Session config persistence ---
+function saveSessionConfig() {
+    try {
+        localStorage.setItem(profileKey('gto_session_builder_v1'), JSON.stringify({
+            module: sessionBuilder.module,
+            families: sessionBuilder.families,
+            sessionLength: sessionBuilder.sessionLength
+        }));
+    } catch(e) {}
+}
+function loadSessionConfig() {
+    try {
+        const s = localStorage.getItem(profileKey('gto_session_builder_v1'));
+        if (s) {
+            const c = JSON.parse(s);
+            if (c.module && FAMILY_MODEL[c.module]) sessionBuilder.module = c.module;
+            if (c.families && Array.isArray(c.families)) sessionBuilder.families = c.families;
+            if (c.sessionLength !== undefined) sessionBuilder.sessionLength = c.sessionLength;
+        }
+    } catch(e) {}
+    // If loading old config, convert scenarios→families
+    if (sessionBuilder.families.length === 0 && state.config.scenarios.length > 0) {
+        sessionBuilder.families = scenariosToFamilies(sessionBuilder.module, state.config.scenarios);
+    }
+    syncSessionToConfig();
+}
+
+// ============================================================
+// SESSION BUILDER RENDERING
+// ============================================================
+function renderFamilyChips() {
+    const container = document.getElementById('family-chips');
+    if (!container) return;
+    container.innerHTML = '';
+    const families = FAMILY_MODEL[sessionBuilder.module] || [];
+    const allIds = families.map(f => f.id);
+    const allSelected = allIds.length > 0 && allIds.every(id => sessionBuilder.families.includes(id));
+
+    // Individual family chips
+    for (const fam of families) {
+        const isSel = sessionBuilder.families.includes(fam.id);
+        const btn = document.createElement('button');
+        btn.onclick = () => toggleFamily(fam.id);
+        btn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${isSel ? 'selected' : ''}`;
+        btn.textContent = fam.label;
+        container.appendChild(btn);
+    }
+    // Mixed chip
+    if (families.length > 1) {
+        const btn = document.createElement('button');
+        btn.onclick = () => toggleFamily('MIXED');
+        btn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${allSelected ? 'selected-gold' : ''}`;
+        btn.textContent = 'Mixed';
+        container.appendChild(btn);
+    }
+}
+
+function renderPositionChips() {
+    const container = document.getElementById('cfg-positions');
+    if (!container) return;
+    container.innerHTML = '';
+    ALL_POSITIONS.forEach(p => {
+        const isSel = state.config.positions.includes(p);
+        const btn = document.createElement('button');
+        btn.onclick = () => toggleConfig('pos', p);
+        btn.className = `config-btn py-2.5 rounded-xl text-xs font-black ${isSel ? 'selected' : ''}`;
+        btn.textContent = POS_LABELS[p] || p;
+        container.appendChild(btn);
+    });
+}
+
+function renderSessionLengthUI() {
+    ['ENDLESS', 10, 25, 50].forEach(len => {
+        const btn = document.getElementById(`slen-${len}`);
+        if (btn) {
+            const isSel = sessionBuilder.sessionLength === len;
+            btn.className = `flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn ${isSel ? 'selected' : ''}`;
+        }
+    });
+}
+
+function renderDynamicFilters() {
+    const hasLimpers = sessionBuilder.families.includes('LIMPERS');
+    const limperEl = document.getElementById('filter-limper-mix');
+    if (limperEl) limperEl.classList.toggle('hidden', !hasLimpers);
+    // Update limper mix button states
+    ['mostly1','liveish','multiway'].forEach(p => {
+        const btn = document.getElementById(`lmix-${p}`);
+        if (btn) btn.className = `config-btn py-2.5 rounded-xl text-[11px] font-bold ${p === limperMixPreset ? 'selected' : ''}`;
+    });
+}
+
+function validatePool() {
+    const msgEl = document.getElementById('cfg-pool-msg');
+    const startBtn = document.getElementById('cfg-start-btn');
+    if (!msgEl || !startBtn) return;
+
+    const scenarios = familiesToScenarios(sessionBuilder.module, sessionBuilder.families);
+    if (scenarios.length === 0) {
+        msgEl.textContent = 'Select at least one spot family.';
+        msgEl.classList.remove('hidden');
+        startBtn.disabled = true;
+        startBtn.classList.add('opacity-40');
+        return;
+    }
+    msgEl.classList.add('hidden');
+    startBtn.disabled = false;
+    startBtn.classList.remove('opacity-40');
+}
+
+function renderSessionBuilderUI() {
+    // Module buttons
+    ['PREFLOP'].forEach(mod => {
+        const btn = document.getElementById(`mod-${mod}`);
+        if (btn) btn.className = `flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn ${sessionBuilder.module === mod ? 'selected' : ''}`;
+    });
+    renderFamilyChips();
+    renderPositionChips();
+    renderSessionLengthUI();
+    renderDynamicFilters();
+    validatePool();
+}
+
+// Backward-compat aliases used by old code paths (challenge.js calls setDrillMode/setDrillCount)
+function setDrillMode(mode) {
+    // Challenge.js calls setDrillMode('focused') — map to session builder
+    drillState.mode = mode;
 }
 function setDrillCount(n) {
     drillState.handCount = n;
-    [10, 25, 50].forEach(c => {
-        const btn = document.getElementById(`drill-ct-${c}`);
-        if (btn) btn.className = `count-btn ${c === n ? 'selected' : ''}`;
-    });
+    sessionBuilder.sessionLength = n;
 }
-function setDrillMode(mode) {
-    drillState.mode = mode;
-    const _modeDescs = { open: 'Mix scenarios & positions — great for general practice.', focused: 'Lock in on one spot for a fixed number of hands — drill deep.' };
-    try { const d = document.getElementById('mode-desc'); if(d) d.textContent = _modeDescs[mode] || ''; } catch(_){}
-    document.getElementById('mode-open').className = `mode-tab ${mode === 'open' ? 'active' : ''}`;
-    document.getElementById('mode-focused').className = `mode-tab ${mode === 'focused' ? 'active' : ''}`;
-    document.getElementById('config-open').classList.toggle('hidden', mode !== 'open');
-    document.getElementById('config-focused').classList.toggle('hidden', mode !== 'focused');
-    document.getElementById('cfg-start-btn').innerText = mode === 'open' ? 'START' : 'START DRILL';
-    if (mode === 'focused') buildDrillConfig();
+// Challenge.js calls toggleDrillScenario indirectly — keep shim
+function toggleDrillScenario(sc) { drillState.scenario = sc; }
+function toggleDrillPos(pos) {
+    const list = drillState.positions;
+    const idx = list.indexOf(pos);
+    if (idx > -1) { if (list.length > 1) list.splice(idx, 1); } else { list.push(pos); }
 }
+// Old buildDrillConfig no longer needed (no focused drill tab)
+function buildDrillConfig() {}
+
 // ==================================
 // Challenge Mode — state stub (data + logic now in challenge.js)
 // ==================================
 // Runtime state for an active challenge attempt — referenced by showDrillComplete and other functions
 let challengeState = { active: false, nodeId: null, reqAcc: 0, _thresholds: null };
-
-
-
-
-function setLimperMix(preset) {
-    limperMixPreset = preset;
-    saveLimperMix();
-    updateLimperMixUI();
-}
-function updateLimperMixUI() {
-    const show = state.config.scenarios.includes('VS_LIMP');
-    const sec = document.getElementById('limper-mix-section');
-    if (sec) sec.classList.toggle('hidden', !show);
-    ['mostly1','liveish','multiway'].forEach(p => {
-        const btn = document.getElementById(`lmix-${p}`);
-        if (btn) btn.className = `config-btn py-3 rounded-lg text-[10px] font-bold ${p === limperMixPreset ? 'selected' : ''}`;
-    });
-}
-
-function buildDrillConfig() {
-    const medals = loadMedals();
-    const container = document.getElementById('drill-scenario-list');
-    container.innerHTML = '';
-    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(sc => {
-        // Count medals for this scenario
-        let gC = 0, sC = 0, bC = 0;
-        Object.keys(medals).forEach(k => {
-            if (k.startsWith(sc + '|')) {
-                const m = medals[k].medal;
-                if (m === 'gold') gC++;
-                else if (m === 'silver') sC++;
-                else if (m === 'bronze') bC++;
-            }
-        });
-        const medalStr = [gC ? `🥇${gC}` : '', sC ? `🥈${sC}` : '', bC ? `🥉${bC}` : ''].filter(Boolean).join(' ');
-        const isSel = drillState.scenario === sc;
-        const btn = document.createElement('button');
-        btn.onclick = () => toggleDrillScenario(sc);
-        btn.id = `drill-sc-${sc}`;
-        btn.className = `config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center ${isSel ? 'selected' : ''}`;
-        btn.innerHTML = `<div class="flex flex-col gap-0.5">
-            <span>${SCENARIO_NAMES[sc]}</span>
-            ${medalStr ? `<span class="text-[10px] font-bold">${medalStr}</span>` : ''}
-        </div>
-        <span data-check="1">${isSel ? '✓' : ''}</span>`;
-        container.appendChild(btn);
-    });
-    // Build positions for drill
-    const posContainer = document.getElementById('drill-pos-list');
-    posContainer.innerHTML = '';
-    ALL_POSITIONS.forEach(p => {
-        const btn = document.createElement('button');
-        btn.onclick = () => toggleDrillPos(p);
-        btn.id = `drill-pos-${p}`;
-        btn.className = `config-btn py-3 rounded-lg text-xs font-black ${drillState.positions.includes(p) ? 'selected' : ''}`;
-        btn.innerText = POS_LABELS[p] || p;
-        posContainer.appendChild(btn);
-    });
-}
 
 function saveConfig() {
     localStorage.setItem(profileKey('gto_config_v2'), JSON.stringify(state.config));
@@ -797,56 +963,46 @@ function loadConfig() {
             }
         }
     } catch(e) {}
+    // Load unified session builder config (layered on top)
+    loadSessionConfig();
 }
 
+// Unified updateConfigUI — delegates to session builder renderer
 function updateConfigUI() {
-    // Open training
-    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND'].forEach(s => {
-        const btn = document.getElementById(`cfg-${s}`);
-        if (!btn) return;
-        const isSel = state.config.scenarios.includes(s);
-        btn.className = `config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center ${isSel ? 'selected' : ''}`;
-        btn.querySelector('span').innerText = isSel ? '✓' : '';
-    });
-    ALL_POSITIONS.forEach(p => {
-        const btn = document.getElementById(`cfg-pos-${p}`);
-        if (!btn) return;
-        const isSel = state.config.positions.includes(p);
-        btn.className = `config-btn py-3 rounded-lg text-xs font-black ${isSel ? 'selected' : ''}`;
-    });
-    // Focused drill — must match the scenario set in buildDrillConfig
-    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(s => {
-        const btn = document.getElementById(`drill-sc-${s}`);
-        if (!btn) return;
-        const isSel = drillState.scenario === s;
-        btn.className = `config-btn py-4 rounded-xl font-bold text-left px-5 flex justify-between items-center ${isSel ? 'selected' : ''}`;
-        const span = btn.querySelector('[data-check]');
-        if (span) span.innerText = isSel ? '✓' : '';
-    });
-    ALL_POSITIONS.forEach(p => {
-        const btn = document.getElementById(`drill-pos-${p}`);
-        if (!btn) return;
-        const isSel = drillState.positions.includes(p);
-        btn.className = `config-btn py-3 rounded-lg text-xs font-black ${isSel ? 'selected' : ''}`;
-    });
-    updateLimperMixUI();
-    updateOpenSizeUI();
+    renderSessionBuilderUI();
 }
 
 function updateDrillCounter() {
-    if (drillState.active) {
-        document.getElementById('drill-counter').classList.remove('hidden');
-        document.getElementById('drill-progress').innerText = `${state.sessionStats.total}/${drillState.handCount}`;
+    const counterEl = document.getElementById('drill-counter');
+    const progressEl = document.getElementById('drill-progress');
+    if (!counterEl || !progressEl) return;
+    if (drillState.active && drillState.handCount) {
+        counterEl.classList.remove('hidden');
+        progressEl.innerText = `${state.sessionStats.total}/${drillState.handCount}`;
+    } else if (sessionBuilder.sessionLength !== 'ENDLESS' && typeof sessionBuilder.sessionLength === 'number') {
+        // Unified session builder: show counter for fixed-length sessions
+        counterEl.classList.remove('hidden');
+        progressEl.innerText = `${state.sessionStats.total}/${sessionBuilder.sessionLength}`;
     } else {
-        document.getElementById('drill-counter').classList.add('hidden');
+        counterEl.classList.add('hidden');
     }
 }
 
 function checkDrillComplete() {
-    if (!drillState.active) return false;
-    if (state.sessionStats.total >= drillState.handCount) {
-        showDrillComplete();
-        return true;
+    // Challenge mode / legacy drill check
+    if (drillState.active && drillState.handCount) {
+        if (state.sessionStats.total >= drillState.handCount) {
+            showDrillComplete();
+            return true;
+        }
+        return false;
+    }
+    // Unified session builder: fixed-length check
+    if (!drillState.active && sessionBuilder.sessionLength !== 'ENDLESS' && typeof sessionBuilder.sessionLength === 'number') {
+        if (state.sessionStats.total >= sessionBuilder.sessionLength) {
+            showSessionSummary();
+            return true;
+        }
     }
     return false;
 }
