@@ -513,11 +513,8 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
     animate();
 }
 
-function renderHand(handKey) {
-    const r1 = handKey[0], r2 = handKey[1], type = handKey[2] || '';
-    const suits = ['♠','♥','♣','♦'];
-    const s1 = suits[Math.floor(Math.random()*4)];
-    let s2 = type === 's' ? s1 : suits.filter(s => s !== s1)[Math.floor(Math.random()*3)];
+function renderHand(handKeyOrHeroHand) {
+    const SUIT_MAP = { s: '♠', h: '♥', c: '♣', d: '♦', '♠': '♠', '♥': '♥', '♣': '♣', '♦': '♦' };
     const color = (s) => (s === '♥' || s === '♦') ? 'text-rose-600' : 'text-slate-900';
     const card = (r, s) => `
         <div class="hero-card-wrapper" style="width:var(--hero-card-w, 64px);height:var(--hero-card-h, 96px);">
@@ -529,7 +526,20 @@ function renderHand(handKey) {
                 </div>
             </div>
         </div>`;
-    document.getElementById('hand-display').innerHTML = card(r1, s1) + card(r2, s2);
+
+    let cards = null;
+    if (handKeyOrHeroHand && typeof handKeyOrHeroHand === 'object' && Array.isArray(handKeyOrHeroHand.cards) && handKeyOrHeroHand.cards.length >= 2) {
+        cards = handKeyOrHeroHand.cards.slice(0, 2).map(c => ({ rank: c.rank, suit: SUIT_MAP[c.suit] || c.suit }));
+    } else {
+        const handKey = String(handKeyOrHeroHand || '');
+        const r1 = handKey[0], r2 = handKey[1], type = handKey[2] || '';
+        const suits = ['♠','♥','♣','♦'];
+        const s1 = suits[Math.floor(Math.random()*4)];
+        const s2 = type === 's' ? s1 : suits.filter(s => s !== s1)[Math.floor(Math.random()*3)];
+        cards = [{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }];
+    }
+
+    document.getElementById('hand-display').innerHTML = cards.map(c => card(c.rank, c.suit)).join('');
 }
 
 // Show card backs (placeholder) immediately
