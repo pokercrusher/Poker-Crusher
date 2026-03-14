@@ -2809,3 +2809,229 @@ function scoreTurnDefenderAction(playerAction, strategy, spot) {
 
     return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
 }
+
+// ============================================================
+// SRP POSTFLOP PHASE 2 — TURN DELAYED C-BET
+// ============================================================
+// Line: preflop SRP → flop checked through → hero (PFR) acts on turn.
+// Hero actions: BET (50%) vs CHECK.
+// Reuses all existing turn classifiers, families, and hand classes.
+
+/**
+ * makeDelayedTurnSpotKeyV1
+ * SRP|{family}|TURN|PFR|{positionState}|TURN_DELAYED_CBET_DECISION|{turnFamily}|{heroHandClass}
+ */
+function makeDelayedTurnSpotKeyV1(spot) {
+    return `SRP|${spot.preflopFamily}|TURN|PFR|${spot.positionState}|TURN_DELAYED_CBET_DECISION|${spot.turnFamily}|${spot.heroHandClass}`;
+}
+
+// --- Delayed c-bet turn strategy ---
+// After a flop check-through the PFR's range is capped (no flopped nuts).
+// Key differences from the regular barrel line:
+//   - Strong made hands bet more freely (they were slowplayed on the flop).
+//   - Overpairs / top-pair: check more often (range is capped and villain is uncapped).
+//   - Draws: semi-bluff at similar rates — they benefit from fold equity now too.
+//   - Air / weak hands: check often on dynamic turns, occasional bluff on blank turns only.
+const POSTFLOP_TURN_DELAYED_STRATEGY = {};
+
+(function() {
+    // IP base bet50 frequencies (bet half pot as delayed c-bet)
+    const BASE_IP = {
+        FLUSH:         { _default: 0.90, FLUSH_COMPLETE: 0.85 },
+        STRAIGHT:      { _default: 0.85 },
+        SET:           { _default: 0.90, FLUSH_COMPLETE: 0.80, STRAIGHT_COMPLETE: 0.78 },
+        TWO_PAIR:      { _default: 0.80, FLUSH_COMPLETE: 0.65, STRAIGHT_COMPLETE: 0.62, ACE_OVERCARD: 0.72 },
+        OVERPAIR:      { _default: 0.50, ACE_OVERCARD: 0.20, FLUSH_COMPLETE: 0.38, STRAIGHT_COMPLETE: 0.35,
+                         BROADWAY_OVERCARD: 0.40, OVERCARD: 0.38, BOARD_PAIR: 0.48, DYNAMIC_CONNECTOR: 0.44 },
+        TOP_PAIR:      { _default: 0.42, BRICK: 0.48, LOW_BLANK: 0.52, ACE_OVERCARD: 0.25,
+                         FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.25, BROADWAY_OVERCARD: 0.32,
+                         OVERCARD: 0.30, BOARD_PAIR: 0.38, DYNAMIC_CONNECTOR: 0.36 },
+        SECOND_PAIR:   { _default: 0.22, BRICK: 0.28, LOW_BLANK: 0.30, ACE_OVERCARD: 0.12,
+                         FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10, BROADWAY_OVERCARD: 0.16,
+                         OVERCARD: 0.14, BOARD_PAIR: 0.20, DYNAMIC_CONNECTOR: 0.20 },
+        THIRD_PAIR:    { _default: 0.12, BRICK: 0.16, LOW_BLANK: 0.18, ACE_OVERCARD: 0.06,
+                         FLUSH_COMPLETE: 0.06, STRAIGHT_COMPLETE: 0.05 },
+        UNDERPAIR:     { _default: 0.14, BRICK: 0.18, LOW_BLANK: 0.20, ACE_OVERCARD: 0.06,
+                         FLUSH_COMPLETE: 0.07, STRAIGHT_COMPLETE: 0.05 },
+        COMBO_DRAW:    { _default: 0.72, BRICK: 0.76, FLUSH_COMPLETE: 0.52, STRAIGHT_COMPLETE: 0.52,
+                         ACE_OVERCARD: 0.62, BROADWAY_OVERCARD: 0.68, DYNAMIC_CONNECTOR: 0.78 },
+        STRONG_DRAW:   { _default: 0.60, BRICK: 0.65, LOW_BLANK: 0.68, FLUSH_COMPLETE: 0.45,
+                         STRAIGHT_COMPLETE: 0.45, ACE_OVERCARD: 0.50, BROADWAY_OVERCARD: 0.55,
+                         DYNAMIC_CONNECTOR: 0.70, BOARD_PAIR: 0.58 },
+        OESD:          { _default: 0.48, BRICK: 0.52, LOW_BLANK: 0.55, FLUSH_COMPLETE: 0.32,
+                         STRAIGHT_COMPLETE: 0.30, ACE_OVERCARD: 0.40, BROADWAY_OVERCARD: 0.44 },
+        GUTSHOT:       { _default: 0.26, BRICK: 0.30, LOW_BLANK: 0.34, FLUSH_COMPLETE: 0.15,
+                         STRAIGHT_COMPLETE: 0.13, ACE_OVERCARD: 0.20, BROADWAY_OVERCARD: 0.22 },
+        ACE_HIGH:      { _default: 0.36, BRICK: 0.44, LOW_BLANK: 0.48, ACE_OVERCARD: 0.22,
+                         FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.15, BROADWAY_OVERCARD: 0.30,
+                         OVERCARD: 0.28, BOARD_PAIR: 0.32, DYNAMIC_CONNECTOR: 0.30 },
+        OVERCARDS:     { _default: 0.22, BRICK: 0.28, LOW_BLANK: 0.32, ACE_OVERCARD: 0.12,
+                         FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10, BROADWAY_OVERCARD: 0.16,
+                         OVERCARD: 0.14, BOARD_PAIR: 0.18, DYNAMIC_CONNECTOR: 0.18 },
+        AIR:           { _default: 0.16, BRICK: 0.20, LOW_BLANK: 0.24, ACE_OVERCARD: 0.08,
+                         FLUSH_COMPLETE: 0.08, STRAIGHT_COMPLETE: 0.06, BROADWAY_OVERCARD: 0.12,
+                         OVERCARD: 0.10, BOARD_PAIR: 0.14, DYNAMIC_CONNECTOR: 0.13 }
+    };
+
+    // OOP PFR: check-through line hurts OOP PFR more; reduce frequencies ~12-15pp
+    const BASE_OOP = {
+        FLUSH:         { _default: 0.82, FLUSH_COMPLETE: 0.75 },
+        STRAIGHT:      { _default: 0.75 },
+        SET:           { _default: 0.80, FLUSH_COMPLETE: 0.68, STRAIGHT_COMPLETE: 0.65 },
+        TWO_PAIR:      { _default: 0.68, FLUSH_COMPLETE: 0.52, STRAIGHT_COMPLETE: 0.50, ACE_OVERCARD: 0.58 },
+        OVERPAIR:      { _default: 0.36, ACE_OVERCARD: 0.14, FLUSH_COMPLETE: 0.26, STRAIGHT_COMPLETE: 0.24,
+                         BROADWAY_OVERCARD: 0.28, OVERCARD: 0.26, BOARD_PAIR: 0.34, DYNAMIC_CONNECTOR: 0.30 },
+        TOP_PAIR:      { _default: 0.30, BRICK: 0.36, LOW_BLANK: 0.40, ACE_OVERCARD: 0.16,
+                         FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.16, BROADWAY_OVERCARD: 0.22,
+                         OVERCARD: 0.20, BOARD_PAIR: 0.26, DYNAMIC_CONNECTOR: 0.24 },
+        SECOND_PAIR:   { _default: 0.13, BRICK: 0.18, LOW_BLANK: 0.20, ACE_OVERCARD: 0.07,
+                         FLUSH_COMPLETE: 0.07, STRAIGHT_COMPLETE: 0.05 },
+        THIRD_PAIR:    { _default: 0.07, BRICK: 0.10, ACE_OVERCARD: 0.03 },
+        UNDERPAIR:     { _default: 0.08, BRICK: 0.11, ACE_OVERCARD: 0.03 },
+        COMBO_DRAW:    { _default: 0.58, BRICK: 0.62, FLUSH_COMPLETE: 0.40, STRAIGHT_COMPLETE: 0.40,
+                         ACE_OVERCARD: 0.48, BROADWAY_OVERCARD: 0.54, DYNAMIC_CONNECTOR: 0.65 },
+        STRONG_DRAW:   { _default: 0.47, BRICK: 0.52, FLUSH_COMPLETE: 0.32, STRAIGHT_COMPLETE: 0.30,
+                         ACE_OVERCARD: 0.38, BROADWAY_OVERCARD: 0.42, DYNAMIC_CONNECTOR: 0.56 },
+        OESD:          { _default: 0.36, BRICK: 0.40, FLUSH_COMPLETE: 0.22, STRAIGHT_COMPLETE: 0.20,
+                         ACE_OVERCARD: 0.28, BROADWAY_OVERCARD: 0.32 },
+        GUTSHOT:       { _default: 0.16, BRICK: 0.20, FLUSH_COMPLETE: 0.09, STRAIGHT_COMPLETE: 0.07,
+                         ACE_OVERCARD: 0.12 },
+        ACE_HIGH:      { _default: 0.24, BRICK: 0.32, LOW_BLANK: 0.36, ACE_OVERCARD: 0.14,
+                         FLUSH_COMPLETE: 0.10, STRAIGHT_COMPLETE: 0.08 },
+        OVERCARDS:     { _default: 0.13, BRICK: 0.18, LOW_BLANK: 0.22, ACE_OVERCARD: 0.07,
+                         FLUSH_COMPLETE: 0.07, STRAIGHT_COMPLETE: 0.05 },
+        AIR:           { _default: 0.09, BRICK: 0.13, LOW_BLANK: 0.16, ACE_OVERCARD: 0.04,
+                         FLUSH_COMPLETE: 0.04, STRAIGHT_COMPLETE: 0.03 }
+    };
+
+    const REASONING = {
+        FLUSH:        'Made flush on flop check-through — bet for full value now.',
+        STRAIGHT:     'Made straight — delayed value bet is very strong here.',
+        SET:          'Set after check-through — now is the time to build the pot.',
+        TWO_PAIR:     'Two pair — bet for value and protection. Flop slow-play complete.',
+        OVERPAIR:     'Overpair — check-through capped your range. Check often; bet on blank turns only.',
+        TOP_PAIR:     'Top pair — delayed bet on blank turns; check on dynamic turns to control pot.',
+        SECOND_PAIR:  'Second pair — mostly check. Villain\'s range is uncapped after checking back.',
+        THIRD_PAIR:   'Third pair — check almost always. Too little value and too little fold equity.',
+        UNDERPAIR:    'Underpair — check. No value and a scary board for a delayed bluff.',
+        COMBO_DRAW:   'Combo draw — semi-bluff. Excellent equity + fold equity against uncapped range.',
+        STRONG_DRAW:  'Flush draw — semi-bluff on blank and low turns. Check on completed flush boards.',
+        OESD:         'OESD — semi-bluff on blank turns. Check on straight-completing turns.',
+        GUTSHOT:      'Gutshot — mostly check. Delayed bluff with gutshot is very thin.',
+        ACE_HIGH:     'Ace-high — delayed bluff only on brick/low turns where range advantage is clear.',
+        OVERCARDS:    'Overcards — check mostly. Delayed bluff selectively on pure brick turns.',
+        AIR:          'Air — check-through exposes your range. Give up unless turn is very favorable.'
+    };
+
+    // Per-family small offsets identical to regular turn strategy
+    const FAMILY_OFF = {
+        BTN_vs_BB: 0, CO_vs_BB: -0.03, HJ_vs_BB: -0.02, LJ_vs_BB: -0.01,
+        UTG_vs_BB: 0.02, BTN_vs_SB: 0.02, SB_vs_BB: 0, CO_vs_BTN: -0.03
+    };
+
+    for (const fam of HERO_HAND_AWARE_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+
+        for (const tf of TURN_FAMILIES) {
+            for (const hc of TURN_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[tf] !== undefined) ? baseFreqs[tf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeDelayedTurnSpotKeyV1({
+                    preflopFamily: fam, positionState: fi.positionState,
+                    turnFamily: tf, heroHandClass: hc
+                });
+                POSTFLOP_TURN_DELAYED_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Phase 2: Turn Delayed C-Bet (50% pot)'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[TurnDelayed] Built ${Object.keys(POSTFLOP_TURN_DELAYED_STRATEGY).length} delayed turn strategy entries.`);
+    }
+})();
+
+/**
+ * generateDelayedTurnSpot — PFR turn decision after flop checked through.
+ * actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK']
+ */
+function generateDelayedTurnSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fi  = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+
+        const flopArch    = pickFlopArchetype();
+        const heroHand    = _dealPostflopHeroHand(fi.heroPos);
+        const fc          = _generateFlopNoConflict(flopArch, heroHand);
+        const turnCard    = _dealTurnCard(fc, heroHand);
+        const turnFamily  = classifyTurnCard(turnCard, fc);
+        const turnHandCls = classifyTurnHand(heroHand, fc, turnCard);
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fam, street: 'TURN', heroRole: 'PFR',
+            positionState: fi.positionState, nodeType: 'TURN_DELAYED_CBET_DECISION',
+            flopArchetype: flopArch, boardArchetype: flopArch,
+            turnFamily: turnFamily, heroHandClass: turnHandCls,
+            flopHandClass: classifyFlopHand(heroHand, fc),
+            heroPos: fi.heroPos, villainPos: fi.villainPos,
+            flopCards: fc, flopClassification: classifyFlop(fc),
+            turnCard: turnCard, heroHand: heroHand,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeDelayedTurnSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_TURN_DELAYED_STRATEGY[spot.spotKey] || null;
+
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    // Fallback
+    console.warn('[TurnDelayed] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fi   = POSTFLOP_PREFLOP_FAMILIES['BTN_vs_BB'];
+    const heroHand = _dealPostflopHeroHand('BTN');
+    const fc   = _generateFlopNoConflict('A_HIGH_DRY', heroHand);
+    const turnCard   = _dealTurnCard(fc, heroHand);
+    const turnFamily = classifyTurnCard(turnCard, fc);
+    const spot = {
+        potType: 'SRP', preflopFamily: 'BTN_vs_BB', street: 'TURN', heroRole: 'PFR',
+        positionState: 'IP', nodeType: 'TURN_DELAYED_CBET_DECISION',
+        flopArchetype: 'A_HIGH_DRY', boardArchetype: 'A_HIGH_DRY',
+        turnFamily: turnFamily, heroHandClass: classifyTurnHand(heroHand, fc, turnCard),
+        flopHandClass: classifyFlopHand(heroHand, fc),
+        heroPos: 'BTN', villainPos: 'BB',
+        flopCards: fc, flopClassification: classifyFlop(fc),
+        turnCard: turnCard, heroHand: heroHand,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK'], potSize: null, effectiveStack: 200
+    };
+    spot.spotKey = makeDelayedTurnSpotKeyV1(spot);
+    spot.strategy = POSTFLOP_TURN_DELAYED_STRATEGY[spot.spotKey] || null;
+    return spot;
+}
+
+/**
+ * scoreDelayedTurnAction — score PFR's delayed c-bet decision (BET vs CHECK).
+ * Delegates to scoreTurnAction since the action mapping is identical.
+ */
+function scoreDelayedTurnAction(playerAction, strategy, spot) {
+    return scoreTurnAction(playerAction, strategy, spot);
+}
