@@ -656,7 +656,8 @@ function renderUserStats() {
             ${topLeaks.map(sp => {
                 const col = sp.acc >= 75 ? 'text-yellow-400' : 'text-rose-400';
                 const bar = sp.acc;
-                return `<div class="flex items-center gap-3">
+                const escapedKey = sp.key.replace(/'/g, "\\'");
+                return `<div class="flex items-center gap-3 cursor-pointer hover:bg-slate-800/40 active:bg-slate-800/70 rounded-xl px-1 py-1 transition-colors" onclick="drilldownSpot('${escapedKey}')">
                     <div class="flex-1 min-w-0">
                         <div class="text-[11px] text-slate-300 font-semibold truncate">${prettySpotName(sp.key)}</div>
                         <div class="mt-1 h-1 bg-slate-800 rounded-full overflow-hidden">
@@ -665,6 +666,7 @@ function renderUserStats() {
                     </div>
                     <div class="text-sm font-black ${col} shrink-0">${sp.acc}%</div>
                     <div class="text-[9px] text-slate-600 shrink-0">${sp.total}h</div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>
                 </div>`;
             }).join('')}
             </div>
@@ -786,7 +788,9 @@ function renderUserStats() {
         if (!list.length) return leakEmpty();
         return `<div class="flex flex-col">${list.map((r, i) => {
             const ret = r.retention || { label: 'New', colorClass: 'bg-slate-700/30 text-slate-500' };
-            return `<div class="flex items-center gap-2.5 px-2 py-2.5 ${i > 0 ? 'border-t border-slate-800/25' : ''}" style="min-height:44px">
+            const clickAttr = r.key ? `onclick="drilldownSpot('${r.key.replace(/'/g, "\\'")}')" style="cursor:pointer"` : '';
+            const hoverClass = r.key ? 'hover:bg-slate-800/40 active:bg-slate-800/70 transition-colors' : '';
+            return `<div class="flex items-center gap-2.5 px-2 py-2.5 ${i > 0 ? 'border-t border-slate-800/25' : ''} ${hoverClass} rounded-lg" style="min-height:44px" ${clickAttr}>
                 <span class="text-[9px] font-black text-slate-700 w-3 text-center shrink-0">${i + 1}</span>
                 <div class="min-w-0 flex-1 flex flex-col gap-0.5">
                     <div class="flex items-center gap-1.5 min-w-0">
@@ -800,6 +804,7 @@ function renderUserStats() {
                     </div>
                 </div>
                 ${leakPill(r.acc)}
+                ${r.key ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>` : ''}
             </div>`;
         }).join('')}</div>`;
     }
@@ -815,7 +820,7 @@ function renderUserStats() {
             let bestInterval = 0;
             handKeys.forEach(hk => { const r = srDbSnap[hk]; if (r && r.intervalDays > bestInterval) bestInterval = r.intervalDays; });
             const retention = classifyRetention(v, bestInterval > 0 ? { intervalDays: bestInterval } : null);
-            return { label: spotLabel, sub: scShort, acc: Math.round(v.correct / v.total * 100), total: v.total, correct: v.correct, retention };
+            return { key: k, label: spotLabel, sub: scShort, acc: Math.round(v.correct / v.total * 100), total: v.total, correct: v.correct, retention };
         })
         .sort(leakSort).slice(0, 5);
     const worstHands = Object.entries(g.byHand || {})
@@ -829,7 +834,7 @@ function renderUserStats() {
             const spotLabel = formatSpotLabel(spotParts[1] || spotKey);
             const srRec = srDbSnap[k] || null;
             const retention = classifyRetention(v, srRec);
-            return { label: hand, sub: `${spotLabel} · ${scShort}`, acc: Math.round(v.correct / v.total * 100), total: v.total, correct: v.correct, retention };
+            return { key: spotKey, label: hand, sub: `${spotLabel} · ${scShort}`, acc: Math.round(v.correct / v.total * 100), total: v.total, correct: v.correct, retention };
         })
         .sort(leakSort).slice(0, 5);
     const worstPG = Object.entries(g.byPosGroup || {})
@@ -1039,7 +1044,8 @@ function renderUserStats() {
             <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">🔥 Needs Work</p>
             <div class="flex flex-col gap-2">`;
         strugglingSpots.forEach(s => {
-            html += `<div class="flex justify-between items-center bg-slate-950/50 rounded-xl px-3 py-2.5">
+            const escapedKey = s.key.replace(/'/g, "\\'");
+            html += `<div class="flex justify-between items-center bg-slate-950/50 hover:bg-slate-800/50 active:bg-slate-800/80 rounded-xl px-3 py-2.5 cursor-pointer transition-colors" onclick="drilldownSpot('${escapedKey}')">
                 <div class="flex items-center gap-2">
                     <span class="text-xs font-bold text-slate-300">${s.label}</span>
                     <span class="text-[9px] text-slate-600">${s.scShort}</span>
@@ -1047,6 +1053,7 @@ function renderUserStats() {
                 <div class="flex items-center gap-2">
                     <span class="text-rose-400 font-black text-xs">${s.wrongPct}%</span>
                     <span class="text-slate-600 text-[9px]">${s.attempts} hands</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                 </div>
             </div>`;
         });
@@ -1069,12 +1076,16 @@ function renderUserStats() {
             <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">✨ Mastered Spots</p>
             <div class="flex flex-col gap-2">`;
         recentMastered.forEach(s => {
-            html += `<div class="flex justify-between items-center bg-slate-950/50 rounded-xl px-3 py-2.5">
+            const escapedKey = s.key.replace(/'/g, "\\'");
+            html += `<div class="flex justify-between items-center bg-slate-950/50 hover:bg-slate-800/50 active:bg-slate-800/80 rounded-xl px-3 py-2.5 cursor-pointer transition-colors" onclick="drilldownSpot('${escapedKey}')">
                 <div class="flex items-center gap-2">
                     <span class="text-xs font-bold text-emerald-300">${s.label}</span>
                     <span class="text-[9px] text-slate-600">${s.scShort}</span>
                 </div>
-                <span class="text-emerald-500/60 text-[10px] font-bold">${s.coverage}% cov · ${s.accuracy}% acc</span>
+                <div class="flex items-center gap-2">
+                    <span class="text-emerald-500/60 text-[10px] font-bold">${s.coverage}% cov · ${s.accuracy}% acc</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                </div>
             </div>`;
         });
         html += `</div></div>`;
