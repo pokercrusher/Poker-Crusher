@@ -2458,6 +2458,8 @@ function generateNextRound() {
         const bl = document.getElementById('bets-layer'); if (bl) bl.innerHTML = '';
         // Update table seats
         try { updateTable(state.postflop.heroPos, state.postflop.villainPos); } catch(_) {}
+        // Villain checked — show check indicator near their seat
+        try { renderVillainCheck(document.getElementById('bets-layer'), state.postflop.heroPos, state.postflop.villainPos); } catch(_) {}
         // Render postflop buttons hidden, then reveal; simultaneously flip hero cards
         renderPostflopButtons(true);
         setTimeout(() => {
@@ -2485,6 +2487,8 @@ function generateNextRound() {
         const cl = document.getElementById('cards-layer'); if (cl) cl.innerHTML = '';
         const bl = document.getElementById('bets-layer'); if (bl) bl.innerHTML = '';
         try { updateTable(state.postflop.heroPos, state.postflop.villainPos); } catch(_) {}
+        // Villain bet — show bet chip near their seat
+        try { const _pot = getScenarioPot$(state.scenario); renderVillainBet(document.getElementById('bets-layer'), state.postflop.heroPos, state.postflop.villainPos, Math.round(_pot * 0.33)); } catch(_) {}
         renderDefenderButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -2517,6 +2521,8 @@ function generateNextRound() {
         const cl1 = document.getElementById('cards-layer'); if (cl1) cl1.innerHTML = '';
         const bl1 = document.getElementById('bets-layer'); if (bl1) bl1.innerHTML = '';
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
+        // Villain checked turn — show check indicator
+        try { renderVillainCheck(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos); } catch(_) {}
         renderTurnCBetButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -2544,6 +2550,8 @@ function generateNextRound() {
         const cl2 = document.getElementById('cards-layer'); if (cl2) cl2.innerHTML = '';
         const bl2 = document.getElementById('bets-layer'); if (bl2) bl2.innerHTML = '';
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
+        // Villain bet turn — show bet chip near their seat
+        try { const _pot = getScenarioPot$(state.scenario); renderVillainBet(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos, Math.round(_pot * 0.5)); } catch(_) {}
         renderTurnDefenderButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -2572,6 +2580,8 @@ function generateNextRound() {
         const cl3 = document.getElementById('cards-layer'); if (cl3) cl3.innerHTML = '';
         const bl3 = document.getElementById('bets-layer'); if (bl3) bl3.innerHTML = '';
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
+        // Villain checked turn — show check indicator
+        try { renderVillainCheck(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos); } catch(_) {}
         renderDelayedTurnButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
