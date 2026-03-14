@@ -1,7 +1,7 @@
 // training.js — Medals, drills, daily run, challenge mode, generateNextRound, handleInput
 // Auto-split from PokerCrusher monolith — do not reorder script tags
 
-const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)', POSTFLOP_CBET: 'Flop C-Bet (Postflop)', POSTFLOP_DEFEND: 'Defend vs C-Bet (Postflop)', POSTFLOP_TURN_CBET: 'Turn Barrel (Postflop)', POSTFLOP_TURN_DEFEND: 'Turn Defense (Postflop)', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet (Postflop)' };
+const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)', POSTFLOP_CBET: 'Flop C-Bet (Postflop)', POSTFLOP_DEFEND: 'Defend vs C-Bet (Postflop)', POSTFLOP_TURN_CBET: 'Turn Barrel (Postflop)', POSTFLOP_TURN_DEFEND: 'Turn Defense (Postflop)', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet (Postflop)', POSTFLOP_TURN_PROBE: 'Turn Probe Defense (Postflop)', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet (Postflop)' };
 const MEDAL_THRESHOLDS = {
     bronze: { hands: 10, accuracy: 65 },
     silver: { hands: 25, accuracy: 80 },
@@ -28,6 +28,8 @@ const FAMILY_MODEL = {
         { id: 'TURN_CBET',          label: 'Turn Barrel',      scenarios: ['POSTFLOP_TURN_CBET'] },
         { id: 'TURN_DEFEND',        label: 'Turn Defense',     scenarios: ['POSTFLOP_TURN_DEFEND'] },
         { id: 'TURN_DELAYED_CBET',  label: 'Turn Delayed Bet', scenarios: ['POSTFLOP_TURN_DELAYED_CBET'] },
+        { id: 'TURN_PROBE',         label: 'Turn Probe',       scenarios: ['POSTFLOP_TURN_PROBE'] },
+        { id: 'TURN_PROBE_DEFEND',  label: 'Turn Probe Bet',   scenarios: ['POSTFLOP_TURN_PROBE_DEFEND'] },
     ]
     // Future: FULL_HAND: [...]
 };
@@ -179,7 +181,9 @@ const DAILY_RUN_TIER_RULES = {
             'POSTFLOP_DEFEND',
             'POSTFLOP_TURN_CBET',
             'POSTFLOP_TURN_DEFEND',
-            'POSTFLOP_TURN_DELAYED_CBET'
+            'POSTFLOP_TURN_DELAYED_CBET',
+            'POSTFLOP_TURN_PROBE',
+            'POSTFLOP_TURN_PROBE_DEFEND'
         ]
     }
 };
@@ -260,6 +264,8 @@ function getDailyRunSupportedScenarios() {
     if (typeof generateTurnCBetSpot === 'function') supported.push('POSTFLOP_TURN_CBET');
     if (typeof generateTurnDefendSpot === 'function') supported.push('POSTFLOP_TURN_DEFEND');
     if (typeof generateDelayedTurnSpot === 'function') supported.push('POSTFLOP_TURN_DELAYED_CBET');
+    if (typeof generateTurnProbeSpot === 'function') supported.push('POSTFLOP_TURN_PROBE');
+    if (typeof generateTurnProbeDefendSpot === 'function') supported.push('POSTFLOP_TURN_PROBE_DEFEND');
     return supported.filter(s => !!SCENARIO_NAMES[s]);
 }
 
@@ -1117,7 +1123,7 @@ function loadConfig() {
         const s = localStorage.getItem(profileKey('gto_config_v2'));
         if (s) {
             const c = JSON.parse(s);
-            const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET'];
+            const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET', 'POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND'];
             if (c.scenarios && Array.isArray(c.scenarios)) {
                 state.config.scenarios = c.scenarios.filter(s => validScenarios.includes(s));
                 if (state.config.scenarios.length === 0) state.config.scenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'];
@@ -2179,6 +2185,8 @@ function generateNextRound() {
             if (s === 'POSTFLOP_TURN_CBET') { return typeof POSTFLOP_TURN_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_TURN_STRATEGY).length > 0; }
             if (s === 'POSTFLOP_TURN_DEFEND') { return typeof POSTFLOP_TURN_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_TURN_DEFEND_STRATEGY).length > 0; }
             if (s === 'POSTFLOP_TURN_DELAYED_CBET') { return typeof POSTFLOP_TURN_DELAYED_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_TURN_DELAYED_STRATEGY).length > 0; }
+            if (s === 'POSTFLOP_TURN_PROBE') { return typeof POSTFLOP_TURN_PROBE_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_TURN_PROBE_STRATEGY).length > 0; }
+            if (s === 'POSTFLOP_TURN_PROBE_DEFEND') { return typeof POSTFLOP_TURN_PROBE_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_TURN_PROBE_DEFEND_STRATEGY).length > 0; }
             return false;
         });
         if (!validScenarios.length) { console.warn('[Trainer] No valid scenarios for config:', JSON.stringify(state.config)); return; }
@@ -2442,6 +2450,44 @@ function generateNextRound() {
             state.postflop = spot;
             state.currentPos = spot.heroPos;
             state.oppPos = spot.villainPos;
+        } else if (state.scenario === 'POSTFLOP_TURN_PROBE') {
+            // IP hero (BTN/CO) faces BB's turn probe after flop check-through
+            let pfFamFilter = state.config.postflopFamilies || null;
+            if (!pfFamFilter && state.config.positions && state.config.positions.length > 0) {
+                const posSet = new Set(state.config.positions);
+                // Probe families are IP-only (BTN_vs_BB, CO_vs_BB); filter by hero position
+                const PROBE_FAMS = (typeof PROBE_IP_FAMILIES !== 'undefined') ? PROBE_IP_FAMILIES : ['BTN_vs_BB', 'CO_vs_BB'];
+                pfFamFilter = PROBE_FAMS.filter(fam => {
+                    const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+                    return fi && posSet.has(fi.heroPos);
+                });
+                if (pfFamFilter.length === 0) pfFamFilter = null;
+            }
+            const spot = generateTurnProbeSpot(25, pfFamFilter);
+            state.postflop = spot;
+            state.currentPos = spot.heroPos;
+            state.oppPos = spot.villainPos;
+        } else if (state.scenario === 'POSTFLOP_TURN_PROBE_DEFEND') {
+            // BB hero probes the turn after flop check-through
+            let pfFamFilter = state.config.postflopFamilies || null;
+            if (!pfFamFilter && state.config.positions && state.config.positions.length > 0) {
+                const posSet = new Set(state.config.positions);
+                // Hero is always BB; if BB is selected allow all probe families, else filter by villain (PFR) position
+                if (posSet.has('BB')) {
+                    pfFamFilter = null;
+                } else {
+                    const PROBE_FAMS = (typeof PROBE_IP_FAMILIES !== 'undefined') ? PROBE_IP_FAMILIES : ['BTN_vs_BB', 'CO_vs_BB'];
+                    pfFamFilter = PROBE_FAMS.filter(fam => {
+                        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+                        return fi && posSet.has(fi.heroPos); // fi.heroPos is the IP PFR (villain here)
+                    });
+                    if (pfFamFilter.length === 0) pfFamFilter = null;
+                }
+            }
+            const spot = generateTurnProbeDefendSpot(25, pfFamFilter);
+            state.postflop = spot;
+            state.currentPos = spot.heroPos;
+            state.oppPos = spot.villainPos;
         }
         } // end if (!usedDuePick)
     }
@@ -2482,6 +2528,12 @@ function generateNextRound() {
         document.getElementById('scenario-hint').innerText = '';
         const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
     } else if (state.scenario === 'POSTFLOP_TURN_DELAYED_CBET' && state.postflop) {
+        document.getElementById('scenario-hint').innerText = '';
+        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
+    } else if (state.scenario === 'POSTFLOP_TURN_PROBE' && state.postflop) {
+        document.getElementById('scenario-hint').innerText = '';
+        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
+    } else if (state.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' && state.postflop) {
         document.getElementById('scenario-hint').innerText = '';
         const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
     } else {
@@ -2647,6 +2699,57 @@ function generateNextRound() {
                 try { requestAnimationFrame(() => { try { flipHeroCards(); } catch(_) {} }); } catch(_) {}
             }
             renderDelayedTurnButtons(false);
+        }, 300);
+        return;
+    }
+    // POSTFLOP TURN PROBE: IP hero faces BB's probe after flop check-through
+    if (state.scenario === 'POSTFLOP_TURN_PROBE' && state.postflop) {
+        clearToast();
+        const spot = state.postflop;
+        state.currentHand = spot.heroHand || null;
+        if (state.currentHand) renderHeroCardBacks();
+        const flopInfoElP = document.getElementById('flop-info-line');
+        if (flopInfoElP) flopInfoElP.classList.add('hidden');
+        renderCommunityCards([...spot.flopCards, spot.turnCard]);
+        const clP = document.getElementById('cards-layer'); if (clP) clP.innerHTML = '';
+        const blP = document.getElementById('bets-layer'); if (blP) blP.innerHTML = '';
+        try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
+        // Villain (BB) probed — show bet chip
+        try { const _pot = getScenarioPot$(state.scenario); renderVillainBet(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos, Math.round(_pot * 0.33)); } catch(_) {}
+        try { _renderTurnContext(spot, 'POSTFLOP_TURN_PROBE'); } catch(_) {}
+        renderTurnProbeButtons(true);
+        setTimeout(() => {
+            if (state.currentHand) {
+                try { renderHand(state.currentHand); } catch(_) {}
+                try { requestAnimationFrame(() => { try { flipHeroCards(); } catch(_) {} }); } catch(_) {}
+            }
+            try { showToast(`${POS_LABELS[spot.villainPos]} probes 33%`, 'neutral', 1200); } catch(_) {}
+            renderTurnProbeButtons(false);
+        }, 300);
+        return;
+    }
+    // POSTFLOP TURN PROBE DEFEND: BB hero decides whether to probe after flop check-through
+    if (state.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' && state.postflop) {
+        clearToast();
+        const spot = state.postflop;
+        state.currentHand = spot.heroHand || null;
+        if (state.currentHand) renderHeroCardBacks();
+        const flopInfoElPD = document.getElementById('flop-info-line');
+        if (flopInfoElPD) flopInfoElPD.classList.add('hidden');
+        renderCommunityCards([...spot.flopCards, spot.turnCard]);
+        const clPD = document.getElementById('cards-layer'); if (clPD) clPD.innerHTML = '';
+        const blPD = document.getElementById('bets-layer'); if (blPD) blPD.innerHTML = '';
+        try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
+        // Villain (IP) checked turn — show check indicator
+        try { renderVillainCheck(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos); } catch(_) {}
+        try { _renderTurnContext(spot, 'POSTFLOP_TURN_PROBE_DEFEND'); } catch(_) {}
+        renderTurnProbeDefendButtons(true);
+        setTimeout(() => {
+            if (state.currentHand) {
+                try { renderHand(state.currentHand); } catch(_) {}
+                try { requestAnimationFrame(() => { try { flipHeroCards(); } catch(_) {} }); } catch(_) {}
+            }
+            renderTurnProbeDefendButtons(false);
         }, 300);
         return;
     }
@@ -3043,9 +3146,11 @@ function clearCommunityCards(){ const cc=document.getElementById('community-card
 // Renders street badge, spot-type label, and action history for turn scenarios.
 // Populates #turn-context-line; safe to call with any spot — falls back gracefully.
 const _TURN_SPOT_LABELS = {
-    POSTFLOP_TURN_CBET:         'Turn Barrel',
-    POSTFLOP_TURN_DEFEND:       'Turn Defense',
-    POSTFLOP_TURN_DELAYED_CBET: 'Delayed Turn Bet'
+    POSTFLOP_TURN_CBET:          'Turn Barrel',
+    POSTFLOP_TURN_DEFEND:        'Turn Defense',
+    POSTFLOP_TURN_DELAYED_CBET:  'Delayed Turn Bet',
+    POSTFLOP_TURN_PROBE:         'Turn Probe Defense',
+    POSTFLOP_TURN_PROBE_DEFEND:  'Turn Probe Bet'
 };
 
 function _renderTurnContext(spot, scenario) {
@@ -3079,6 +3184,14 @@ function _renderTurnContext(spot, scenario) {
             histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: ${heroLabel} bets, ${villainLabel} calls`;
         } else if (hist.includes('FLOP_CBET_FACED') && hist.includes('FLOP_CALLED')) {
             histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: ${villainLabel} bets, ${heroLabel} calls`;
+        } else if (scenario === 'POSTFLOP_TURN_PROBE') {
+            // IP hero faces BB probe. IP player opened, BB called. Flop checked through, BB probes.
+            // heroPos = IP (BTN/CO), villainPos = BB.
+            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: check-check · Turn: ${villainLabel} probes`;
+        } else if (scenario === 'POSTFLOP_TURN_PROBE_DEFEND') {
+            // BB hero decides whether to probe. IP player (villain) opened, BB called. Flop checked through.
+            // heroPos = BB, villainPos = IP (BTN/CO).
+            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: checked through`;
         } else if (hist.includes('FLOP_CHECK') && hist.includes('FLOP_CHECK_BACK')) {
             histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: checked through`;
         } else if (hist.length > 0) {
@@ -3620,6 +3733,274 @@ function showDelayedTurnFeedback(spot, result) {
         ${heroSection}
         <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-violet-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-violet-400 w-20 text-right">Bet ${betFreq}%</div></div>
         <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-20 text-right">Check ${checkFreq}%</div></div>
+        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
+    modal.classList.remove('hidden');
+}
+// ============================================================
+// TURN PROBE — BUTTONS, HANDLERS, FEEDBACK
+// ============================================================
+// POSTFLOP_TURN_PROBE: IP hero (BTN/CO) faces BB's probe after flop check-through.
+// Actions: FOLD / CALL / RAISE (mirrors turn defender pattern).
+
+function renderTurnProbeButtons(hidden) {
+    const container = document.getElementById('action-buttons');
+    setSizingHint('');
+    const sc = hidden ? 'action-buttons-hidden' : 'action-buttons-revealed';
+    const bs = `style="padding:var(--btn-pad, 14px) 0;font-size:var(--btn-font, 14px);"`;
+    container.innerHTML = `<div class="grid grid-cols-3 gap-2 ${sc}"><button onclick="handleTurnProbeInput('fold')" ${bs} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">FOLD</button><button onclick="handleTurnProbeInput('call')" ${bs} class="bg-emerald-600 rounded-2xl font-black text-white shadow-lg">CALL</button><button onclick="handleTurnProbeInput('raise')" ${bs} class="bg-red-600 rounded-2xl font-black text-white shadow-lg">RAISE</button></div>`;
+}
+
+function handleTurnProbeInput(action) {
+    if (!__beginResolve()) return;
+    const grid = document.querySelector('#action-buttons > div');
+    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
+    const spot = state.postflop;
+    if (!spot || !spot.strategy) { __endResolve(); return; }
+    const result = scoreTurnProbeAction(action, spot.strategy, spot);
+
+    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
+
+    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
+    SR.update(srKey, result.correct ? 'Good' : 'Again');
+    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
+
+    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
+    postflopStats.byArchetype[spot.boardArchetype].total++;
+    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
+    postflopStats.byFamily[spot.preflopFamily].total++;
+    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
+    postflopStats.byPosition[spot.positionState].total++;
+
+    const sc = 'POSTFLOP_TURN_PROBE';
+    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
+    state.global.byScenario[sc].total++;
+    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
+    state.global.bySpot[spot.spotKey].total++;
+
+    const _pfHero = spot.heroPos;
+    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
+    state.global.byPos[_pfHero].total++;
+    const _pfPg = normalizePos(_pfHero);
+    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
+    state.global.byPosGroup[_pfPg].total++;
+
+    if (dailyRunState && dailyRunState.active) {
+        dailyRunState.total++;
+        if (result.correct) {
+            dailyRunState.correct++; dailyRunState.runStreak++;
+            try { updateDRRoundCounter(); } catch(_) {}
+            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
+        } else {
+            dailyRunState.ended = true;
+            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
+            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
+        }
+        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
+        dailyRunState.bySpot[spot.spotKey].total++;
+        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
+    }
+
+    const logEntry = {
+        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
+        hand: flopStr(spot.flopCards), action,
+        correctAction: result.correct ? action : result.preferredAction,
+        correct: result.correct, spotKey: spot.spotKey,
+        archetype: spot.boardArchetype, positionState: spot.positionState,
+        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
+        turnFamily: spot.turnFamily, strategy: spot.strategy,
+        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
+        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
+    };
+    state.sessionLog.unshift(logEntry);
+
+    if (result.correct) {
+        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
+        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
+        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
+        postflopStats.byArchetype[spot.boardArchetype].correct++;
+        postflopStats.byFamily[spot.preflopFamily].correct++;
+        postflopStats.byPosition[spot.positionState].correct++;
+        state.global.byScenario[sc].correct++;
+        state.global.bySpot[spot.spotKey].correct++;
+        state.global.byPos[_pfHero].correct++;
+        state.global.byPosGroup[_pfPg].correct++;
+        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
+        updateUI(); saveProgress(); savePostflopStats();
+        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
+    } else {
+        postflopStats.streak = 0; state.sessionStats.streak = 0;
+        const fb = result.grade === 'marginal_wrong'
+            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
+            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
+        showToast(fb, 'incorrect', 2000);
+        updateUI(); saveProgress(); savePostflopStats();
+        setTimeout(() => showTurnProbeFeedback(spot, result), 200);
+    }
+}
+
+function showTurnProbeFeedback(spot, result) {
+    let modal = document.getElementById('postflop-feedback-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'postflop-feedback-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
+        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
+        document.body.appendChild(modal);
+    }
+    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
+    const turnHtml  = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
+    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
+    const tfLabel   = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
+    const heroHtml  = _heroCardsHtml(spot.heroHand);
+    const hcLabel   = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
+    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
+    const actions   = (spot.strategy && spot.strategy.actions) || {};
+    const foldFreq  = Math.round((actions.fold  || 0) * 100);
+    const callFreq  = Math.round((actions.call  || 0) * 100);
+    const raiseFreq = Math.round((actions.raise || 0) * 100);
+    const isCorrect = result.correct;
+    const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} probe · IP Defense</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
+        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
+        ${heroSection}
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:${foldFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-14 text-right">Fold ${foldFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:${callFreq}%"></div></div><div class="text-xs font-black text-emerald-400 w-14 text-right">Call ${callFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:${raiseFreq}%"></div></div><div class="text-xs font-black text-red-400 w-14 text-right">Raise ${raiseFreq}%</div></div>
+        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
+    modal.classList.remove('hidden');
+}
+
+// ============================================================
+// TURN PROBE DEFEND — BUTTONS, HANDLER, FEEDBACK
+// ============================================================
+// POSTFLOP_TURN_PROBE_DEFEND: BB hero decides bet vs check as the prober.
+// Actions: CHECK / BET (33%) (mirrors delayed cbet pattern).
+
+function renderTurnProbeDefendButtons(hidden) {
+    const container = document.getElementById('action-buttons');
+    setSizingHint('');
+    const sc = hidden ? 'action-buttons-hidden' : 'action-buttons-revealed';
+    const bs = `style="padding:var(--btn-pad, 14px) 0;font-size:var(--btn-font, 14px);"`;
+    container.innerHTML = `<div class="grid grid-cols-2 gap-3 ${sc}"><button onclick="handleTurnProbeDefendInput('CHECK')" ${bs} class="bg-slate-800 border border-slate-600 rounded-2xl font-black text-slate-300">CHECK</button><button onclick="handleTurnProbeDefendInput('BET')" ${bs} class="bg-teal-600 rounded-2xl font-black text-white shadow-lg">PROBE (33%)</button></div>`;
+}
+
+function handleTurnProbeDefendInput(action) {
+    if (!__beginResolve()) return;
+    const grid = document.querySelector('#action-buttons > div');
+    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
+    const spot = state.postflop;
+    if (!spot || !spot.strategy) { __endResolve(); return; }
+    const engineAction = action === 'BET' ? 'BARREL' : 'CHECK';
+    const result = scoreTurnProbeDefendAction(engineAction, spot.strategy, spot);
+
+    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
+
+    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
+    SR.update(srKey, result.correct ? 'Good' : 'Again');
+    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
+
+    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
+    postflopStats.byArchetype[spot.boardArchetype].total++;
+    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
+    postflopStats.byFamily[spot.preflopFamily].total++;
+    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
+    postflopStats.byPosition[spot.positionState].total++;
+
+    const sc = 'POSTFLOP_TURN_PROBE_DEFEND';
+    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
+    state.global.byScenario[sc].total++;
+    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
+    state.global.bySpot[spot.spotKey].total++;
+
+    const _pfHero = spot.heroPos;
+    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
+    state.global.byPos[_pfHero].total++;
+    const _pfPg = normalizePos(_pfHero);
+    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
+    state.global.byPosGroup[_pfPg].total++;
+
+    if (dailyRunState && dailyRunState.active) {
+        dailyRunState.total++;
+        if (result.correct) {
+            dailyRunState.correct++; dailyRunState.runStreak++;
+            try { updateDRRoundCounter(); } catch(_) {}
+            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
+        } else {
+            dailyRunState.ended = true;
+            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
+            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
+        }
+        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
+        dailyRunState.bySpot[spot.spotKey].total++;
+        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
+    }
+
+    const logEntry = {
+        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
+        hand: flopStr(spot.flopCards), action,
+        correctAction: result.correct ? action : (action === 'BET' ? 'CHECK' : 'BET'),
+        correct: result.correct, spotKey: spot.spotKey,
+        archetype: spot.boardArchetype, positionState: spot.positionState,
+        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
+        turnFamily: spot.turnFamily, strategy: spot.strategy,
+        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
+        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
+    };
+    state.sessionLog.unshift(logEntry);
+
+    if (result.correct) {
+        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
+        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
+        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
+        postflopStats.byArchetype[spot.boardArchetype].correct++;
+        postflopStats.byFamily[spot.preflopFamily].correct++;
+        postflopStats.byPosition[spot.positionState].correct++;
+        state.global.byScenario[sc].correct++;
+        state.global.bySpot[spot.spotKey].correct++;
+        state.global.byPos[_pfHero].correct++;
+        state.global.byPosGroup[_pfPg].correct++;
+        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
+        updateUI(); saveProgress(); savePostflopStats();
+        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
+    } else {
+        postflopStats.streak = 0; state.sessionStats.streak = 0;
+        const fb = result.grade === 'marginal_wrong'
+            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
+            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
+        showToast(fb, 'incorrect', 2000);
+        updateUI(); saveProgress(); savePostflopStats();
+        setTimeout(() => showTurnProbeDefendFeedback(spot, result), 200);
+    }
+}
+
+function showTurnProbeDefendFeedback(spot, result) {
+    let modal = document.getElementById('postflop-feedback-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'postflop-feedback-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
+        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
+        document.body.appendChild(modal);
+    }
+    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
+    const turnHtml  = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
+    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
+    const tfLabel   = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
+    const heroHtml  = _heroCardsHtml(spot.heroHand);
+    const hcLabel   = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
+    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
+    const actions   = (spot.strategy && spot.strategy.actions) || {};
+    const betFreq   = Math.round((actions.bet50 || 0) * 100);
+    const checkFreq = Math.round((actions.check  || 0) * 100);
+    const isCorrect = result.correct;
+    const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Turn Probe · OOP</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
+        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
+        ${heroSection}
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-teal-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-teal-400 w-24 text-right">Probe ${betFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-24 text-right">Check ${checkFreq}%</div></div>
         <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
     modal.classList.remove('hidden');
 }
