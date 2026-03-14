@@ -743,6 +743,11 @@
             <!-- Pool validation message -->
             <div id="cfg-pool-msg" class="hidden text-[11px] text-rose-400 font-bold text-center px-2 -mt-2"></div>
 
+            <!-- Stakes + Display -->
+            <div id="filter-stake-display" class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                <!-- Injected by renderStakeDisplayUI() -->
+            </div>
+
             <!-- CTA -->
             <div class="flex flex-col gap-3 mt-1">
                 <button onclick="startConfiguredTraining()" id="cfg-start-btn" class="w-full py-5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-xl transition-all shadow-lg">START TRAINING</button>
@@ -934,6 +939,12 @@
 
                 <div class="mt-4 text-[11px] text-slate-500 leading-relaxed">
                     “Save” uploads your current device data. “Load” replaces this device’s data with the cloud copy, then reloads.
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mt-5">
+                <p class="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Game Settings</p>
+                <div id="settings-stake-display">
+                    <!-- Injected by renderSettingsStakeDisplay() -->
                 </div>
             </div>
 
