@@ -2962,7 +2962,7 @@ function showDefenderFeedback(spot,result){
     const heroHtml = _heroCardsHtml(spot.heroHand);
     const handClassLabel = (spot.heroHandClass && typeof HAND_CLASS_LABELS !== 'undefined') ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
     const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${handClassLabel ? `<span class="text-xs font-bold text-slate-300">${handClassLabel}</span>` : ''}</div>` : '';
-    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos]} c-bet · Defend</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
         ${heroSection}
@@ -3094,7 +3094,7 @@ function showPostflopFeedback(spot,result){
     const heroHtml = _heroCardsHtml(spot.heroHand);
     const handClassLabel = (spot.heroHandClass && typeof HAND_CLASS_LABELS !== 'undefined') ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
     const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${handClassLabel ? `<span class="text-xs font-bold text-slate-300">${handClassLabel}</span>` : ''}</div>` : '';
-    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
         ${heroSection}
@@ -3333,7 +3333,7 @@ function showTurnCBetFeedback(spot, result) {
     const checkFreq  = Math.round((actions.check  || 0) * 100);
     const isCorrect  = result.correct;
     const borderCol  = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Turn · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
         ${heroSection}
@@ -3365,7 +3365,7 @@ function showTurnDefenderFeedback(spot, result) {
     const raiseFreq = Math.round((actions.raise || 0) * 100);
     const isCorrect = result.correct;
     const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos] || spot.villainPos} turn bet · Defend</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
         ${heroSection}
@@ -3499,7 +3499,7 @@ function showDelayedTurnFeedback(spot, result) {
     const checkFreq = Math.round((actions.check  || 0) * 100);
     const isCorrect = result.correct;
     const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl">
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Delayed C-Bet · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
         ${heroSection}
