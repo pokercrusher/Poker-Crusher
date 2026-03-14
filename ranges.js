@@ -3262,7 +3262,12 @@ function _buildTurnReasoning(opts) {
  * weaker checks — the raw evaluator handles them correctly regardless of board shape.
  */
 function classifyTurnHand(heroHand, flopCards, turnCard) {
-    const hr = heroHand.cards || _heroHandToCards(heroHand);
+    // Safety: require concrete hero cards, valid flop (3 cards), and a turn card
+    if (!heroHand || !heroHand.cards || heroHand.cards.length < 2) return 'AIR';
+    if (!flopCards || flopCards.length !== 3) return 'AIR';
+    if (!turnCard || !turnCard.rank || !turnCard.suit) return 'AIR';
+
+    const hr = heroHand.cards; // always use concrete cards — _heroHandToCards fallback omitted intentionally
     const boardCards = [...flopCards, turnCard];
 
     // --- Layer 1: raw made-hand evaluation ---
@@ -3694,8 +3699,14 @@ function generateTurnCBetSpot(maxRetries, familyFilter) {
 
         const flopArch    = pickFlopArchetype();
         const heroHand    = _dealPostflopHeroHand(fi.heroPos);
+        // Safety: require concrete hero cards before proceeding
+        if (!heroHand || !heroHand.cards || heroHand.cards.length < 2) continue;
         const fc          = _generateFlopNoConflict(flopArch, heroHand);
+        // Safety: require valid 3-card flop
+        if (!fc || fc.length !== 3) continue;
         const turnCard    = _dealTurnCard(fc, heroHand);
+        // Safety: require valid turn card
+        if (!turnCard || !turnCard.rank || !turnCard.suit) continue;
         const turnFamily  = classifyTurnCard(turnCard, fc);
         const turnHandCls = classifyTurnHand(heroHand, fc, turnCard);
         const turnTexture = classifyTurnTexture(fc, turnCard);
@@ -3709,13 +3720,12 @@ function generateTurnCBetSpot(maxRetries, familyFilter) {
             heroPos: fi.heroPos, villainPos: fi.villainPos,
             flopCards: fc, flopClassification: classifyFlop(fc),
             turnCard: turnCard, heroHand: heroHand,
+            heroCards: heroHand.cards, // convenience alias: concrete [{rank,suit},{rank,suit}]
             turnTexture: turnTexture,
             actionHistory: ['FLOP_CBET', 'FLOP_CALLED'],
-            potSize: null, // set below
+            potSize: null,
             effectiveStack: 200
         };
-        // Approximate turn pot: SRP flop pot + 33% c-bet amount was called = pot × 1.66
-        // We round to nearest live dollar increment for realism
         spot.potSize = null; // ui.js computes display pot from getSRPPot$; stored for metadata
         spot.spotKey = makeTurnCBetSpotKeyV1(spot);
         const baseStrat = POSTFLOP_TURN_STRATEGY[spot.spotKey] || null;
@@ -3742,6 +3752,7 @@ function generateTurnCBetSpot(maxRetries, familyFilter) {
         heroPos: 'BTN', villainPos: 'BB',
         flopCards: fc, flopClassification: classifyFlop(fc),
         turnCard: turnCard, heroHand: heroHand,
+        heroCards: heroHand.cards, // convenience alias: concrete [{rank,suit},{rank,suit}]
         turnTexture: turnTextureFB,
         actionHistory: ['FLOP_CBET', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
     };
@@ -3770,10 +3781,15 @@ function generateTurnDefendSpot(maxRetries, familyFilter) {
 
         const villainPos  = fi.heroPos; // fi.heroPos is the PFR (villain for defender)
         const heroHand    = _dealDefenderHeroHand(villainPos);
-        if (!heroHand) continue;
+        // Safety: require concrete hero cards before proceeding
+        if (!heroHand || !heroHand.cards || heroHand.cards.length < 2) continue;
         const flopArch    = pickFlopArchetype();
         const fc          = _generateFlopNoConflict(flopArch, heroHand);
+        // Safety: require valid 3-card flop
+        if (!fc || fc.length !== 3) continue;
         const turnCard    = _dealTurnCard(fc, heroHand);
+        // Safety: require valid turn card
+        if (!turnCard || !turnCard.rank || !turnCard.suit) continue;
         const turnFamily  = classifyTurnCard(turnCard, fc);
         const turnHandCls = classifyTurnHand(heroHand, fc, turnCard);
         const turnTexture = classifyTurnTexture(fc, turnCard);
@@ -3787,6 +3803,7 @@ function generateTurnDefendSpot(maxRetries, familyFilter) {
             heroPos: 'BB', villainPos: villainPos,
             flopCards: fc, flopClassification: classifyFlop(fc),
             turnCard: turnCard, heroHand: heroHand,
+            heroCards: heroHand.cards, // convenience alias: concrete [{rank,suit},{rank,suit}]
             turnTexture: turnTexture,
             actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED'],
             potSize: null, effectiveStack: 200
@@ -3815,6 +3832,7 @@ function generateTurnDefendSpot(maxRetries, familyFilter) {
         heroPos: 'BB', villainPos: 'BTN',
         flopCards: fc, flopClassification: classifyFlop(fc),
         turnCard: turnCard, heroHand: heroHand,
+        heroCards: heroHand.cards, // convenience alias: concrete [{rank,suit},{rank,suit}]
         turnTexture: turnTextureFB,
         actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
     };
@@ -4091,8 +4109,14 @@ function generateDelayedTurnSpot(maxRetries, familyFilter) {
 
         const flopArch    = pickFlopArchetype();
         const heroHand    = _dealPostflopHeroHand(fi.heroPos);
+        // Safety: require concrete hero cards before proceeding
+        if (!heroHand || !heroHand.cards || heroHand.cards.length < 2) continue;
         const fc          = _generateFlopNoConflict(flopArch, heroHand);
+        // Safety: require valid 3-card flop
+        if (!fc || fc.length !== 3) continue;
         const turnCard    = _dealTurnCard(fc, heroHand);
+        // Safety: require valid turn card
+        if (!turnCard || !turnCard.rank || !turnCard.suit) continue;
         const turnFamily  = classifyTurnCard(turnCard, fc);
         const turnHandCls = classifyTurnHand(heroHand, fc, turnCard);
         const turnTexture = classifyTurnTexture(fc, turnCard);
@@ -4106,6 +4130,7 @@ function generateDelayedTurnSpot(maxRetries, familyFilter) {
             heroPos: fi.heroPos, villainPos: fi.villainPos,
             flopCards: fc, flopClassification: classifyFlop(fc),
             turnCard: turnCard, heroHand: heroHand,
+            heroCards: heroHand.cards, // convenience alias: concrete [{rank,suit},{rank,suit}]
             turnTexture: turnTexture,
             actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK'],
             potSize: null, effectiveStack: 200
@@ -4135,6 +4160,7 @@ function generateDelayedTurnSpot(maxRetries, familyFilter) {
         heroPos: 'BTN', villainPos: 'BB',
         flopCards: fc, flopClassification: classifyFlop(fc),
         turnCard: turnCard, heroHand: heroHand,
+        heroCards: heroHand.cards, // convenience alias: concrete [{rank,suit},{rank,suit}]
         turnTexture: turnTextureFB,
         actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK'], potSize: null, effectiveStack: 200
     };
