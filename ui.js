@@ -1766,8 +1766,8 @@ function drilldownScenario(sc) {
     const drmLastLeak = drm.lastLeakKey ? prettySpotName(drm.lastLeakKey) : null;
     showDrilldown(SCENARIO_LABELS[sc] || sc, (content) => {
         // Find all spots for this scenario
-        // Postflop spots use SRP|/3BP|/LIMP_POT| prefixes rather than POSTFLOP_CBET|
-        const spots = (sc === 'POSTFLOP_CBET' || sc === 'POSTFLOP_DEFEND')
+        // POSTFLOP_CBET spots use SRP|/3BP|/LIMP_POT| prefixes; all other scenarios key with sc| directly
+        const spots = sc === 'POSTFLOP_CBET'
             ? Object.keys(state.global.bySpot).filter(k => typeof POSTFLOP_KEY_PREFIX_LIST !== 'undefined' && POSTFLOP_KEY_PREFIX_LIST.some(p => k.startsWith(p + '|')))
             : Object.keys(state.global.bySpot).filter(k => k.startsWith(sc + '|'));
         if (spots.length === 0) {
