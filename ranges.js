@@ -2485,6 +2485,16 @@ function _rawToTrainerBucket(rawResult, heroCards, boardCards) {
         // Unpaired hand: find which hole card pairs a board rank
         const matchHigh = bFreq.get(hHigh) || 0;
         const matchLow  = bFreq.get(hLow)  || 0;
+
+        // If neither hole card matches any board rank, the "pair" comes entirely from the
+        // board (e.g. A7 on K♠4♠8♥·4♦ — the raw evaluator sees a board pair, not hero's pair).
+        // Do NOT classify as UNDERPAIR; route to a high-card bucket instead.
+        if (matchHigh === 0 && matchLow === 0) {
+            if (hHigh === RANK_NUM['A']) return 'ACE_HIGH';
+            if (hHigh > bTop) return 'OVERCARDS';
+            return 'AIR';
+        }
+
         const pairedRank = matchHigh >= 1 ? hHigh : hLow;
 
         const bDistinct = [...new Set([...boardCards.map(c => RANK_NUM[c.rank])])].sort((a, b) => b - a);
