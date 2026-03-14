@@ -1374,6 +1374,16 @@ function exitToMenu() {
         state.config = drillState._savedConfig;
         drillState._savedConfig = null;
     }
+    // Restore sessionBuilder if this was a spot drill launched from My Stats
+    if (drillState._savedSessionBuilder) {
+        try {
+            const sb = drillState._savedSessionBuilder;
+            sessionBuilder.module = sb.module;
+            sessionBuilder.families = sb.families;
+            sessionBuilder.sessionLength = sb.sessionLength;
+        } catch(_) {}
+        drillState._savedSessionBuilder = null;
+    }
     drillState.active = false;
     drillState.mode = 'open';  // reset to unified mode after any drill/challenge
     drillState.lockedLimperBucket = null;  // prevent bucket lock leaking into next session
@@ -1840,6 +1850,96 @@ function drilldownPosition(pos) {
     });
 }
 
+// ============================================================
+// SPOT DRILL LAUNCH — decode a spotKey → focused 25-hand drill
+// ============================================================
+function launchSpotDrill(spotKey) {
+    if (!spotKey) { showToast('No spot to launch.'); return; }
+
+    const SPOT_DRILL_COUNT = 25;
+    const parts = spotKey.split('|');
+    const sc = parts[0];
+
+    // Map spotKey to training config filters
+    const VALID_SCENARIOS = ['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD',
+        'POSTFLOP_CBET','POSTFLOP_DEFEND','POSTFLOP_TURN_CBET','POSTFLOP_TURN_DEFEND','POSTFLOP_TURN_DELAYED_CBET'];
+
+    // Resolve scenario — POSTFLOP_CBET spots use SRP|/3BP|/LIMP_POT| prefixes
+    let resolvedSc = sc;
+    if (!VALID_SCENARIOS.includes(sc)) {
+        if (typeof POSTFLOP_KEY_PREFIX_LIST !== 'undefined' && POSTFLOP_KEY_PREFIX_LIST.includes(sc)) {
+            resolvedSc = 'POSTFLOP_CBET';
+        } else {
+            showToast('Cannot launch drill for this spot type.');
+            return;
+        }
+    }
+
+    // Parse hero position and optional opponent position from spotId
+    const spotId = parts[1] || '';
+    let heroPos = null, oppPos = null, limperBucket = null;
+
+    try {
+        if (resolvedSc === 'RFI') {
+            heroPos = spotId; // spotId is just the position e.g. "CO"
+        } else if (resolvedSc === 'PUSH_FOLD') {
+            heroPos = spotId;
+        } else if (resolvedSc === 'VS_LIMP') {
+            const m = spotId.match(/^(.+)_vs_(.+)_Limp$/);
+            if (m) { heroPos = m[1]; oppPos = m[2]; }
+            limperBucket = parts[2] || null;
+        } else if (resolvedSc === 'SQUEEZE') {
+            const sq = typeof parseSqueezeKey === 'function' ? parseSqueezeKey(spotId) : null;
+            if (sq) { heroPos = sq.hero; }
+        } else if (resolvedSc === 'SQUEEZE_2C') {
+            const sq = typeof parseSqueeze2CKey === 'function' ? parseSqueeze2CKey(spotId) : null;
+            if (sq) { heroPos = sq.hero; }
+        } else {
+            // FACING_RFI, RFI_VS_3BET, postflop: "HERO_vs_OPP" pattern
+            const m = spotId.match(/^(.+)_vs_(.+)$/);
+            if (m) { heroPos = m[1]; oppPos = m[2]; }
+            else { heroPos = spotId; } // fallback
+        }
+    } catch(e) {
+        console.warn('[launchSpotDrill] parse error', e);
+    }
+
+    if (!heroPos || !ALL_POSITIONS.includes(heroPos)) {
+        showToast('Loaded closest match — position could not be pinpointed.');
+        heroPos = null; // will use all positions
+    }
+
+    // Save current config + sessionBuilder state
+    const savedConfig = JSON.parse(JSON.stringify(state.config));
+    const savedBuilder = JSON.parse(JSON.stringify(sessionBuilder));
+
+    // Build focused config
+    state.config.scenarios = [resolvedSc];
+    state.config.positions = heroPos ? [heroPos] : [...ALL_POSITIONS];
+    state.config.oppPositions = oppPos ? [oppPos] : null;
+    state.config.postflopFamilies = null;
+
+    // Wire drillState for focused 25-question run
+    drillState.mode = 'focused';
+    drillState.active = true;
+    drillState.handCount = SPOT_DRILL_COUNT;
+    drillState.scenario = resolvedSc;
+    drillState.positions = heroPos ? [heroPos] : [...ALL_POSITIONS];
+    drillState.lockedLimperBucket = (resolvedSc === 'VS_LIMP' && limiterBucket) ? limiterBucket : null;
+    drillState._savedConfig = savedConfig;
+
+    // Restore sessionBuilder on exit — patch into _savedConfig bundle
+    drillState._savedSessionBuilder = savedBuilder;
+
+    // Close drilldown panel and stats, then launch
+    hideDrilldown();
+    hideAllScreens();
+    startConfiguredTraining();
+}
+
+// Restore sessionBuilder after spot drill (called from exitToMenu path via drillState cleanup)
+// _savedSessionBuilder is set by launchSpotDrill and read in exitToMenu below.
+
 function drilldownSpot(spotKey) {
     const parts = spotKey.split('|');
     const sc = parts[0], spotId = parts[1];
@@ -1849,9 +1949,10 @@ function drilldownSpot(spotKey) {
         const bucketLabel = { '1L': '1 Limper', '2L': '2 Limpers', '3P': '3+ Limpers' }[parts[2]] || '';
         if (bucketLabel) spotLabel += ` · ${bucketLabel}`;
     }
-    const scLabel = { RFI: 'RFI', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C' }[sc];
+    const SC_LABELS = { RFI: 'RFI', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Delayed C-Bet' };
+    const scLabel = SC_LABELS[sc] || sc;
 
-    showDrilldown(`${spotLabel} · ${scLabel}`, (content) => {
+    showDrilldown(`${spotLabel}${scLabel ? ' · ' + scLabel : ''}`, (content) => {
         const d = state.global.bySpot[spotKey];
         const stats = SR.getSpotStats(spotKey, edgeClassify);
         if (!d && stats.totalAttempts === 0) { content.innerHTML = '<p class="text-slate-600 text-sm">No data.</p>'; return; }
@@ -1859,6 +1960,15 @@ function drilldownSpot(spotKey) {
         const color = pct >= 80 ? 'text-emerald-400' : pct >= 60 ? 'text-yellow-400' : 'text-rose-400';
         const statusColor = { mastered: 'text-emerald-400', learning: 'text-indigo-400', struggling: 'text-rose-400', unseen: 'text-slate-500' }[stats.status];
         const statusLabel = stats.status.charAt(0).toUpperCase() + stats.status.slice(1);
+
+        // Run This Spot CTA
+        const escapedKey = spotKey.replace(/'/g, "\\'");
+        const runBtn = `<button onclick="launchSpotDrill('${escapedKey}')"
+            class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-2xl font-black text-white text-sm transition-all flex items-center justify-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            Run This Spot
+            <span class="text-indigo-300 font-semibold text-xs ml-1">· 25 hands</span>
+        </button>`;
 
         // Summary with coverage, accuracy, due, status
         let summaryHtml = `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
@@ -1923,7 +2033,7 @@ function drilldownSpot(spotKey) {
             </div>`;
         }
 
-        content.innerHTML = summaryHtml + gridHtml + worstHtml;
+        content.innerHTML = runBtn + summaryHtml + gridHtml + worstHtml;
     });
 }
 
