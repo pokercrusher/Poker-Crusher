@@ -699,24 +699,11 @@
                 <button onclick="hideConfigMenu()" class="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-bold">Back</button>
             </div>
 
-            <!-- Section 1: Module -->
-            <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Module</p>
-                <div class="flex gap-2">
-                    <button onclick="setSessionModule('PREFLOP')" id="mod-PREFLOP" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn selected">Preflop</button>
-                    <button onclick="setSessionModule('POSTFLOP')" id="mod-POSTFLOP" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">Postflop</button>
-                    <button id="mod-FULL_HAND" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn opacity-50 cursor-not-allowed" disabled>
-                        <span>Full Hand</span>
-                        <span class="block text-[8px] font-bold text-slate-600 mt-0.5">Coming soon</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Section 2: Spot Families -->
+            <!-- Spots (preflop + postflop combined) -->
             <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
                 <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Spots</p>
-                <div id="family-chips" class="flex flex-wrap gap-2">
-                    <!-- Injected by renderFamilyChips() -->
+                <div id="family-chips" class="flex flex-col gap-3">
+                    <!-- Injected by renderFamilyChips() — grouped by module -->
                 </div>
             </div>
 
