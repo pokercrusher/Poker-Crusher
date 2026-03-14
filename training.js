@@ -2947,7 +2947,6 @@ function handleDefenderInput(action){
         showToast(fb,"incorrect",2000);
         updateUI(); saveProgress(); savePostflopStats();
         setTimeout(()=>showDefenderFeedback(spot,result),200);
-        window.__roundGuard.nextTimer=setTimeout(()=>{ const m=document.getElementById('postflop-feedback-modal'); if(m&&!m.classList.contains('hidden')) closePostflopFeedback(); if(!checkDrillComplete()&&!checkDailyRunComplete()){ __endResolve(); safeGenerateNextRound(); } },4000);
     }
 }
 
@@ -3066,7 +3065,6 @@ function handlePostflopInput(action){
         showToast(fb,"incorrect",2000);
         updateUI(); saveProgress(); savePostflopStats();
         setTimeout(()=>showPostflopFeedback(spot,result),200);
-        window.__roundGuard.nextTimer=setTimeout(()=>{ const m=document.getElementById('postflop-feedback-modal'); if(m&&!m.classList.contains('hidden')) closePostflopFeedback(); if(!checkDrillComplete()&&!checkDailyRunComplete()){ __endResolve(); safeGenerateNextRound(); } },4000);
     }
 }
 
@@ -3105,7 +3103,12 @@ function showPostflopFeedback(spot,result){
         <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
     modal.classList.remove('hidden');
 }
-function closePostflopFeedback(){ const m=document.getElementById('postflop-feedback-modal'); if(m) m.classList.add('hidden'); }
+function closePostflopFeedback(){
+    const m = document.getElementById('postflop-feedback-modal');
+    if (m) m.classList.add('hidden');
+    // Advance to next round now that the user has dismissed feedback
+    if (!checkDrillComplete() && !checkDailyRunComplete()) { __endResolve(); safeGenerateNextRound(); }
+}
 // ============================================================
 // TURN TRAINING — BUTTONS, HANDLERS, FEEDBACK
 // ============================================================
@@ -3218,11 +3221,6 @@ function handleTurnCBetInput(action) {
         showToast(fb, 'incorrect', 2000);
         updateUI(); saveProgress(); savePostflopStats();
         setTimeout(() => showTurnCBetFeedback(spot, result), 200);
-        window.__roundGuard.nextTimer = setTimeout(() => {
-            const m = document.getElementById('postflop-feedback-modal');
-            if (m && !m.classList.contains('hidden')) closePostflopFeedback();
-            if (!checkDrillComplete() && !checkDailyRunComplete()) { __endResolve(); safeGenerateNextRound(); }
-        }, 4000);
     }
 }
 
@@ -3311,11 +3309,6 @@ function handleTurnDefenderInput(action) {
         showToast(fb, 'incorrect', 2000);
         updateUI(); saveProgress(); savePostflopStats();
         setTimeout(() => showTurnDefenderFeedback(spot, result), 200);
-        window.__roundGuard.nextTimer = setTimeout(() => {
-            const m = document.getElementById('postflop-feedback-modal');
-            if (m && !m.classList.contains('hidden')) closePostflopFeedback();
-            if (!checkDrillComplete() && !checkDailyRunComplete()) { __endResolve(); safeGenerateNextRound(); }
-        }, 4000);
     }
 }
 
@@ -3482,11 +3475,6 @@ function handleDelayedTurnInput(action) {
         showToast(fb, 'incorrect', 2000);
         updateUI(); saveProgress(); savePostflopStats();
         setTimeout(() => showDelayedTurnFeedback(spot, result), 200);
-        window.__roundGuard.nextTimer = setTimeout(() => {
-            const m = document.getElementById('postflop-feedback-modal');
-            if (m && !m.classList.contains('hidden')) closePostflopFeedback();
-            if (!checkDrillComplete() && !checkDailyRunComplete()) { __endResolve(); safeGenerateNextRound(); }
-        }, 4000);
     }
 }
 
