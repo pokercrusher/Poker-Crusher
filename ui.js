@@ -777,27 +777,27 @@ function getScenarioPot$(scenario) {
     if (scenario === 'POSTFLOP_CBET') {
         // SRP pot: hero open + villain call + dead money by family
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
-        return open$ * 2 + 1; // fallback
+        return open$ * 2 + getSmallBlind$(); // fallback: approx BTN_vs_BB dead SB
     }
     if (scenario === 'POSTFLOP_DEFEND') {
         // Same SRP pot — defender faces c-bet in same pot structure
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
-        return open$ * 2 + 1;
+        return open$ * 2 + getSmallBlind$();
     }
     if (scenario === 'POSTFLOP_TURN_CBET') {
         // Turn pot: SRP flop pot + c-bet (33%) was called — pot grew by 1.66×
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 1.66);
-        return Math.round(open$ * 2 * 1.66);
+        return Math.round((open$ * 2 + getSmallBlind$()) * 1.66);
     }
     if (scenario === 'POSTFLOP_TURN_DEFEND') {
         // Same pot structure as turn cbet — hero is OOP calling the same bet
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 1.66);
-        return Math.round(open$ * 2 * 1.66);
+        return Math.round((open$ * 2 + getSmallBlind$()) * 1.66);
     }
     if (scenario === 'POSTFLOP_TURN_DELAYED_CBET') {
         // Flop checked through — pot is still the SRP flop pot (no c-bet entered)
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
-        return open$ * 2 + 1;
+        return open$ * 2 + getSmallBlind$();
     }
     return blinds$;
 }
@@ -900,7 +900,7 @@ function pickVillainOpenSize() {
     return pool[Math.floor(Math.random() * pool.length)];
 }
 function getVillainOpenSize$() {
-return (state && state.villainOpenSize) ? state.villainOpenSize : 15;
+return (state && state.villainOpenSize) ? state.villainOpenSize : getCurrentStakePreset().defaultOpen;
 }
 
 function getIsoSize$(numLimpers) {
