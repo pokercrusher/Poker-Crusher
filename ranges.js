@@ -2158,29 +2158,71 @@ const TURN_FAMILY_LABELS = {
     STRAIGHT_COMPLETE: 'Straight card', DYNAMIC_CONNECTOR: 'Dynamic connector'
 };
 
-// Turn hand classes — extended from flop to capture improved / completed hands
+// Turn hand classes — ordered strongest → weakest (used by strategy table iterators).
+// STRAIGHT_FLUSH: both royal flush and straight flush map here (strategy is identical).
+// QUADS: four of a kind — exposed as its own bucket for accuracy.
+// FULL_HOUSE: includes pocket pair on paired board, or one-hole-card trips + separate board pair.
+// SET: pocket pair + exactly one board card of that rank (no board pair of that rank).
+// TRIPS: one unpaired hole card matches a board rank appearing ≥2 times on the board.
 const TURN_HAND_CLASSES = [
-    // Order reflects hand strength (strongest first) — used by strategy table iterators.
-    // FULL_HOUSE: pocket pair + board pair of same rank, OR one hole card fills a board-trips situation.
-    // SET:        pocket pair + exactly one board card of matching rank (board NOT paired to that rank).
-    // TRIPS:      one unpaired hole card matches a board rank that appears ≥2 times on the 4-card board.
-    //             e.g. QJ on J73J — the board contains two Js; hero's J makes trips, not just top pair.
-    // These definitions extend cleanly to 5-card river boards without logic changes.
-    'FLUSH', 'STRAIGHT', 'FULL_HOUSE', 'SET', 'TRIPS', 'TWO_PAIR', 'OVERPAIR',
+    'STRAIGHT_FLUSH', 'QUADS', 'FULL_HOUSE', 'FLUSH', 'STRAIGHT',
+    'SET', 'TRIPS', 'TWO_PAIR', 'OVERPAIR',
     'TOP_PAIR', 'SECOND_PAIR', 'THIRD_PAIR', 'UNDERPAIR',
     'COMBO_DRAW', 'STRONG_DRAW', 'OESD', 'GUTSHOT',
     'ACE_HIGH', 'OVERCARDS', 'AIR'
 ];
 
 const TURN_HAND_CLASS_LABELS = {
-    FLUSH: 'Flush', STRAIGHT: 'Straight', FULL_HOUSE: 'Full house', SET: 'Set',
-    TRIPS: 'Trips', TWO_PAIR: 'Two pair',
-    OVERPAIR: 'Overpair', TOP_PAIR: 'Top pair', SECOND_PAIR: 'Second pair',
-    THIRD_PAIR: 'Third pair', UNDERPAIR: 'Underpair',
+    STRAIGHT_FLUSH: 'Straight flush', QUADS: 'Quads', FULL_HOUSE: 'Full house',
+    FLUSH: 'Flush', STRAIGHT: 'Straight', SET: 'Set', TRIPS: 'Trips',
+    TWO_PAIR: 'Two pair', OVERPAIR: 'Overpair', TOP_PAIR: 'Top pair',
+    SECOND_PAIR: 'Second pair', THIRD_PAIR: 'Third pair', UNDERPAIR: 'Underpair',
     COMBO_DRAW: 'Combo draw', STRONG_DRAW: 'Flush draw (turn)',
     OESD: 'OESD', GUTSHOT: 'Gutshot',
     ACE_HIGH: 'Ace-high', OVERCARDS: 'Overcards', AIR: 'Air'
 };
+
+// =============================================================================
+// RAW HAND EVALUATOR — two-layer postflop evaluation architecture
+// =============================================================================
+//
+// Layer 1: evaluateRawHand(heroCards, boardCards)
+//   Returns { rank: 1-9, label: string } matching standard poker hand strength.
+//   Works for any board size (3 flop, 4 turn, 5 river) — no street-specific hacks.
+//   Hand ranks (9 = strongest):
+//     9 STRAIGHT_FLUSH (includes ROYAL_FLUSH)
+//     8 QUADS
+//     7 FULL_HOUSE
+//     6 FLUSH
+//     5 STRAIGHT
+//     4 TRIPS
+//     3 TWO_PAIR
+//     2 PAIR
+//     1 HIGH_CARD
+//
+// Layer 2: _rawToTrainerBucket(rawResult, heroCards, boardCards)
+//   Maps raw eval into trainer strategy buckets (TURN_HAND_CLASSES).
+//   Preserves poker-teaching distinctions: SET vs TRIPS, OVERPAIR vs TOP_PAIR, etc.
+//   QUADS and STRAIGHT_FLUSH are exposed as trainer buckets.
+//   ROYAL_FLUSH maps to STRAIGHT_FLUSH bucket (same strategy; label updated in LABELS).
+//
+// classifyTurnHand() delegates made-hand detection to this pipeline,
+// then appends existing draw logic for hands with no made pair/better.
+// =============================================================================
+
+/**
+ * _boardRankFreqs — frequency map of ranks across any number of board cards.
+ * Works identically for 3 (flop), 4 (turn), or 5 (river) community cards.
+ * Returns Map<rankNum, count>.
+ */
+function _boardRankFreqs(cards) {
+    const freq = new Map();
+    for (const c of cards) {
+        const r = RANK_NUM[c.rank];
+        freq.set(r, (freq.get(r) || 0) + 1);
+    }
+    return freq;
+}
 
 // --- Helper: check if sortedUniqueRanks contains a made straight (5 consecutive) ---
 function _hasMadeStraight(sortedUniqueRanks) {
@@ -2209,18 +2251,189 @@ function _turnBoardHasStraightDanger(allBoardRanks) {
 }
 
 /**
- * _boardRankFreqs — count occurrences of each numeric rank across all board cards.
- * Works for any number of community cards (3 flop, 4 turn, 5 river).
- * Returns a Map<rankNum, count>.
- * Used by classifyTurnHand (and future river classifier) to detect paired/tripled boards.
+ * _hasStraightFlush — check if hero + board contains a 5-card straight flush.
+ * allCards: combined array of hero cards + board cards (any length ≥ 5).
+ * Returns true if any 5-card combination forms a straight flush.
+ * Uses suit grouping + per-suit straight detection.
  */
-function _boardRankFreqs(boardCards) {
-    const freq = new Map();
-    for (const c of boardCards) {
-        const r = RANK_NUM[c.rank];
-        freq.set(r, (freq.get(r) || 0) + 1);
+function _hasStraightFlush(allCards) {
+    // Group ranks by suit
+    const bySuit = {};
+    for (const c of allCards) {
+        const s = c.suit, r = RANK_NUM[c.rank];
+        if (!bySuit[s]) bySuit[s] = [];
+        bySuit[s].push(r);
     }
-    return freq;
+    for (const ranks of Object.values(bySuit)) {
+        if (ranks.length < 5) continue;
+        const withLow = ranks.includes(14) ? [...ranks, 1] : [...ranks];
+        const unique = [...new Set(withLow)];
+        for (let lo = 1; lo <= 10; lo++) {
+            const w = [lo, lo+1, lo+2, lo+3, lo+4];
+            if (w.every(r => unique.includes(r))) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * _isRoyalFlush — straight flush with T-J-Q-K-A all of same suit.
+ */
+function _isRoyalFlush(allCards) {
+    const bySuit = {};
+    for (const c of allCards) {
+        const s = c.suit, r = RANK_NUM[c.rank];
+        if (!bySuit[s]) bySuit[s] = [];
+        bySuit[s].push(r);
+    }
+    const royal = new Set([10, 11, 12, 13, 14]);
+    for (const ranks of Object.values(bySuit)) {
+        if (royal.size === [...royal].filter(r => ranks.includes(r)).length) return true;
+    }
+    return false;
+}
+
+/**
+ * evaluateRawHand — Layer 1 raw evaluator.
+ * heroCards: array of 2 card objects {rank, suit}
+ * boardCards: array of 3-5 card objects {rank, suit}
+ * Returns { rank: number (1-9), label: string }
+ *
+ * Rank scale (9 = best):
+ *   9 = STRAIGHT_FLUSH (includes royal flush — label will say ROYAL_FLUSH if applicable)
+ *   8 = QUADS
+ *   7 = FULL_HOUSE
+ *   6 = FLUSH
+ *   5 = STRAIGHT
+ *   4 = TRIPS
+ *   3 = TWO_PAIR
+ *   2 = PAIR
+ *   1 = HIGH_CARD
+ */
+function evaluateRawHand(heroCards, boardCards) {
+    const allCards = [...heroCards, ...boardCards];
+    const allRankNums = allCards.map(c => RANK_NUM[c.rank]);
+    const freq = _boardRankFreqs(allCards); // rank → count across ALL cards
+
+    // Frequency counts
+    let quads = 0, trips = 0, pairs = 0;
+    for (const cnt of freq.values()) {
+        if (cnt >= 4) quads++;
+        else if (cnt === 3) trips++;
+        else if (cnt === 2) pairs++;
+    }
+
+    // Flush detection: any suit appearing ≥ 5 times among all cards
+    const suitFreq = {};
+    for (const c of allCards) suitFreq[c.suit] = (suitFreq[c.suit] || 0) + 1;
+    const hasFlush = Object.values(suitFreq).some(n => n >= 5);
+
+    // Straight detection (unique ranks across all cards)
+    const uniqueAllRanks = [...new Set(allRankNums)].sort((a, b) => b - a);
+    const hasStraight = _hasMadeStraight(uniqueAllRanks);
+
+    // Straight flush
+    const hasSF = (hasFlush || hasStraight) && _hasStraightFlush(allCards);
+
+    // --- Evaluate in descending strength order ---
+    if (hasSF) {
+        const label = _isRoyalFlush(allCards) ? 'ROYAL_FLUSH' : 'STRAIGHT_FLUSH';
+        return { rank: 9, label };
+    }
+    if (quads >= 1)                    return { rank: 8, label: 'QUADS' };
+    if (trips >= 1 && pairs >= 1)      return { rank: 7, label: 'FULL_HOUSE' };
+    if (trips >= 2)                    return { rank: 7, label: 'FULL_HOUSE' }; // two sets of trips = FH
+    if (hasFlush)                      return { rank: 6, label: 'FLUSH' };
+    if (hasStraight)                   return { rank: 5, label: 'STRAIGHT' };
+    if (trips >= 1)                    return { rank: 4, label: 'TRIPS' };
+    if (pairs >= 2)                    return { rank: 3, label: 'TWO_PAIR' };
+    if (pairs === 1)                   return { rank: 2, label: 'PAIR' };
+    return { rank: 1, label: 'HIGH_CARD' };
+}
+
+/**
+ * _rawToTrainerBucket — Layer 2 mapping.
+ * Converts a raw evaluateRawHand result into a TURN_HAND_CLASSES trainer bucket,
+ * adding poker-teaching distinctions (SET vs TRIPS, OVERPAIR vs TOP_PAIR, etc.)
+ * that the raw evaluator does not distinguish.
+ *
+ * rawResult:  { rank, label } from evaluateRawHand
+ * heroCards:  the 2 hero hole cards
+ * boardCards: the community cards (3 or 4 or 5)
+ * Returns a TURN_HAND_CLASSES key string.
+ */
+function _rawToTrainerBucket(rawResult, heroCards, boardCards) {
+    const { rank, label } = rawResult;
+
+    // --- Rank 9: straight flush / royal flush ---
+    if (rank === 9) return 'STRAIGHT_FLUSH'; // ROYAL_FLUSH maps here; label shown via TURN_HAND_CLASS_LABELS
+
+    // --- Rank 8: quads ---
+    if (rank === 8) return 'QUADS';
+
+    // --- Rank 7: full house ---
+    if (rank === 7) return 'FULL_HOUSE';
+
+    // --- Rank 6: flush ---
+    if (rank === 6) return 'FLUSH';
+
+    // --- Rank 5: straight ---
+    if (rank === 5) return 'STRAIGHT';
+
+    // --- Rank 4: trips — distinguish SET (pocket pair) vs TRIPS (one hole card on paired board) ---
+    if (rank === 4) {
+        const h1 = RANK_NUM[heroCards[0].rank], h2 = RANK_NUM[heroCards[1].rank];
+        const isPocket = h1 === h2;
+        if (isPocket) return 'SET';  // pocket pair flopped/turned a set
+        return 'TRIPS';              // one hole card matches a board rank appearing ≥2 times
+    }
+
+    // --- Rank 3: two pair ---
+    // Edge case: pocket pair + board has its own separate pair = raw eval sees TWO_PAIR,
+    // but hero's pocket pair is not paired with the board. This is OVERPAIR or UNDERPAIR,
+    // not a hero-made two pair. Detect by checking if either hole card touches the board.
+    if (rank === 3) {
+        const h1 = RANK_NUM[heroCards[0].rank], h2 = RANK_NUM[heroCards[1].rank];
+        const isPocket = h1 === h2;
+        if (isPocket) {
+            // Pocket pair + board pair = board two-pair, not hero two-pair.
+            // Route to OVERPAIR or UNDERPAIR based on whether pocket beats board top.
+            const bFreq = _boardRankFreqs(boardCards);
+            const bTop = [...bFreq.keys()].sort((a, b) => b - a)[0];
+            return h1 > bTop ? 'OVERPAIR' : 'UNDERPAIR';
+        }
+        return 'TWO_PAIR';
+    }
+
+    // --- Rank 2: one pair — distinguish OVERPAIR / TOP_PAIR / SECOND_PAIR / THIRD_PAIR / UNDERPAIR ---
+    if (rank === 2) {
+        const h1 = RANK_NUM[heroCards[0].rank], h2 = RANK_NUM[heroCards[1].rank];
+        const hHigh = Math.max(h1, h2), hLow = Math.min(h1, h2);
+        const isPocket = h1 === h2;
+        const bFreq = _boardRankFreqs(boardCards);
+        const bRanksSorted = [...bFreq.keys()].sort((a, b) => b - a); // sorted desc unique
+        const bTop = bRanksSorted[0];
+
+        if (isPocket) {
+            // Pocket pair not hitting board (if it hit board, raw eval gives TRIPS or better)
+            if (hHigh > bTop) return 'OVERPAIR';
+            return 'UNDERPAIR';
+        }
+
+        // Unpaired hand: find which hole card pairs a board rank
+        const matchHigh = bFreq.get(hHigh) || 0;
+        const matchLow  = bFreq.get(hLow)  || 0;
+        const pairedRank = matchHigh >= 1 ? hHigh : hLow;
+
+        const bDistinct = [...new Set([...boardCards.map(c => RANK_NUM[c.rank])])].sort((a, b) => b - a);
+        if (pairedRank === bDistinct[0]) return 'TOP_PAIR';
+        if (bDistinct[1] !== undefined && pairedRank === bDistinct[1]) return 'SECOND_PAIR';
+        if (bDistinct[2] !== undefined && pairedRank === bDistinct[2]) return 'THIRD_PAIR';
+        return 'UNDERPAIR'; // shouldn't normally reach here with well-formed input
+    }
+
+    // --- Rank 1: high card — no pair at all, classify as AIR ---
+    return 'AIR';
 }
 
 /**
@@ -2279,128 +2492,37 @@ function classifyTurnCard(turnCard, flopCards) {
  * turnCard: { rank, suit }
  * Returns a TURN_HAND_CLASSES key.
  *
- * Made-hand evaluation order (strongest → weakest):
- *   FLUSH → STRAIGHT → FULL_HOUSE → SET → TRIPS → TWO_PAIR →
- *   OVERPAIR → TOP_PAIR / SECOND_PAIR / THIRD_PAIR → UNDERPAIR
- *   → draw classes → air classes
+ * Architecture:
+ *   1. Call evaluateRawHand (Layer 1) to detect made hand accurately.
+ *   2. If a made hand is found, map through _rawToTrainerBucket (Layer 2) and return.
+ *   3. If no made hand (HIGH_CARD), fall through to existing draw classification.
  *
- * Key definitions (designed to extend cleanly to river):
- *   FULL_HOUSE = pocket pair whose rank appears ≥1 time on board
- *                AND board also contains a pair of a different rank;
- *                or one hole card matches a board rank appearing 3 times.
- *   SET        = pocket pair + board contains exactly one card of that rank
- *                (board not also paired to that rank — clean set, no board pair).
- *   TRIPS      = unpaired hole where one card's rank appears ≥2 times on the board
- *                (board-paired rank + one matching hole card).
- *   TWO_PAIR   = both hole card ranks each appear at least once on board (no trips/FH).
+ * This means board-pair upgrades (trips, full house, etc.) are never swallowed by
+ * weaker checks — the raw evaluator handles them correctly regardless of board shape.
  */
 function classifyTurnHand(heroHand, flopCards, turnCard) {
     const hr = heroHand.cards || _heroHandToCards(heroHand);
+    const boardCards = [...flopCards, turnCard];
+
+    // --- Layer 1: raw made-hand evaluation ---
+    const raw = evaluateRawHand(hr, boardCards);
+
+    if (raw.rank >= 2) {
+        // Has at least a pair — map to trainer bucket and return.
+        return _rawToTrainerBucket(raw, hr, boardCards);
+    }
+
+    // --- No made pair: draw classification ---
+    // (mirrors original logic; unchanged for backward compatibility)
     const h1 = RANK_NUM[hr[0].rank], h2 = RANK_NUM[hr[1].rank];
     const hHigh = Math.max(h1, h2), hLow = Math.min(h1, h2);
     const hSuited = hr[0].suit === hr[1].suit;
     const hSuit = hSuited ? hr[0].suit : null;
-    const isPocket = hHigh === hLow;
-
-    const boardCards = [...flopCards, turnCard];
     const bRanks = boardCards.map(c => RANK_NUM[c.rank]).sort((a, b) => b - a);
     const bSuits = boardCards.map(c => c.suit);
-
-    // Board rank frequency map — how many times each rank appears across 4 board cards.
-    // Using _boardRankFreqs() so the same helper will work for river (5 board cards) later.
-    const bFreq = _boardRankFreqs(boardCards);
-
-    const matchHigh = bFreq.get(hHigh) || 0;  // times hHigh appears on board
-    const matchLow  = bFreq.get(hLow)  || 0;  // times hLow  appears on board
-
-    // --- Made hands, strongest first ---
-
-    // Flush: suited hand + 3 or more board cards of same suit
-    if (hSuited) {
-        const suitedBoard = bSuits.filter(s => s === hSuit).length;
-        if (suitedBoard >= 3) return 'FLUSH';
-    }
-
-    // Straight: hero + 4-card board contains 5 consecutive ranks
     const allRanks = [hHigh, hLow, ...bRanks];
     const uniqueRanks = [...new Set(allRanks)].sort((a, b) => b - a);
-    if (_hasMadeStraight(uniqueRanks)) return 'STRAIGHT';
 
-    // --- Trips / Full House / Set (all board-frequency-aware) ---
-    //
-    // Determine whether the board is itself paired (any rank appears ≥2 times on board).
-    let boardPairRank = null;   // rank that appears ≥2 times on board (if any)
-    let boardTripsRank = null;  // rank that appears 3 times on board (if any)
-    for (const [rank, cnt] of bFreq) {
-        if (cnt >= 3) boardTripsRank = rank;
-        else if (cnt === 2) boardPairRank = rank;
-    }
-
-    if (isPocket) {
-        // --- Pocket pair cases ---
-        // FULL_HOUSE: pocket pair matches board rank that appears ≥1 time,
-        //             AND board also contains a separate pair of another rank.
-        //   e.g. 77 on J773J → 7s appear 3 times total with the pocket, Js appear 2 times → full house.
-        //   Concretely: matchHigh ≥ 1 means we have at least trips for the pocket rank.
-        //   If the board also has a pair of a different rank → full house.
-        if (matchHigh >= 1) {
-            // Hero holds a pocket pair + at least one board card of that rank → trips or better.
-            // Check if there is also a board pair of a different rank (= full house).
-            const hasOtherBoardPair = boardPairRank !== null && boardPairRank !== hHigh;
-            const hasBoardTripsOther = boardTripsRank !== null && boardTripsRank !== hHigh;
-            if (hasOtherBoardPair || hasBoardTripsOther) return 'FULL_HOUSE';
-            // No separate board pair → SET (pocket pair + one matching board card, clean).
-            return 'SET';
-        }
-        // Pocket pair does not hit board at all — underpair or overpair (handled below).
-    } else {
-        // --- Unpaired hole cards ---
-        // TRIPS: one hole card matches a board rank that appears ≥2 times on board.
-        //   e.g. QJ on J♦7♣3♦J♥ → board has 2 Js; matchHigh (J) = 2 → TRIPS.
-        //   e.g. A7 on J773J      → board has 2 7s and 2 Js; matchLow (7) = 2 → TRIPS.
-        //   Hero cannot simultaneously use both hole cards for two separate trips combos,
-        //   so we classify to TRIPS as soon as either hole card satisfies the condition.
-        //   (If both hole ranks somehow appear 3× on board that is board-trips; use strongest.)
-        const hHighTrips = matchHigh >= 2;  // hHigh appears ≥2 times on board
-        const hLowTrips  = matchLow  >= 2;  // hLow  appears ≥2 times on board
-        if (hHighTrips || hLowTrips) {
-            // Check for full house: the OTHER hole card also pairs the board.
-            // e.g. J3 on J73J → hHigh=J trips, matchLow (3) = 1 → full house.
-            if (hHighTrips && matchLow >= 1) return 'FULL_HOUSE';
-            if (hLowTrips  && matchHigh >= 1) return 'FULL_HOUSE';
-            return 'TRIPS';
-        }
-
-        // TWO_PAIR: both hole card ranks each pair exactly once on board (no trips above).
-        if (matchHigh >= 1 && matchLow >= 1) return 'TWO_PAIR';
-    }
-
-    // --- Single-pair and weaker ---
-
-    // Overpair: pocket pair above all 4 board cards
-    if (isPocket && hHigh > bRanks[0]) return 'OVERPAIR';
-
-    // One-pair buckets: rank hero's paired board card against sorted board.
-    // bRanks is sorted desc; bRanks[0] = top board card rank.
-    const bDistinct = [...new Set(bRanks)].sort((a, b) => b - a);
-    const bTop   = bDistinct[0];
-    const bSec   = bDistinct[1];
-    const bThird = bDistinct[2];
-
-    // For pocket pairs that don't hit board (underpair case handled at bottom).
-    if (matchHigh >= 1) {
-        if (hHigh === bTop)   return 'TOP_PAIR';
-        if (hHigh === bSec)   return 'SECOND_PAIR';
-        if (hHigh === bThird) return 'THIRD_PAIR';
-    }
-    if (matchLow >= 1) {
-        if (hLow === bTop)   return 'TOP_PAIR';
-        if (hLow === bSec)   return 'SECOND_PAIR';
-        if (hLow === bThird) return 'THIRD_PAIR';
-    }
-    if (isPocket) return 'UNDERPAIR'; // pocket pair below all distinct board ranks
-
-    // --- Draws (no made pair) ---
     const hasFlushDraw = hSuited && _countSuitOnBoard(hSuit, bSuits) === 2;
     const straightInfo = _straightDrawType(uniqueRanks);
     const hasOESD    = straightInfo === 'OESD';
@@ -2408,8 +2530,8 @@ function classifyTurnHand(heroHand, flopCards, turnCard) {
 
     if (hasFlushDraw && (hasOESD || hasGutshot)) return 'COMBO_DRAW';
     if (hasFlushDraw) return 'STRONG_DRAW';
-    if (hasOESD)    return 'OESD';
-    if (hasGutshot) return 'GUTSHOT';
+    if (hasOESD)     return 'OESD';
+    if (hasGutshot)  return 'GUTSHOT';
 
     // No made hand, no draw
     if (hHigh === 14) return 'ACE_HIGH';
@@ -2454,9 +2576,11 @@ const POSTFLOP_TURN_STRATEGY = {};
     // Base IP frequencies for bet50 (50% pot) on the turn
     // Format: { handClass: { turnFamily: freq } }  _default is fallback
     const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.90 },
+        QUADS:         { _default: 0.88 },
+        FULL_HOUSE:    { _default: 0.88, FLUSH_COMPLETE: 0.82, STRAIGHT_COMPLETE: 0.80 },
         FLUSH:         { _default: 0.85, FLUSH_COMPLETE: 0.80 },
         STRAIGHT:      { _default: 0.78 },
-        FULL_HOUSE:    { _default: 0.88, FLUSH_COMPLETE: 0.82, STRAIGHT_COMPLETE: 0.80 },
         SET:           { _default: 0.85, FLUSH_COMPLETE: 0.75, STRAIGHT_COMPLETE: 0.70 },
         TRIPS:         { _default: 0.82, FLUSH_COMPLETE: 0.72, STRAIGHT_COMPLETE: 0.68,
                          BOARD_PAIR: 0.80, ACE_OVERCARD: 0.75, BROADWAY_OVERCARD: 0.78 },
@@ -2495,9 +2619,11 @@ const POSTFLOP_TURN_STRATEGY = {};
 
     // OOP PFR: reduce bet frequency ~12-15pp across the board
     const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.80 },
+        QUADS:         { _default: 0.78 },
+        FULL_HOUSE:    { _default: 0.78, FLUSH_COMPLETE: 0.70, STRAIGHT_COMPLETE: 0.68 },
         FLUSH:         { _default: 0.75, FLUSH_COMPLETE: 0.68 },
         STRAIGHT:      { _default: 0.68 },
-        FULL_HOUSE:    { _default: 0.78, FLUSH_COMPLETE: 0.70, STRAIGHT_COMPLETE: 0.68 },
         SET:           { _default: 0.75, FLUSH_COMPLETE: 0.62, STRAIGHT_COMPLETE: 0.58 },
         TRIPS:         { _default: 0.70, FLUSH_COMPLETE: 0.58, STRAIGHT_COMPLETE: 0.55,
                          BOARD_PAIR: 0.68, ACE_OVERCARD: 0.62, BROADWAY_OVERCARD: 0.65 },
@@ -2528,11 +2654,13 @@ const POSTFLOP_TURN_STRATEGY = {};
     };
 
     const TURN_REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — the virtual nuts. Bet for maximum value on every turn.',
+        QUADS:        'Quads — near-unbeatable. Bet or slow-play to extract maximum value.',
+        FULL_HOUSE:   'Full house — near-nutted. Bet for value; consider sizing up on safe runouts.',
         FLUSH:        'Flush made — bet for value. Occasionally check back to balance.',
         STRAIGHT:     'Straight made — bet for value on most turns.',
-        FULL_HOUSE:   'Full house — near-nutted hand. Bet for value; consider sizing up on safe runouts.',
         SET:          'Set is extremely strong — value bet consistently. Slow-play on scary boards.',
-        TRIPS:        'Trips — strong value hand on a paired board. Bet for value; villain cannot have many counterfeits.',
+        TRIPS:        'Trips — strong value hand on a paired board. Bet for value consistently.',
         TWO_PAIR:     'Two pair is strong — bet for value and protection.',
         OVERPAIR:     'Overpair remains strong on blank turns, but scary turns (ace, flush) reduce frequency.',
         TOP_PAIR:     'Top pair is a core value hand on blank turns. Check back on dynamic turns.',
@@ -2592,10 +2720,12 @@ const POSTFLOP_TURN_DEFEND_STRATEGY = {};
 
 (function() {
     const BASE = {
-        FLUSH:        { _default: { fold: 0.00, call: 0.30, raise: 0.70 } },
-        STRAIGHT:     { _default: { fold: 0.00, call: 0.35, raise: 0.65 } },
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.15, raise: 0.85 } },
+        QUADS:        { _default: { fold: 0.00, call: 0.20, raise: 0.80 } },
         FULL_HOUSE:   { _default: { fold: 0.00, call: 0.25, raise: 0.75 },
                         FLUSH_COMPLETE: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        FLUSH:        { _default: { fold: 0.00, call: 0.30, raise: 0.70 } },
+        STRAIGHT:     { _default: { fold: 0.00, call: 0.35, raise: 0.65 } },
         SET:          { _default: { fold: 0.00, call: 0.38, raise: 0.62 },
                         FLUSH_COMPLETE: { fold: 0.00, call: 0.30, raise: 0.70 } },
         TRIPS:        { _default: { fold: 0.00, call: 0.35, raise: 0.65 },
@@ -2646,9 +2776,11 @@ const POSTFLOP_TURN_DEFEND_STRATEGY = {};
     };
 
     const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — raise for maximum value. You are almost certainly winning.',
+        QUADS:        'Quads — raise to build the pot. Only a higher quads or royal beats you.',
+        FULL_HOUSE:   'Full house — raise for maximum value. The only hand that beats you is a better full house or quads.',
         FLUSH:        'Made flush — raise for value. Slow-play is also fine to trap.',
         STRAIGHT:     'Made straight — raise for value, or flat to keep bluffs in.',
-        FULL_HOUSE:   'Full house — raise for maximum value. The only hand that beats you is a better full house or quads.',
         SET:          'Set is very strong — raise or flat to build the pot.',
         TRIPS:        'Trips on a paired board — raise or call for value. Villain rarely has a stronger hand.',
         TWO_PAIR:     'Two pair — raise for value, call on scary runouts.',
@@ -2950,9 +3082,11 @@ const POSTFLOP_TURN_DELAYED_STRATEGY = {};
 (function() {
     // IP base bet50 frequencies (bet half pot as delayed c-bet)
     const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.92 },
+        QUADS:         { _default: 0.90 },
+        FULL_HOUSE:    { _default: 0.92, FLUSH_COMPLETE: 0.86, STRAIGHT_COMPLETE: 0.84 },
         FLUSH:         { _default: 0.90, FLUSH_COMPLETE: 0.85 },
         STRAIGHT:      { _default: 0.85 },
-        FULL_HOUSE:    { _default: 0.92, FLUSH_COMPLETE: 0.86, STRAIGHT_COMPLETE: 0.84 },
         SET:           { _default: 0.90, FLUSH_COMPLETE: 0.80, STRAIGHT_COMPLETE: 0.78 },
         TRIPS:         { _default: 0.86, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.74,
                          BOARD_PAIR: 0.84, ACE_OVERCARD: 0.78, BROADWAY_OVERCARD: 0.80 },
@@ -2991,9 +3125,11 @@ const POSTFLOP_TURN_DELAYED_STRATEGY = {};
 
     // OOP PFR: check-through line hurts OOP PFR more; reduce frequencies ~12-15pp
     const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.82 },
+        QUADS:         { _default: 0.80 },
+        FULL_HOUSE:    { _default: 0.82, FLUSH_COMPLETE: 0.74, STRAIGHT_COMPLETE: 0.72 },
         FLUSH:         { _default: 0.82, FLUSH_COMPLETE: 0.75 },
         STRAIGHT:      { _default: 0.75 },
-        FULL_HOUSE:    { _default: 0.84, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.74 },
         SET:           { _default: 0.80, FLUSH_COMPLETE: 0.68, STRAIGHT_COMPLETE: 0.65 },
         TRIPS:         { _default: 0.76, FLUSH_COMPLETE: 0.63, STRAIGHT_COMPLETE: 0.60,
                          BOARD_PAIR: 0.74, ACE_OVERCARD: 0.66, BROADWAY_OVERCARD: 0.68 },
@@ -3024,11 +3160,13 @@ const POSTFLOP_TURN_DELAYED_STRATEGY = {};
     };
 
     const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush after check-through — bet for maximum value. Board disguises hand strength.',
+        QUADS:        'Quads after check-through — slow-play complete. Time to bet for value.',
+        FULL_HOUSE:   'Full house after check-through — max value time. Board pair disguises your strength.',
         FLUSH:        'Made flush on flop check-through — bet for full value now.',
         STRAIGHT:     'Made straight — delayed value bet is very strong here.',
-        FULL_HOUSE:   'Full house after check-through — max value time. Board pair disguises your strength.',
         SET:          'Set after check-through — now is the time to build the pot.',
-        TRIPS:        'Trips after check-through — strong hand on a paired board. Bet for value; villain is unlikely to be ahead.',
+        TRIPS:        'Trips after check-through — strong hand on a paired board. Bet for value now.',
         TWO_PAIR:     'Two pair — bet for value and protection. Flop slow-play complete.',
         OVERPAIR:     'Overpair — check-through capped your range. Check often; bet on blank turns only.',
         TOP_PAIR:     'Top pair — delayed bet on blank turns; check on dynamic turns to control pot.',
