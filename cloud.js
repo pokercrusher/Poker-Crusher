@@ -596,7 +596,7 @@ function renderUserStats() {
     const medals = loadMedals();
     const total = g.totalHands || 0, correct = g.totalCorrect || 0;
     const pct = total ? Math.round(correct / total * 100) : 0;
-    const SCENARIO_LABELS = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet' };
+    const SCENARIO_LABELS = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'Flop Defense', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Delayed Turn' };
 
     function classifySpot(key) { return SR.classifySpot(key, edgeClassify); }
 
@@ -890,7 +890,7 @@ function renderUserStats() {
             </div>
             <div class="flex flex-col gap-2">`;
 
-        ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD'].forEach(sc => {
+        ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET'].forEach(sc => {
             const m = medals[sc];
             const icon = m ? MEDAL_ICONS[m.medal] : '';
             const acc = m ? m.accuracy : null;
@@ -919,9 +919,9 @@ function renderUserStats() {
     html += `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
         <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-4">By Scenario</p>
         <div class="flex flex-col gap-3">`;
-    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET'].forEach(sc => {
+    ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET'].forEach(sc => {
         const prefix = sc === 'POSTFLOP_CBET' ? '' : sc + '|';
-        // Postflop spots use SRP|, 3BP|, LIMP_POT| prefixes — filter them via getAllSpotKeys
+        // POSTFLOP_CBET spots use SRP|, 3BP|, LIMP_POT| prefixes; all other scenarios key with sc| directly
         const scSpots = sc === 'POSTFLOP_CBET'
             ? allSpots.filter(k => POSTFLOP_KEY_PREFIX_LIST && POSTFLOP_KEY_PREFIX_LIST.some(p => k.startsWith(p + '|')))
             : allSpots.filter(k => k.startsWith(prefix));
