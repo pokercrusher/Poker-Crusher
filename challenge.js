@@ -217,6 +217,13 @@ const CHALLENGE_NODES = [
         hands: 30, thresholds: { pass: 63, silver: 73, gold: 82 },
         prereqs: ['c23_turn_delayed'], tierGate: null,
     },
+    {
+        id: 'c23c_turn_probe', tier: 'T7',
+        title: 'Turn Probe Lines', desc: 'Probe offense and defense after flop check-through (BTN/CO vs BB)',
+        filters: { scenarios: ['POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND'], heroPositions: [...ALL_POSITIONS], postflopFamilies: ['BTN_vs_BB', 'CO_vs_BB'] },
+        hands: 25, thresholds: { pass: 63, silver: 73, gold: 82 },
+        prereqs: ['c23b_turn_mixed'], tierGate: null,
+    },
 
     // TIER 8 — Integration Trials
     {
@@ -236,7 +243,7 @@ const CHALLENGE_NODES = [
     {
         id: 'c23_complete_trial', tier: 'T8',
         title: 'Complete Game Trial', desc: 'All scenarios including flop + turn postflop',
-        filters: { scenarios: ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET'], heroPositions: [...ALL_POSITIONS] },
+        filters: { scenarios: ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET', 'POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND'], heroPositions: [...ALL_POSITIONS] },
         hands: 40, thresholds: { pass: 72, silver: 80, gold: 88 },
         prereqs: ['c22_pressure_trial'], tierGate: null,
     },
@@ -245,7 +252,7 @@ const CHALLENGE_NODES = [
     {
         id: 'c24_boss', tier: 'T9',
         title: 'Poker Crusher Boss', desc: 'The ultimate preflop + flop + turn gauntlet',
-        filters: { scenarios: ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET'], heroPositions: [...ALL_POSITIONS] },
+        filters: { scenarios: ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'POSTFLOP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET', 'POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND'], heroPositions: [...ALL_POSITIONS] },
         hands: 50, thresholds: { pass: 80, silver: 87, gold: 93 },
         prereqs: ['c23_complete_trial'], tierGate: null,
     },
