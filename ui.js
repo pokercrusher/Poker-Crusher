@@ -2188,14 +2188,21 @@ function drilldownSpot(spotKey) {
         const feltEl = document.getElementById('poker-felt-container');
         if (feltEl) {
             feltEl.style.borderWidth = feltBorder + 'px';
-            feltEl.style.aspectRatio = isMobile ? '2.3/1' : '2.1/1';
+            const targetRatio = isMobile ? '2.3/1' : '2.1/1';
+            if (feltEl.style.aspectRatio !== targetRatio) feltEl.style.aspectRatio = targetRatio;
         }
     }
 
     const ro = new ResizeObserver(entries => {
         for (const entry of entries) {
-            feltW = entry.contentRect.width;
-            feltH = entry.contentRect.height;
+            const wW = entry.contentRect.width;
+            const wH = entry.contentRect.height;
+            // Felt is height-constrained with aspect-ratio ~2.2:1
+            // Actual felt width = min(wrapperWidth, wrapperHeight * ratio)
+            const ratio = (window.innerWidth < 600) ? 2.3 : 2.1;
+            const feltFromH = wH * ratio;
+            feltW = Math.min(wW, feltFromH);
+            feltH = feltW / ratio;
             applyScale();
         }
     });
@@ -2204,8 +2211,8 @@ function drilldownSpot(spotKey) {
     // without needing the IIFE to monkey-patch function assignments at module load time.
     // Called by: startConfiguredTraining, _startReviewWithQueue, startDailyRun.
     window._trainerLayoutBoot = function() {
-        const felt = document.getElementById('poker-felt-container');
-        if (felt) ro.observe(felt);
+        const wrapper = document.getElementById('table-wrapper');
+        if (wrapper) ro.observe(wrapper);
     };
     window._trainerLayoutTeardown = function() {
         ro.disconnect();
