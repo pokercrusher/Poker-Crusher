@@ -2108,11 +2108,9 @@ function drilldownSpot(spotKey) {
         const isMobile = winW < 600;
 
         // Cap table height on desktop so it doesn't consume the full screen
-        // Guard write to avoid triggering layout recalc loop (we observe table-wrapper)
         const tableWrapper = document.getElementById('table-wrapper');
         if (tableWrapper) {
-            const newMaxH = isMobile ? '' : Math.round(winH * 0.52) + 'px';
-            if (tableWrapper.style.maxHeight !== newMaxH) tableWrapper.style.maxHeight = newMaxH;
+            tableWrapper.style.maxHeight = isMobile ? '' : Math.round(winH * 0.62) + 'px';
         }
 
         // On mobile portrait, use window height as the reference for UI elements
@@ -2186,7 +2184,7 @@ function drilldownSpot(spotKey) {
         root.setProperty('--btn-max-w', Math.min(640, Math.round(feltW * 0.95)) + 'px');
         // Felt border + aspect ratio — guard writes to avoid triggering layout recalc loop
         const feltBorder = Math.max(6, Math.round(feltW * 0.016)) + 'px';
-        const targetRatio = isMobile ? '2.8/1' : '2.1/1';
+        const targetRatio = isMobile ? '2.8/1' : '2.4/1';
         const feltEl = document.getElementById('poker-felt-container');
         if (feltEl) {
             if (feltEl.style.borderWidth !== feltBorder) feltEl.style.borderWidth = feltBorder;
@@ -2196,21 +2194,14 @@ function drilldownSpot(spotKey) {
 
     let _roRaf = null;
     const ro = new ResizeObserver(entries => {
-        let changed = false;
         for (const entry of entries) {
             const wW = entry.contentRect.width;
             const wH = entry.contentRect.height;
             // Compute felt dimensions from wrapper size + aspect ratio
-            // Round to integer pixels to avoid sub-pixel oscillation causing jitter
-            const ratio = (window.innerWidth < 600) ? 2.8 : 2.1;
-            const newFeltW = Math.round(Math.min(wW, wH * ratio));
-            if (Math.abs(newFeltW - feltW) >= 2) {
-                feltW = newFeltW;
-                feltH = Math.round(feltW / ratio);
-                changed = true;
-            }
+            const ratio = (window.innerWidth < 600) ? 2.8 : 2.4;
+            feltW = Math.min(wW, wH * ratio);
+            feltH = feltW / ratio;
         }
-        if (!changed) return;
         // Debounce via rAF — collapses burst of observer callbacks into one applyScale
         if (_roRaf) cancelAnimationFrame(_roRaf);
         _roRaf = requestAnimationFrame(() => { _roRaf = null; applyScale(); });
