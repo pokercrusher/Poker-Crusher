@@ -2107,10 +2107,11 @@ function drilldownSpot(spotKey) {
         const isPortrait = winH > winW;
         const isMobile = winW < 600;
 
-        // Cap table height on desktop so it doesn't consume the full screen
+        // Cap table height on desktop — guard write to avoid triggering layout-observer loop
         const tableWrapper = document.getElementById('table-wrapper');
         if (tableWrapper) {
-            tableWrapper.style.maxHeight = isMobile ? '' : Math.round(winH * 0.62) + 'px';
+            const newMaxH = isMobile ? '' : Math.round(winH * 0.62) + 'px';
+            if (tableWrapper.style.maxHeight !== newMaxH) tableWrapper.style.maxHeight = newMaxH;
         }
 
         // On mobile portrait, use window height as the reference for UI elements
@@ -2194,14 +2195,21 @@ function drilldownSpot(spotKey) {
 
     let _roRaf = null;
     const ro = new ResizeObserver(entries => {
+        let changed = false;
         for (const entry of entries) {
             const wW = entry.contentRect.width;
             const wH = entry.contentRect.height;
-            // Compute felt dimensions from wrapper size + aspect ratio
+            // Snap to integer pixels to prevent sub-pixel oscillation
             const ratio = (window.innerWidth < 600) ? 2.8 : 2.4;
-            feltW = Math.min(wW, wH * ratio);
-            feltH = feltW / ratio;
+            const newFeltW = Math.round(Math.min(wW, wH * ratio));
+            // Only recompute if the felt width changed by at least 2px
+            if (Math.abs(newFeltW - feltW) >= 2) {
+                feltW = newFeltW;
+                feltH = Math.round(feltW / ratio);
+                changed = true;
+            }
         }
+        if (!changed) return;
         // Debounce via rAF — collapses burst of observer callbacks into one applyScale
         if (_roRaf) cancelAnimationFrame(_roRaf);
         _roRaf = requestAnimationFrame(() => { _roRaf = null; applyScale(); });
