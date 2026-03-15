@@ -2103,6 +2103,15 @@ function drilldownSpot(spotKey) {
         const root = document.documentElement.style;
         const main = document.getElementById('trainer-main');
         const isMobile = feltW < 500;
+
+        // On mobile portrait, use window height as the reference for UI elements
+        // outside the felt (buttons, cards, header) since feltH is tiny (~170px)
+        const winH = window.innerHeight;
+        const winW = window.innerWidth;
+        const isPortrait = winH > winW;
+        // Reference height for buttons/cards: window height on mobile portrait, feltH on desktop
+        const refH = (isMobile && isPortrait) ? winH : feltH;
+
         // Switch seat coordinate set based on screen size
         SEAT_COORDS = isMobile ? SEAT_COORDS_MOBILE : SEAT_COORDS_DESKTOP;
         // Tighten vertical gap on mobile
@@ -2133,34 +2142,38 @@ function drilldownSpot(spotKey) {
         const chipSize = Math.max(14, Math.round(feltW * (isMobile ? 0.035 : 0.028)));
         root.setProperty('--chip-size', chipSize + 'px');
         root.setProperty('--chip-font', Math.max(8, Math.round(chipSize * 0.6)) + 'px');
-        // Toast
-        const toastFont = Math.max(11, Math.round(feltW * (isMobile ? 0.024 : 0.016)));
+        // Toast — size relative to window width on mobile, felt on desktop
+        const toastFont = Math.max(13, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.038 : 0.016)));
         const toastH = Math.round(toastFont * 2.6);
         root.setProperty('--toast-font', toastFont + 'px');
         root.setProperty('--toast-pad-x', Math.round(toastFont * 0.9) + 'px');
         root.setProperty('--toast-pad-y', Math.round(toastFont * 0.35) + 'px');
         root.setProperty('--toast-h', toastH + 'px');
-        // Hero cards — larger on mobile
-        const cardScale = isMobile ? 0.12 : 0.09;
-        const cardHScale = isMobile ? 0.42 : 0.35;
-        const cardW = Math.max(40, Math.round(Math.min(feltW * cardScale, feltH * cardHScale)));
+        // Toast top — position just below trainer header on mobile
+        const header = document.getElementById('trainer-header');
+        const toastTop = header ? (header.getBoundingClientRect().bottom + 6) : 16;
+        root.setProperty('--toast-top', toastTop + 'px');
+        // Hero cards — scale off window height on mobile portrait for proper sizing
+        const cardScale = isMobile ? 0.17 : 0.09;
+        const cardHScale = isMobile ? (isPortrait ? 0.11 : 0.48) : 0.35;
+        const cardW = Math.max(52, Math.round(Math.min(feltW * cardScale, refH * cardHScale)));
         const cardH = Math.round(cardW * 1.5);
         root.setProperty('--hero-card-w', cardW + 'px');
         root.setProperty('--hero-card-h', cardH + 'px');
         root.setProperty('--hero-rank-size', Math.round(cardW * 0.52) + 'px');
         root.setProperty('--hero-suit-size', Math.round(cardW * 0.42) + 'px');
         root.setProperty('--card-gap', Math.round(cardW * 0.2) + 'px');
-        // Hint text
-        root.setProperty('--hint-size', Math.max(10, Math.round(feltW * (isMobile ? 0.026 : 0.018))) + 'px');
+        // Hint text — scale off window width on mobile
+        root.setProperty('--hint-size', Math.max(12, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.038 : 0.018))) + 'px');
         // Community cards (postflop)
         const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.09 : 0.065)));
         root.setProperty('--cc-w', ccW + 'px');
         root.setProperty('--cc-h', Math.round(ccW * 1.38) + 'px');
         root.setProperty('--cc-rank-size', Math.round(ccW * 0.4) + 'px');
         root.setProperty('--cc-suit-size', Math.round(ccW * 0.32) + 'px');
-        // Action buttons — bigger tap targets on mobile
-        const btnPad = Math.max(11, Math.round(feltH * (isMobile ? 0.065 : 0.052)));
-        const btnFont = Math.max(13, Math.round(feltW * (isMobile ? 0.034 : 0.022)));
+        // Action buttons — scale off window height on mobile portrait
+        const btnPad = Math.max(14, Math.round(refH * (isMobile ? 0.055 : 0.06)));
+        const btnFont = Math.max(15, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.048 : 0.022)));
         root.setProperty('--btn-pad', btnPad + 'px');
         root.setProperty('--btn-font', btnFont + 'px');
         root.setProperty('--btn-max-w', Math.min(640, Math.round(feltW * 0.95)) + 'px');
@@ -2169,8 +2182,7 @@ function drilldownSpot(spotKey) {
         const feltEl = document.getElementById('poker-felt-container');
         if (feltEl) {
             feltEl.style.borderWidth = feltBorder + 'px';
-            // Slightly taller table on mobile for more vertical room
-            feltEl.style.aspectRatio = isMobile ? '1.9/1' : '2.1/1';
+            feltEl.style.aspectRatio = isMobile ? '2.3/1' : '2.1/1';
         }
     }
 
