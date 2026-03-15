@@ -2492,53 +2492,21 @@ function generateNextRound() {
         } // end if (!usedDuePick)
     }
 
-    // Set scenario hint text — show row for all non-turn scenarios
-    { const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.remove('hidden'); }
-    if (state.scenario === 'RFI') {
-        document.getElementById('scenario-hint').innerText = "Folded to you...";
-    } else if (state.scenario === 'FACING_RFI') {
-        document.getElementById('scenario-hint').innerText = `${POS_LABELS[state.oppPos]} raises to ${fmt$(getVillainOpenSize$())}...`;
-    } else if (state.scenario === 'VS_LIMP') {
-        if (state.limperBucket === '3P') {
-            document.getElementById('scenario-hint').innerText = `3+ limp pot, you're on ${POS_LABELS[state.currentPos]}...`;
-        } else if (state.limperBucket === '2L') {
-            const l1 = POS_LABELS[state.limperPositions[0]] || '?';
-            const l2 = POS_LABELS[state.limperPositions[1]] || '?';
-            document.getElementById('scenario-hint').innerText = `${l1} & ${l2} limp, you're on ${POS_LABELS[state.currentPos]}...`;
-        } else {
-            document.getElementById('scenario-hint').innerText = `${POS_LABELS[state.oppPos]} limps, you're on ${POS_LABELS[state.currentPos]}...`;
-        }
-    } else if (state.scenario === 'SQUEEZE') {
-        document.getElementById('scenario-hint').innerText = `${POS_LABELS[state.squeezeOpener]} opens, ${POS_LABELS[state.squeezeCaller]} calls...`;
-    } else if (state.scenario === 'SQUEEZE_2C') {
-        document.getElementById('scenario-hint').innerText = `${POS_LABELS[state.squeezeOpener]} opens, ${POS_LABELS[state.squeezeCaller]} and ${POS_LABELS[state.squeezeCaller2]} call...`;
-    } else if (state.scenario === 'PUSH_FOLD') {
-        document.getElementById('scenario-hint').innerText = `${state.stackBB}BB effective — shove or fold?`;
-    } else if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
+    // Unified spot header — always routes through #turn-context-line.
+    // #scenario-hint-row is hidden for all scenarios.
+    { const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden'); }
+    { const _shel = document.getElementById('scenario-hint'); if (_shel) _shel.innerText = ''; }
+
+    // Flop spot headers (rendered here before early return; preflop rendered after clearCommunityCards below)
+    if (state.scenario === 'POSTFLOP_CBET' && state.postflop) {
         const spot = state.postflop;
         const posLabel = spot.positionState === 'IP' ? 'IP' : 'OOP';
-        document.getElementById('scenario-hint').innerText = `You opened ${POS_LABELS[spot.heroPos]}, ${POS_LABELS[spot.villainPos]} called. You are ${posLabel}.`;
+        _renderSpotHeader(`Flop C-Bet · ${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]}`, `${posLabel} · c-bet or check?`, '#34d399');
     } else if (state.scenario === 'POSTFLOP_DEFEND' && state.postflop) {
         const spot = state.postflop;
-        document.getElementById('scenario-hint').innerText = `${POS_LABELS[spot.villainPos]} opened, you called from BB. ${POS_LABELS[spot.villainPos]} bets 33%...`;
-    } else if (state.scenario === 'POSTFLOP_TURN_CBET' && state.postflop) {
-        document.getElementById('scenario-hint').innerText = '';
-        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
-    } else if (state.scenario === 'POSTFLOP_TURN_DEFEND' && state.postflop) {
-        document.getElementById('scenario-hint').innerText = '';
-        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
-    } else if (state.scenario === 'POSTFLOP_TURN_DELAYED_CBET' && state.postflop) {
-        document.getElementById('scenario-hint').innerText = '';
-        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
-    } else if (state.scenario === 'POSTFLOP_TURN_PROBE' && state.postflop) {
-        document.getElementById('scenario-hint').innerText = '';
-        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
-    } else if (state.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' && state.postflop) {
-        document.getElementById('scenario-hint').innerText = '';
-        const _shr = document.getElementById('scenario-hint-row'); if (_shr) _shr.classList.add('hidden');
-    } else {
-        document.getElementById('scenario-hint').innerText = `You raised, ${POS_LABELS[state.oppPos]} 3-bets to ${fmt$(get3betSize$(state.oppPos, state.currentPos))}...`;
+        _renderSpotHeader(`Flop Defense · BB vs ${POS_LABELS[spot.villainPos]}`, `${POS_LABELS[spot.villainPos]} bets 33%`, '#34d399');
     }
+    // Turn scenarios: _renderTurnContext handles the header inside their render blocks below
 
     // 
 
@@ -2755,6 +2723,31 @@ function generateNextRound() {
     }
     // Clear postflop UI elements if we're in a preflop round
     try { clearCommunityCards(); } catch(_) {}
+
+    // Render unified spot header for preflop scenarios (after clearCommunityCards so it isn't wiped)
+    try {
+        if (state.scenario === 'RFI') {
+            _renderSpotHeader('Open · ' + (POS_LABELS[state.currentPos] || state.currentPos), 'Folded to you', '#818cf8');
+        } else if (state.scenario === 'FACING_RFI') {
+            _renderSpotHeader('Defend · ' + (POS_LABELS[state.currentPos] || state.currentPos), `${POS_LABELS[state.oppPos]} raises to ${fmt$(getVillainOpenSize$())}`, '#34d399');
+        } else if (state.scenario === 'VS_LIMP') {
+            let limpCtx;
+            if (state.limperBucket === '3P') { limpCtx = `3+ limp pot — ${POS_LABELS[state.currentPos]}`; }
+            else if (state.limperBucket === '2L') { const l1=POS_LABELS[(state.limperPositions||[])[0]]||'?'; const l2=POS_LABELS[(state.limperPositions||[])[1]]||'?'; limpCtx=`${l1} & ${l2} limp`; }
+            else { limpCtx = `${POS_LABELS[state.oppPos]} limps`; }
+            _renderSpotHeader('vs Limpers · ' + (POS_LABELS[state.currentPos] || state.currentPos), limpCtx, '#f59e0b');
+        } else if (state.scenario === 'SQUEEZE') {
+            _renderSpotHeader('Squeeze · ' + (POS_LABELS[state.currentPos] || state.currentPos), `${POS_LABELS[state.squeezeOpener]} opens, ${POS_LABELS[state.squeezeCaller]} calls`, '#f97316');
+        } else if (state.scenario === 'SQUEEZE_2C') {
+            _renderSpotHeader('Squeeze · ' + (POS_LABELS[state.currentPos] || state.currentPos), `${POS_LABELS[state.squeezeOpener]} opens, ${POS_LABELS[state.squeezeCaller]} & ${POS_LABELS[state.squeezeCaller2]} call`, '#f97316');
+        } else if (state.scenario === 'PUSH_FOLD') {
+            _renderSpotHeader('Push / Fold · ' + (POS_LABELS[state.currentPos] || state.currentPos), `${state.stackBB}BB effective`, '#e11d48');
+        } else if (state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') {
+            _renderSpotHeader('vs 3-Bet · ' + (POS_LABELS[state.currentPos] || state.currentPos), `${POS_LABELS[state.oppPos]} 3-bets to ${fmt$(get3betSize$(state.oppPos, state.currentPos))}`, '#818cf8');
+        } else {
+            _renderSpotHeader(POS_LABELS[state.currentPos] || state.currentPos, `${POS_LABELS[state.oppPos]} 3-bets to ${fmt$(get3betSize$(state.oppPos, state.currentPos))}`, '#818cf8');
+        }
+    } catch(_) {}
 
     if (state._reviewHandOverride) {
         state.currentHand = state._reviewHandOverride;
@@ -3143,8 +3136,26 @@ function renderCommunityCards(cards){
 function clearCommunityCards(){ const cc=document.getElementById('community-cards'); if(cc) cc.innerHTML=''; const fi=document.getElementById('flop-info-line'); if(fi) fi.classList.add('hidden'); const tc=document.getElementById('turn-context-line'); if(tc){ tc.classList.add('hidden'); tc.innerHTML=''; } }
 
 // --- Turn context UI layer ---
-// Renders street badge, spot-type label, and action history for turn scenarios.
-// Populates #turn-context-line; safe to call with any spot — falls back gracefully.
+// _renderSpotHeader: unified trainer header for ALL scenarios.
+// Eyebrow = small accent badge (scenario label).
+// Context = dim action line below.
+// Writes into #turn-context-line — the single source of truth for all trainer headers.
+function _renderSpotHeader(eyebrow, contextLine, accentColor) {
+    const el = document.getElementById('turn-context-line');
+    if (!el) return;
+    try {
+        const color = accentColor || '#818cf8';
+        const eyebrowHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:10px;font-weight:900;letter-spacing:.07em;white-space:nowrap;">${eyebrow}</span>`;
+        const contextHtml = contextLine
+            ? `<div style="color:#64748b;font-size:10px;font-weight:600;margin-top:2px;line-height:1.4;">${contextLine}</div>`
+            : '';
+        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;">${eyebrowHtml}</div>${contextHtml}`;
+        el.classList.remove('hidden');
+    } catch(_) {
+        el.classList.add('hidden');
+    }
+}
+
 const _TURN_SPOT_LABELS = {
     POSTFLOP_TURN_CBET:          'Turn Barrel',
     POSTFLOP_TURN_DEFEND:        'Turn Defense',
@@ -3154,29 +3165,19 @@ const _TURN_SPOT_LABELS = {
 };
 
 function _renderTurnContext(spot, scenario) {
-    const el = document.getElementById('turn-context-line');
-    if (!el) return;
     try {
-        // Street badge
+        // Street badge color
         const boardLen = (spot.turnCard) ? 4 : (spot.flopCards ? spot.flopCards.length : 0);
-        const street   = boardLen >= 4 ? 'TURN' : 'FLOP';
-        const streetColor = street === 'TURN' ? '#818cf8' : '#34d399'; // indigo for turn, emerald for flop
+        const street      = boardLen >= 4 ? 'TURN' : 'FLOP';
+        const streetColor = street === 'TURN' ? '#818cf8' : '#34d399';
 
-        // Spot label
+        // Eyebrow: [STREET] · Spot Label
         const spotLabel = _TURN_SPOT_LABELS[scenario] || '';
+        const eyebrow   = spotLabel ? `${street} · ${spotLabel}` : street;
 
-        // Header row: [TURN] · Turn Barrel
-        const headerParts = [
-            `<span style="display:inline-block;padding:1px 7px;border-radius:9999px;background:${streetColor}22;border:1px solid ${streetColor}55;color:${streetColor};font-size:10px;font-weight:900;letter-spacing:.08em;">${street}</span>`
-        ];
-        if (spotLabel) {
-            headerParts.push(`<span style="color:#94a3b8;font-size:10px;font-weight:700;letter-spacing:.04em;">·</span>`);
-            headerParts.push(`<span style="color:#cbd5e1;font-size:10px;font-weight:700;">${spotLabel}</span>`);
-        }
-
-        // Action history line
-        const heroLabel   = (spot.heroPos   && POS_LABELS[spot.heroPos])   || spot.heroPos   || 'Hero';
-        const villainLabel= (spot.villainPos && POS_LABELS[spot.villainPos])|| spot.villainPos|| 'Villain';
+        // Action history context line
+        const heroLabel   = (spot.heroPos   && POS_LABELS[spot.heroPos])    || spot.heroPos    || 'Hero';
+        const villainLabel= (spot.villainPos && POS_LABELS[spot.villainPos]) || spot.villainPos || 'Villain';
         const hist = spot.actionHistory || [];
 
         let histLine = '';
@@ -3185,12 +3186,8 @@ function _renderTurnContext(spot, scenario) {
         } else if (hist.includes('FLOP_CBET_FACED') && hist.includes('FLOP_CALLED')) {
             histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: ${villainLabel} bets, ${heroLabel} calls`;
         } else if (scenario === 'POSTFLOP_TURN_PROBE') {
-            // IP hero faces BB probe. IP player opened, BB called. Flop checked through, BB probes.
-            // heroPos = IP (BTN/CO), villainPos = BB.
             histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: check-check · Turn: ${villainLabel} probes`;
         } else if (scenario === 'POSTFLOP_TURN_PROBE_DEFEND') {
-            // BB hero decides whether to probe. IP player (villain) opened, BB called. Flop checked through.
-            // heroPos = BB, villainPos = IP (BTN/CO).
             histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: checked through`;
         } else if (hist.includes('FLOP_CHECK') && hist.includes('FLOP_CHECK_BACK')) {
             histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: checked through`;
@@ -3198,14 +3195,10 @@ function _renderTurnContext(spot, scenario) {
             histLine = hist.join(' · ');
         }
 
-        el.innerHTML = [
-            `<div style="display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;">${headerParts.join(' ')}</div>`,
-            histLine ? `<div style="color:#64748b;font-size:10px;font-weight:600;margin-top:1px;">${histLine}</div>` : ''
-        ].join('');
-        el.classList.remove('hidden');
+        _renderSpotHeader(eyebrow, histLine, streetColor);
     } catch(_) {
-        // Fail silently — never crash the trainer
-        el.classList.add('hidden');
+        const el = document.getElementById('turn-context-line');
+        if (el) el.classList.add('hidden');
     }
 }
 
