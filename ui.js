@@ -2120,8 +2120,9 @@ function drilldownSpot(spotKey) {
 
         // Switch seat coordinate set based on screen size
         SEAT_COORDS = isMobile ? SEAT_COORDS_MOBILE : SEAT_COORDS_DESKTOP;
-        // Tighten vertical gap on mobile
-        if (main) main.style.gap = isMobile ? '2px' : 'clamp(4px,1.2vh,12px)';
+        // Tighten vertical gap on mobile — guard write to avoid spurious layout recalcs
+        const newGap = isMobile ? '2px' : 'clamp(4px,1.2vh,12px)';
+        if (main && main.style.gap !== newGap) main.style.gap = newGap;
         // Seat sizing
         const seatScale = isMobile ? 0.115 : 0.09;
         const seatW = Math.max(40, Math.round(feltW * seatScale));
@@ -2183,14 +2184,13 @@ function drilldownSpot(spotKey) {
         root.setProperty('--btn-pad', btnPad + 'px');
         root.setProperty('--btn-font', btnFont + 'px');
         root.setProperty('--btn-max-w', Math.min(640, Math.round(feltW * 0.95)) + 'px');
-        // Felt border + aspect ratio — guard writes to avoid triggering layout recalc loop
-        const feltBorder = Math.max(6, Math.round(feltW * 0.016)) + 'px';
+        // Aspect ratio — guard write to avoid triggering layout recalc loop
+        // NOTE: do NOT dynamically scale borderWidth here — changing the border shifts the
+        // felt's content-box height (aspect-ratio applies to content box), which resizes
+        // table-wrapper, which fires the ResizeObserver again → oscillation loop at 100% zoom.
         const targetRatio = isMobile ? '2.8/1' : '2.4/1';
         const feltEl = document.getElementById('poker-felt-container');
-        if (feltEl) {
-            if (feltEl.style.borderWidth !== feltBorder) feltEl.style.borderWidth = feltBorder;
-            if (feltEl.style.aspectRatio !== targetRatio) feltEl.style.aspectRatio = targetRatio;
-        }
+        if (feltEl && feltEl.style.aspectRatio !== targetRatio) feltEl.style.aspectRatio = targetRatio;
     }
 
     let _roRaf = null;
@@ -2218,6 +2218,9 @@ function drilldownSpot(spotKey) {
     // Expose boot/teardown helpers so every trainer entry path can call them directly.
     // Called by: startConfiguredTraining, _startReviewWithQueue, startDailyRun.
     window._trainerLayoutBoot = function() {
+        // Clear any inline borderWidth left by old code — CSS value (12px) takes over.
+        const feltEl = document.getElementById('poker-felt-container');
+        if (feltEl) feltEl.style.borderWidth = '';
         const wrapper = document.getElementById('table-wrapper');
         if (wrapper) ro.observe(wrapper);
     };
