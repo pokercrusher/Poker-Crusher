@@ -2115,14 +2115,13 @@ function drilldownSpot(spotKey) {
 
         // On mobile portrait, use window height as the reference for UI elements
         // outside the felt (buttons, cards, header) since feltH is tiny (~170px)
-        // Reference height for buttons/cards: window height on mobile portrait, feltH on desktop
         const refH = (isMobile && isPortrait) ? winH : feltH;
 
         // Switch seat coordinate set based on screen size
         SEAT_COORDS = isMobile ? SEAT_COORDS_MOBILE : SEAT_COORDS_DESKTOP;
         // Tighten vertical gap on mobile
         if (main) main.style.gap = isMobile ? '2px' : 'clamp(4px,1.2vh,12px)';
-        // Seat sizing: ~9% of felt width on desktop, ~11% on mobile
+        // Seat sizing
         const seatScale = isMobile ? 0.115 : 0.09;
         const seatW = Math.max(40, Math.round(feltW * seatScale));
         const seatH = Math.round(seatW * 0.68);
@@ -2155,11 +2154,11 @@ function drilldownSpot(spotKey) {
         root.setProperty('--toast-pad-x', Math.round(toastFont * 0.9) + 'px');
         root.setProperty('--toast-pad-y', Math.round(toastFont * 0.35) + 'px');
         root.setProperty('--toast-h', toastH + 'px');
-        // Toast top — position just below trainer header on mobile
+        // Toast top — position just below trainer header
         const header = document.getElementById('trainer-header');
         const toastTop = header ? (header.getBoundingClientRect().bottom + 6) : 16;
         root.setProperty('--toast-top', toastTop + 'px');
-        // Hero cards — scale off window height on mobile portrait for proper sizing
+        // Hero cards — scale off window height on mobile portrait
         const cardScale = isMobile ? 0.17 : 0.09;
         const cardHScale = isMobile ? (isPortrait ? 0.11 : 0.48) : 0.35;
         const cardW = Math.max(52, Math.round(Math.min(feltW * cardScale, refH * cardHScale)));
@@ -2169,7 +2168,7 @@ function drilldownSpot(spotKey) {
         root.setProperty('--hero-rank-size', Math.round(cardW * 0.52) + 'px');
         root.setProperty('--hero-suit-size', Math.round(cardW * 0.42) + 'px');
         root.setProperty('--card-gap', Math.round(cardW * 0.2) + 'px');
-        // Hint text — scale off window width on mobile
+        // Hint text
         root.setProperty('--hint-size', Math.max(12, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.038 : 0.018))) + 'px');
         // Community cards (postflop)
         const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.09 : 0.065)));
@@ -2183,38 +2182,40 @@ function drilldownSpot(spotKey) {
         root.setProperty('--btn-pad', btnPad + 'px');
         root.setProperty('--btn-font', btnFont + 'px');
         root.setProperty('--btn-max-w', Math.min(640, Math.round(feltW * 0.95)) + 'px');
-        // Felt border scales
-        const feltBorder = Math.max(6, Math.round(feltW * 0.016));
+        // Felt border — guard write to avoid triggering layout recalc loop
+        const feltBorder = Math.max(6, Math.round(feltW * 0.016)) + 'px';
+        const targetRatio = isMobile ? '2.3/1' : '2.1/1';
         const feltEl = document.getElementById('poker-felt-container');
         if (feltEl) {
-            feltEl.style.borderWidth = feltBorder + 'px';
-            const targetRatio = isMobile ? '2.3/1' : '2.1/1';
+            if (feltEl.style.borderWidth !== feltBorder) feltEl.style.borderWidth = feltBorder;
             if (feltEl.style.aspectRatio !== targetRatio) feltEl.style.aspectRatio = targetRatio;
         }
     }
 
+    let _roRaf = null;
     const ro = new ResizeObserver(entries => {
         for (const entry of entries) {
             const wW = entry.contentRect.width;
             const wH = entry.contentRect.height;
-            // Felt is height-constrained with aspect-ratio ~2.2:1
-            // Actual felt width = min(wrapperWidth, wrapperHeight * ratio)
+            // Compute felt dimensions from wrapper size + aspect ratio
+            // (felt is height-driven inside the wrapper)
             const ratio = (window.innerWidth < 600) ? 2.3 : 2.1;
-            const feltFromH = wH * ratio;
-            feltW = Math.min(wW, feltFromH);
+            feltW = Math.min(wW, wH * ratio);
             feltH = feltW / ratio;
-            applyScale();
         }
+        // Debounce via rAF — collapses burst of observer callbacks into one applyScale
+        if (_roRaf) cancelAnimationFrame(_roRaf);
+        _roRaf = requestAnimationFrame(() => { _roRaf = null; applyScale(); });
     });
 
-    // Expose boot/teardown helpers so every trainer entry path can call them directly
-    // without needing the IIFE to monkey-patch function assignments at module load time.
+    // Expose boot/teardown helpers so every trainer entry path can call them directly.
     // Called by: startConfiguredTraining, _startReviewWithQueue, startDailyRun.
     window._trainerLayoutBoot = function() {
         const wrapper = document.getElementById('table-wrapper');
         if (wrapper) ro.observe(wrapper);
     };
     window._trainerLayoutTeardown = function() {
+        if (_roRaf) { cancelAnimationFrame(_roRaf); _roRaf = null; }
         ro.disconnect();
     };
 })();
