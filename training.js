@@ -3145,11 +3145,30 @@ function _renderSpotHeader(eyebrow, contextLine, accentColor) {
     if (!el) return;
     try {
         const color = accentColor || '#818cf8';
-        const eyebrowHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:10px;font-weight:900;letter-spacing:.07em;white-space:nowrap;">${eyebrow}</span>`;
+
+        // Split eyebrow into category badge + spot title
+        // e.g. "Open · BTN" → badge="OPEN", title="BTN"
+        // e.g. "Flop C-Bet · BTN vs BB" → badge="FLOP C-BET", title="BTN vs BB"
+        // e.g. "TURN · Turn Barrel" → badge="TURN", title="Turn Barrel"
+        const dotIdx = eyebrow.indexOf(' · ');
+        let badge, title;
+        if (dotIdx !== -1) {
+            badge = eyebrow.slice(0, dotIdx).toUpperCase();
+            title = eyebrow.slice(dotIdx + 3);
+        } else {
+            badge = eyebrow.toUpperCase();
+            title = '';
+        }
+
+        const badgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:10px;font-weight:900;letter-spacing:.08em;white-space:nowrap;">${badge}</span>`;
+        const titleHtml = title
+            ? `<div style="color:#f1f5f9;font-size:15px;font-weight:900;letter-spacing:-.01em;line-height:1.2;margin-top:3px;">${title}</div>`
+            : '';
         const contextHtml = contextLine
             ? `<div style="color:#64748b;font-size:10px;font-weight:600;margin-top:2px;line-height:1.4;">${contextLine}</div>`
             : '';
-        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;">${eyebrowHtml}</div>${contextHtml}`;
+
+        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;">${badgeHtml}</div>${titleHtml}${contextHtml}`;
         el.classList.remove('hidden');
     } catch(_) {
         el.classList.add('hidden');
