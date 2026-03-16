@@ -2156,9 +2156,12 @@ function drilldownSpot(spotKey) {
         root.setProperty('--toast-pad-x', Math.round(toastFont * 0.9) + 'px');
         root.setProperty('--toast-pad-y', Math.round(toastFont * 0.35) + 'px');
         root.setProperty('--toast-h', toastH + 'px');
-        // Toast top — position just below trainer header
+        // Toast top — position over the spacer between hero cards and action buttons
+        const toastSpacer = document.getElementById('trainer-toast-spacer');
         const header = document.getElementById('trainer-header');
-        const toastTop = header ? (header.getBoundingClientRect().bottom + 6) : 16;
+        const toastTop = toastSpacer
+            ? (toastSpacer.getBoundingClientRect().top + (toastSpacer.getBoundingClientRect().height / 2) - (toastH / 2))
+            : header ? (header.getBoundingClientRect().bottom + 6) : 16;
         root.setProperty('--toast-top', toastTop + 'px');
         // Hero cards — scale off window height on mobile portrait
         const cardScale = isMobile ? 0.17 : 0.09;
