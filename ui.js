@@ -270,8 +270,9 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             animateChip(betsLayer, oppCoords, getVillainOpenSize$() / BB_DOLLARS);
             showActionBadge(document.getElementById(`seat-${oppPos}`), 'RAISE ' + formatAmt(getVillainOpenSize$()), 'badge-raise', 700);
             await delay(300);
-            // Fold positions between raiser and hero
-            for (let k = oppActionIdx + 1; k < 8; k++) {
+            // Fold positions between raiser and hero (stop at hero — don't fold players who act after hero)
+            const facingFoldEnd = heroActionIdx >= 0 ? heroActionIdx : actionOrder.length;
+            for (let k = oppActionIdx + 1; k < facingFoldEnd; k++) {
                 const foldPos = actionOrder[k];
                 if (foldPos === heroPos || foldPos === oppPos) continue;
                 const foldEl = document.getElementById(`seat-${foldPos}`);
@@ -419,7 +420,9 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             animateChip(betsLayer, callerCoords, getVillainOpenSize$() / BB_DOLLARS);
             showActionBadge(document.getElementById(`seat-${caller}`), 'CALL', 'badge-call', 700);
             await delay(300);
-            for (let k = callerIdx + 1; k < actionOrder.length; k++) {
+            const squeezeHeroIdx = actionOrder.indexOf(heroPos);
+            const squeezeFoldEnd = squeezeHeroIdx >= 0 ? squeezeHeroIdx : actionOrder.length;
+            for (let k = callerIdx + 1; k < squeezeFoldEnd; k++) {
                 const foldPos = actionOrder[k];
                 if (foldPos === heroPos || foldPos === opener || foldPos === caller) continue;
                 const foldEl = document.getElementById(`seat-${foldPos}`);
@@ -486,8 +489,10 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             animateChip(betsLayer, getSeatCoords(heroPos, c2), getVillainOpenSize$() / BB_DOLLARS);
             showActionBadge(document.getElementById(`seat-${c2}`), 'CALL', 'badge-call', 700);
             await delay(300);
-            // Fold between caller2 and hero
-            for (let k = c2Idx + 1; k < actionOrder.length; k++) {
+            // Fold between caller2 and hero (stop at hero — don't fold players who act after hero)
+            const sq2cHeroIdx = actionOrder.indexOf(heroPos);
+            const sq2cFoldEnd = sq2cHeroIdx >= 0 ? sq2cHeroIdx : actionOrder.length;
+            for (let k = c2Idx + 1; k < sq2cFoldEnd; k++) {
                 const foldPos = actionOrder[k];
                 if (foldPos === heroPos || foldPos === opener || foldPos === c1 || foldPos === c2) continue;
                 const foldEl = document.getElementById(`seat-${foldPos}`);
