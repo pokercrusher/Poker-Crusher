@@ -315,6 +315,25 @@ async function cloudSaveSilent() {
     if (!user) return false;
     if (!window.PokerCrusherCloud) return false;
 
+    // Before pushing, check if cloud has more hands than local.
+    // If so, skip the push — prevents devices from overwriting each other's
+    // progress when both are running the autosave loop simultaneously.
+    try {
+        const cloudData = await window.PokerCrusherCloud.load(user.uid);
+        if (cloudData && cloudData.data && cloudData.data['gto_rfi_stats_v2']) {
+            const cloudHands = (JSON.parse(cloudData.data['gto_rfi_stats_v2']).totalHands) || 0;
+            const localHands = (state.global && state.global.totalHands) || 0;
+            if (cloudHands > localHands) {
+                // Cloud has more progress — don't overwrite it. The higher-count
+                // data will be pulled on next sign-in or manual reload.
+                console.log(`[PC] Skipping push — cloud has ${cloudHands} hands vs local ${localHands}`);
+                return true;
+            }
+        }
+    } catch(e) {
+        // If read fails, proceed with push anyway
+    }
+
     const payload = buildTrainerPayloadForSync();
     payload.cloudSavedAt = new Date().toISOString();
 
