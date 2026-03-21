@@ -2451,20 +2451,42 @@ function _rawToTrainerBucket(rawResult, heroCards, boardCards) {
     }
 
     // --- Rank 3: two pair ---
-    // Edge case: pocket pair + board has its own separate pair = raw eval sees TWO_PAIR,
-    // but hero's pocket pair is not paired with the board. This is OVERPAIR or UNDERPAIR,
-    // not a hero-made two pair. Detect by checking if either hole card touches the board.
+    // Three cases for an unpaired hand where raw eval sees TWO_PAIR:
+    //   A) Both hole cards each pair a board rank → genuine hero two pair.
+    //   B) Only one hole card pairs a board rank + board has its own separate pair
+    //      → hero really has one pair; classify as TOP/SECOND/THIRD/UNDERPAIR.
+    //   C) Neither hole card pairs any board rank → both pairs are board-only;
+    //      hero contributes nothing — classify as high-card bucket.
+    // Pocket pair case is handled first (pocket + board pair → OVERPAIR/UNDERPAIR).
     if (rank === 3) {
         const h1 = RANK_NUM[heroCards[0].rank], h2 = RANK_NUM[heroCards[1].rank];
         const isPocket = h1 === h2;
         if (isPocket) {
             // Pocket pair + board pair = board two-pair, not hero two-pair.
-            // Route to OVERPAIR or UNDERPAIR based on whether pocket beats board top.
             const bFreq = _boardRankFreqs(boardCards);
             const bTop = [...bFreq.keys()].sort((a, b) => b - a)[0];
             return h1 > bTop ? 'OVERPAIR' : 'UNDERPAIR';
         }
-        return 'TWO_PAIR';
+        // Unpaired hand: count how many hole cards match a board rank.
+        const bFreq = _boardRankFreqs(boardCards);
+        const matchH1 = bFreq.get(h1) || 0;
+        const matchH2 = bFreq.get(h2) || 0;
+        if (matchH1 >= 1 && matchH2 >= 1) return 'TWO_PAIR'; // genuine hero two pair
+        if (matchH1 === 0 && matchH2 === 0) {
+            // Both pairs are entirely on the board; hero contributes nothing.
+            const hHigh = Math.max(h1, h2);
+            const bTop = [...bFreq.keys()].sort((a, b) => b - a)[0];
+            if (hHigh === 14) return 'ACE_HIGH';
+            if (hHigh > bTop) return 'OVERCARDS';
+            return 'AIR';
+        }
+        // Exactly one hole card pairs a board rank; classify by that rank.
+        const heroPairedRank = matchH1 >= 1 ? h1 : h2;
+        const bDistinct = [...new Set(boardCards.map(c => RANK_NUM[c.rank]))].sort((a, b) => b - a);
+        if (heroPairedRank === bDistinct[0]) return 'TOP_PAIR';
+        if (bDistinct[1] !== undefined && heroPairedRank === bDistinct[1]) return 'SECOND_PAIR';
+        if (bDistinct[2] !== undefined && heroPairedRank === bDistinct[2]) return 'THIRD_PAIR';
+        return 'UNDERPAIR';
     }
 
     // --- Rank 2: one pair — distinguish OVERPAIR / TOP_PAIR / SECOND_PAIR / THIRD_PAIR / UNDERPAIR ---
