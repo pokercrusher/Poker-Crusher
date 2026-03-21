@@ -2115,19 +2115,21 @@ function drilldownSpot(spotKey) {
         const isPortrait = winH > winW;
         const isMobile = winW < 600;
 
-        // Cap table height on desktop — guard write to avoid triggering layout-observer loop
+        // Table wrapper height cap — guard all writes to avoid triggering the RO loop.
+        // Mobile: constrain wrapper to just the felt height (+ 6% breathing room) so the
+        //   felt fills the wrapper and items-center leaves almost no dead-space gap.
+        //   Safe because feltH = wW/ratio, so setting maxH = feltH*1.06 makes the RO see
+        //   newFeltW = min(wW, wW*1.06) = wW — zero delta, loop never fires.
+        // Desktop: cap to 62% of viewport so the table doesn't dominate tall screens.
+        // Never touch alignItems — let the Tailwind items-center class handle it.
         const tableWrapper = document.getElementById('table-wrapper');
         if (tableWrapper) {
-            const newMaxH = isMobile ? '' : Math.round(winH * 0.62) + 'px';
+            const newMaxH = isMobile
+                ? (feltH > 0 ? Math.round(feltH * 1.06) + 'px' : '')
+                : Math.round(winH * 0.62) + 'px';
             if (tableWrapper.style.maxHeight !== newMaxH) tableWrapper.style.maxHeight = newMaxH;
-            // On mobile: align felt to bottom of wrapper so it's flush with hero cards.
-            // Only write on mobile; never touch alignItems on desktop (avoids writing to
-            // the observed element and potentially tickling the ResizeObserver loop).
-            if (isMobile) {
-                if (tableWrapper.style.alignItems !== 'flex-end') tableWrapper.style.alignItems = 'flex-end';
-            } else if (tableWrapper.style.alignItems === 'flex-end') {
-                tableWrapper.style.alignItems = '';
-            }
+            // Clear any stale flex-end alignment written by a previous code version
+            if (tableWrapper.style.alignItems === 'flex-end') tableWrapper.style.alignItems = '';
         }
 
         // On mobile portrait, use window height as the reference for UI elements
@@ -2180,8 +2182,8 @@ function drilldownSpot(spotKey) {
             : header ? (header.getBoundingClientRect().bottom + 6) : 16;
         root.setProperty('--toast-top', toastTop + 'px');
         // Hero cards — scale off window height on mobile portrait
-        const cardScale = isMobile ? 0.14 : 0.09;
-        const cardHScale = isMobile ? (isPortrait ? 0.09 : 0.48) : 0.35;
+        const cardScale = isMobile ? 0.17 : 0.09;
+        const cardHScale = isMobile ? (isPortrait ? 0.11 : 0.48) : 0.35;
         const cardW = Math.max(52, Math.round(Math.min(feltW * cardScale, refH * cardHScale)));
         const cardH = Math.round(cardW * 1.5);
         root.setProperty('--hero-card-w', cardW + 'px');
@@ -2210,7 +2212,7 @@ function drilldownSpot(spotKey) {
         // NOTE: do NOT dynamically scale borderWidth here — changing the border shifts the
         // felt's content-box height (aspect-ratio applies to content box), which resizes
         // table-wrapper, which fires the ResizeObserver again → oscillation loop at 100% zoom.
-        const targetRatio = isMobile ? '2.5/1' : '2.4/1';
+        const targetRatio = isMobile ? '2.0/1' : '2.4/1';
         const feltEl = document.getElementById('poker-felt-container');
         if (feltEl && feltEl.style.aspectRatio !== targetRatio) feltEl.style.aspectRatio = targetRatio;
     }
@@ -2222,7 +2224,7 @@ function drilldownSpot(spotKey) {
             const wW = entry.contentRect.width;
             const wH = entry.contentRect.height;
             // Snap to integer pixels to prevent sub-pixel oscillation
-            const ratio = (window.innerWidth < 600) ? 2.5 : 2.4;
+            const ratio = (window.innerWidth < 600) ? 2.0 : 2.4;
             const newFeltW = Math.round(Math.min(wW, wH * ratio));
             // Only recompute if the felt width changed by at least 2px
             if (Math.abs(newFeltW - feltW) >= 2) {
