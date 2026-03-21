@@ -3024,108 +3024,20 @@ function renderDefenderButtons(hidden){
     container.innerHTML=`<div class="grid grid-cols-3 gap-2 ${sc}"><button onclick="handleDefenderInput('fold')" ${bs} class="pc-btn pc-btn-fold">FOLD</button><button onclick="handleDefenderInput('call')" ${bs} class="pc-btn pc-btn-passive">CALL</button><button onclick="handleDefenderInput('raise')" ${bs} class="pc-btn pc-btn-aggressive">RAISE</button></div>`;
 }
 
-function handleDefenderInput(action){
-    if(!__beginResolve()) return;
-    const grid=document.querySelector('#action-buttons > div');
-    if(grid){ grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot=state.postflop;
-    if(!spot||!spot.strategy){ __endResolve(); return; }
-    const result=scoreDefenderAction(action,spot.strategy,spot);
-
-    // Stats
-    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.boardArchetype);
-    SR.update(srKey, result.correct?'Good':'Again');
-    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
-
-    if(!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype]={total:0,correct:0};
-    postflopStats.byArchetype[spot.boardArchetype].total++;
-    if(!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily]={total:0,correct:0};
-    postflopStats.byFamily[spot.preflopFamily].total++;
-    if(!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState]={total:0,correct:0};
-    postflopStats.byPosition[spot.positionState].total++;
-
-    const sc='POSTFLOP_DEFEND';
-    if(!state.global.byScenario[sc]) state.global.byScenario[sc]={total:0,correct:0};
-    state.global.byScenario[sc].total++;
-    if(!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey]={total:0,correct:0};
-    state.global.bySpot[spot.spotKey].total++;
-
-    const _pfHero = spot.heroPos;
-    if(!state.global.byPos[_pfHero]) state.global.byPos[_pfHero]={total:0,correct:0};
-    state.global.byPos[_pfHero].total++;
-    const _pfPg = normalizePos(_pfHero);
-    if(!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg]={total:0,correct:0};
-    state.global.byPosGroup[_pfPg].total++;
-
-    // Daily Run tracking
-    if (dailyRunState && dailyRunState.active) {
-        dailyRunState.total++;
-        if (result.correct) {
-            dailyRunState.correct++;
-            dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_){}
-            try { if(navigator.vibrate) navigator.vibrate(25); } catch(_){}
-        } else {
-            dailyRunState.ended = true;
-            try { const ov=document.getElementById('miss-flash-overlay'); if(ov){ov.classList.remove('active');void ov.offsetWidth;ov.classList.add('active');} } catch(_){}
-            try { if(navigator.vibrate) navigator.vibrate([40,30,40]); } catch(_){}
-        }
-        const _drSpotKey = spot.spotKey;
-        if (!dailyRunState.bySpot[_drSpotKey]) dailyRunState.bySpot[_drSpotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[_drSpotKey].total++;
-        if (result.correct) dailyRunState.bySpot[_drSpotKey].correct++;
-    }
-
-    const logEntry={ scenario:sc, pos:spot.heroPos, oppPos:spot.villainPos, hand:flopStr(spot.flopCards), action, correctAction:result.correct?action:result.preferredLabel.toLowerCase(), correct:result.correct, spotKey:spot.spotKey, archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback, flopCards:spot.flopCards, strategy:spot.strategy, grade:result.grade, freqPct:result.freqPct, reasoning:result.reasoning, heroHand:spot.heroHand||null, heroHandClass:spot.heroHandClass||null };
-    state.sessionLog.unshift(logEntry);
-
-    if(result.correct){
-        postflopStats.correct++; postflopStats.streak=(postflopStats.streak||0)+1;
-        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if(state.sessionStats.streak>(state.global.bestStreak||0)) state.global.bestStreak=state.sessionStats.streak;
-        postflopStats.byArchetype[spot.boardArchetype].correct++;
-        postflopStats.byFamily[spot.preflopFamily].correct++;
-        postflopStats.byPosition[spot.positionState].correct++;
-        state.global.byScenario[sc].correct++;
-        state.global.bySpot[spot.spotKey].correct++;
-        state.global.byPos[_pfHero].correct++;
-        state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade==='marginal'?"Correct · Close spot":"Correct","correct",result.grade==='marginal'?700:500);
-        updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer=setTimeout(()=>{ __endResolve(); if(!checkDrillComplete()&&!checkDailyRunComplete()) safeGenerateNextRound(); },600);
-    } else {
-        postflopStats.streak=0; state.sessionStats.streak=0;
-        const fb=result.grade==='marginal_wrong'?`Close · ${result.preferredLabel} preferred (${result.freqPct}%)`:`Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb,"incorrect",2000);
-        updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(()=>showDefenderFeedback(spot,result),200);
-    }
+function handleDefenderInput(action) {
+    _resolvePostflopAction({
+        action, scoreFn: scoreDefenderAction, scenario: 'POSTFLOP_DEFEND',
+        feedbackFn: showDefenderFeedback,
+        srDiscriminator: s => s.boardArchetype,
+        correctActionFn: (a, r) => r.correct ? a : r.preferredLabel.toLowerCase(),
+        includeTurn: false
+    });
 }
 
-function showDefenderFeedback(spot,result){
-    let modal=document.getElementById('postflop-feedback-modal');
-    if(!modal){ modal=document.createElement('div'); modal.id='postflop-feedback-modal'; modal.className='fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6'; modal.onclick=e=>{if(e.target===modal) closePostflopFeedback();}; document.body.appendChild(modal); }
-    const archLabel=ARCHETYPE_LABELS[spot.boardArchetype]||spot.boardArchetype;
-    const actions = (spot.strategy && spot.strategy.actions) || {};
-    const foldFreq=Math.round((actions.fold||0)*100);
-    const callFreq=Math.round((actions.call||0)*100);
-    const raiseFreq=Math.round((actions.raise||0)*100);
-    const flopHtml = _flopCardsHtmlDark(spot.flopCards);
-    const heroHtml = _heroCardsHtml(spot.heroHand);
-    const handClassLabel = (spot.heroHandClass && typeof HAND_CLASS_LABELS !== 'undefined') ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${handClassLabel ? `<span class="text-xs font-bold text-slate-300">${handClassLabel}</span>` : ''}</div>` : '';
-    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos]} c-bet · Defend</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${foldFreq}"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Fold ${foldFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${callFreq}"></div></div><div class="text-xs font-black text-emerald-400 w-12 text-right">Call ${callFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${raiseFreq}"></div></div><div class="text-xs font-black text-red-400 w-12 text-right">Raise ${raiseFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
-    requestAnimationFrame(() => { modal.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); });
+function showDefenderFeedback(spot, result) {
+    _showPostflopFCRFeedback(spot, result, {
+        headerText: `BB vs ${POS_LABELS[spot.villainPos]} c-bet · Defend`
+    });
 }
 
 function renderCommunityCards(cards){
@@ -3176,23 +3088,27 @@ function _renderSpotHeader(eyebrow, contextLine, accentColor) {
     }
 }
 
-const _TURN_SPOT_LABELS = {
+const _POSTFLOP_SPOT_LABELS = {
+    POSTFLOP_CBET:               'Flop C-Bet',
+    POSTFLOP_DEFEND:             'Flop Defense',
     POSTFLOP_TURN_CBET:          'Turn Barrel',
     POSTFLOP_TURN_DEFEND:        'Turn Defense',
     POSTFLOP_TURN_DELAYED_CBET:  'Delayed Turn Bet',
     POSTFLOP_TURN_PROBE:         'Turn Probe Defense',
     POSTFLOP_TURN_PROBE_DEFEND:  'Turn Probe Bet'
 };
+// Backward-compat alias — callers still using the old name continue to work.
+const _TURN_SPOT_LABELS = _POSTFLOP_SPOT_LABELS;
 
-function _renderTurnContext(spot, scenario) {
+function _renderPostflopContext(spot, scenario) {
     try {
         // Street badge color
-        const boardLen = (spot.turnCard) ? 4 : (spot.flopCards ? spot.flopCards.length : 0);
-        const street      = boardLen >= 4 ? 'TURN' : 'FLOP';
-        const streetColor = street === 'TURN' ? '#818cf8' : '#34d399';
+        const boardLen = (spot.riverCard) ? 5 : (spot.turnCard) ? 4 : (spot.flopCards ? spot.flopCards.length : 0);
+        const street      = boardLen >= 5 ? 'RIVER' : boardLen >= 4 ? 'TURN' : 'FLOP';
+        const streetColor = street === 'RIVER' ? '#f59e0b' : street === 'TURN' ? '#818cf8' : '#34d399';
 
         // Eyebrow: [STREET] · Spot Label
-        const spotLabel = _TURN_SPOT_LABELS[scenario] || '';
+        const spotLabel = _POSTFLOP_SPOT_LABELS[scenario] || '';
         const eyebrow   = spotLabel ? `${street} · ${spotLabel}` : street;
 
         // Action history context line
@@ -3221,92 +3137,196 @@ function _renderTurnContext(spot, scenario) {
         if (el) el.classList.add('hidden');
     }
 }
+// Backward-compat alias — existing call sites use the old name.
+const _renderTurnContext = _renderPostflopContext;
 
-function handlePostflopInput(action){
-    if(!__beginResolve()) return;
-    const grid=document.querySelector('#action-buttons > div');
-    if(grid){ grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot=state.postflop;
-    if(!spot||!spot.strategy){ __endResolve(); return; }
-    const result=scorePostflopAction(action,spot.strategy);
+// ============================================================
+// SHARED POSTFLOP PIPELINE HELPERS
+// ============================================================
 
-    // Stats
+// Returns (or creates) the single shared postflop feedback modal element.
+function _postflopModalSetup() {
+    let modal = document.getElementById('postflop-feedback-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'postflop-feedback-modal';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
+        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
+        document.body.appendChild(modal);
+    }
+    return modal;
+}
+
+// Renders the board line for a postflop feedback modal.
+// Flop-only: "Kh Td 2c (Paired)" · Turn: adds turn card + family label.
+function _postflopBoardHtml(spot) {
+    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
+    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
+    if (!spot.turnCard) {
+        return `${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span>`;
+    }
+    const turnHtml = `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>`;
+    const tfLabel  = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
+    return `${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span>`;
+}
+
+// Renders the hero hand section for a postflop feedback modal (empty string if no hero hand).
+function _postflopHeroSection(spot) {
+    const heroHtml = _heroCardsHtml(spot.heroHand);
+    if (!heroHtml) return '';
+    const hcLabel = spot.heroHandClass
+        ? ((typeof TURN_HAND_CLASS_LABELS !== 'undefined' && TURN_HAND_CLASS_LABELS[spot.heroHandClass])
+            || (typeof HAND_CLASS_LABELS !== 'undefined' && HAND_CLASS_LABELS[spot.heroHandClass])
+            || spot.heroHandClass)
+        : '';
+    return `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>`;
+}
+
+// Shared feedback renderer for bet/check 2-bar modal (flop c-bet, turn barrel, delayed, probe-defend).
+// opts: { betActionKey, betLabel, betColor, betLabelColor, headerText }
+function _showPostflopBetCheckFeedback(spot, result, opts) {
+    const modal      = _postflopModalSetup();
+    const boardHtml  = _postflopBoardHtml(spot);
+    const heroSection= _postflopHeroSection(spot);
+    const actions    = (spot.strategy && spot.strategy.actions) || {};
+    const betFreq    = Math.round((actions[opts.betActionKey] || 0) * 100);
+    const checkFreq  = Math.round((actions.check || 0) * 100);
+    const borderCol  = result.correct ? 'border-emerald-600' : 'border-slate-700';
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${opts.headerText}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
+        <div class="text-sm font-bold text-slate-200 mb-2">${boardHtml}</div>
+        ${heroSection}
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-${opts.betColor} rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${betFreq}"></div></div><div class="text-xs font-black text-${opts.betLabelColor} w-20 text-right">${opts.betLabel} ${betFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${checkFreq}"></div></div><div class="text-xs font-black text-slate-400 w-20 text-right">Check ${checkFreq}%</div></div>
+        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => { modal.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); });
+}
+
+// Shared feedback renderer for fold/call/raise 3-bar modal (flop defend, turn defend, turn probe).
+// opts: { headerText }
+function _showPostflopFCRFeedback(spot, result, opts) {
+    const modal      = _postflopModalSetup();
+    const boardHtml  = _postflopBoardHtml(spot);
+    const heroSection= _postflopHeroSection(spot);
+    const actions    = (spot.strategy && spot.strategy.actions) || {};
+    const foldFreq   = Math.round((actions.fold  || 0) * 100);
+    const callFreq   = Math.round((actions.call  || 0) * 100);
+    const raiseFreq  = Math.round((actions.raise || 0) * 100);
+    const borderCol  = result.correct ? 'border-emerald-600' : 'border-slate-700';
+    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${opts.headerText}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
+        <div class="text-sm font-bold text-slate-200 mb-2">${boardHtml}</div>
+        ${heroSection}
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${foldFreq}"></div></div><div class="text-xs font-black text-slate-400 w-14 text-right">Fold ${foldFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${callFreq}"></div></div><div class="text-xs font-black text-emerald-400 w-14 text-right">Call ${callFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${raiseFreq}"></div></div><div class="text-xs font-black text-red-400 w-14 text-right">Raise ${raiseFreq}%</div></div>
+        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => { modal.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); });
+}
+
+// Shared handler core for all 7 postflop input handlers.
+// params: { action, scoreFn, scenario, feedbackFn, srDiscriminator, engineActionFn?, correctActionFn, includeTurn }
+function _resolvePostflopAction(params) {
+    const { action, scoreFn, scenario, feedbackFn, srDiscriminator, engineActionFn, correctActionFn, includeTurn } = params;
+    if (!__beginResolve()) return;
+    const grid = document.querySelector('#action-buttons > div');
+    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
+    const spot = state.postflop;
+    if (!spot || !spot.strategy) { __endResolve(); return; }
+    const ea     = engineActionFn ? engineActionFn(action) : action;
+    const result = scoreFn(ea, spot.strategy, spot);
+
     postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
 
-    // Fix 1 (Batch 1): use canonical postflop SR key builder instead of inline template.
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.boardArchetype);
-    SR.update(srKey, result.correct?'Good':'Again');
-    // Track reviewed hands so they don't show again today (mirrors preflop handleInput).
+    const srKey = buildPostflopSRKey(spot.spotKey, srDiscriminator(spot));
+    SR.update(srKey, result.correct ? 'Good' : 'Again');
     if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
 
-    if(!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype]={total:0,correct:0};
+    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
     postflopStats.byArchetype[spot.boardArchetype].total++;
-    if(!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily]={total:0,correct:0};
+    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
     postflopStats.byFamily[spot.preflopFamily].total++;
-    if(!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState]={total:0,correct:0};
+    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
     postflopStats.byPosition[spot.positionState].total++;
 
-    // Scenario-level tracking
-    const sc='POSTFLOP_CBET';
-    if(!state.global.byScenario[sc]) state.global.byScenario[sc]={total:0,correct:0};
+    const sc = scenario;
+    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
     state.global.byScenario[sc].total++;
-    if(!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey]={total:0,correct:0};
+    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
     state.global.bySpot[spot.spotKey].total++;
 
-    // Fix 4 (Batch 1): track byPos / byPosGroup for postflop (mirrors preflop handleInput).
     const _pfHero = spot.heroPos;
-    if(!state.global.byPos[_pfHero]) state.global.byPos[_pfHero]={total:0,correct:0};
+    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
     state.global.byPos[_pfHero].total++;
     const _pfPg = normalizePos(_pfHero);
-    if(!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg]={total:0,correct:0};
+    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
     state.global.byPosGroup[_pfPg].total++;
 
-    // Fix 3 (Batch 1): Daily Run tracking — structurally identical to preflop handleInput block.
-    // Postflop misses must end the run; correct answers must advance the streak counter.
     if (dailyRunState && dailyRunState.active) {
         dailyRunState.total++;
         if (result.correct) {
-            dailyRunState.correct++;
-            dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_){}
-            try { if(navigator.vibrate) navigator.vibrate(25); } catch(_){}
+            dailyRunState.correct++; dailyRunState.runStreak++;
+            try { updateDRRoundCounter(); } catch(_) {}
+            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
         } else {
-            // First wrong answer ends the Daily Run, exactly like preflop.
             dailyRunState.ended = true;
-            try { const ov=document.getElementById('miss-flash-overlay'); if(ov){ov.classList.remove('active');void ov.offsetWidth;ov.classList.add('active');} } catch(_){}
-            try { if(navigator.vibrate) navigator.vibrate([40,30,40]); } catch(_){}
+            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
+            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
         }
-        const _drSpotKey = spot.spotKey;
-        if (!dailyRunState.bySpot[_drSpotKey]) dailyRunState.bySpot[_drSpotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[_drSpotKey].total++;
-        if (result.correct) dailyRunState.bySpot[_drSpotKey].correct++;
+        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
+        dailyRunState.bySpot[spot.spotKey].total++;
+        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
     }
 
-    const logEntry={ scenario:sc, pos:spot.heroPos, oppPos:spot.villainPos, hand:flopStr(spot.flopCards), action, correctAction:result.correct?action:(action==='CBET'?'CHECK':'CBET'), correct:result.correct, spotKey:spot.spotKey, archetype:spot.boardArchetype, positionState:spot.positionState, feedback:result.feedback, flopCards:spot.flopCards, strategy:spot.strategy, grade:result.grade, freqPct:result.freqPct, reasoning:result.reasoning, heroHand:spot.heroHand||null, heroHandClass:spot.heroHandClass||null };
+    const logEntry = {
+        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
+        hand: flopStr(spot.flopCards), action,
+        correctAction: correctActionFn(action, result),
+        correct: result.correct, spotKey: spot.spotKey,
+        archetype: spot.boardArchetype, positionState: spot.positionState,
+        feedback: result.feedback, flopCards: spot.flopCards,
+        ...(includeTurn ? { turnCard: spot.turnCard, turnFamily: spot.turnFamily } : {}),
+        strategy: spot.strategy,
+        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
+        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
+    };
     state.sessionLog.unshift(logEntry);
 
-    if(result.correct){
-        postflopStats.correct++; postflopStats.streak=(postflopStats.streak||0)+1;
+    if (result.correct) {
+        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
         state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if(state.sessionStats.streak>(state.global.bestStreak||0)) state.global.bestStreak=state.sessionStats.streak;
+        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
         postflopStats.byArchetype[spot.boardArchetype].correct++;
         postflopStats.byFamily[spot.preflopFamily].correct++;
         postflopStats.byPosition[spot.positionState].correct++;
         state.global.byScenario[sc].correct++;
         state.global.bySpot[spot.spotKey].correct++;
-        // Fix 4 continued: correct-answer increments for new stat paths.
         state.global.byPos[_pfHero].correct++;
         state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade==='marginal'?"Correct · Close spot":"Correct","correct",result.grade==='marginal'?700:500);
+        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
         updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer=setTimeout(()=>{ __endResolve(); if(!checkDrillComplete()&&!checkDailyRunComplete()) safeGenerateNextRound(); },600);
+        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
     } else {
-        postflopStats.streak=0; state.sessionStats.streak=0;
-        const fb=result.grade==='marginal_wrong'?`Close · ${result.preferredLabel} preferred (${result.freqPct}%)`:`Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb,"incorrect",2000);
+        postflopStats.streak = 0; state.sessionStats.streak = 0;
+        const fb = result.grade === 'marginal_wrong'
+            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
+            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
+        showToast(fb, 'incorrect', 2000);
         updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(()=>showPostflopFeedback(spot,result),200);
+        setTimeout(() => feedbackFn(spot, result), 200);
     }
+}
+
+function handlePostflopInput(action) {
+    _resolvePostflopAction({
+        action, scoreFn: scorePostflopAction, scenario: 'POSTFLOP_CBET',
+        feedbackFn: showPostflopFeedback,
+        srDiscriminator: s => s.boardArchetype,
+        correctActionFn: (a, r) => r.correct ? a : (a === 'CBET' ? 'CHECK' : 'CBET'),
+        includeTurn: false
+    });
 }
 
 // Dark-background-safe suit color (for modals with bg-slate-900)
@@ -3324,26 +3344,11 @@ function _flopCardsHtmlDark(cards){
     if(!cards||!cards.length) return '<span class="text-slate-500">—</span>';
     return cards.map(c => { const color=_darkBgSuitColor(c.suit); return `<span style="color:${color};font-weight:900;">${c.rank}${SUIT_SYMBOLS[c.suit]}</span>`; }).join(' ');
 }
-function showPostflopFeedback(spot,result){
-    let modal=document.getElementById('postflop-feedback-modal');
-    if(!modal){ modal=document.createElement('div'); modal.id='postflop-feedback-modal'; modal.className='fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6'; modal.onclick=e=>{if(e.target===modal) closePostflopFeedback();}; document.body.appendChild(modal); }
-    const archLabel=ARCHETYPE_LABELS[spot.boardArchetype]||spot.boardArchetype;
-    const actions = (spot.strategy && spot.strategy.actions) || {};
-    const betFreq=Math.round((actions.bet33||0)*100); const checkFreq=Math.round((actions.check||0)*100);
-    const flopHtml = _flopCardsHtmlDark(spot.flopCards);
-    // Hero hand display
-    const heroHtml = _heroCardsHtml(spot.heroHand);
-    const handClassLabel = (spot.heroHandClass && typeof HAND_CLASS_LABELS !== 'undefined') ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${handClassLabel ? `<span class="text-xs font-bold text-slate-300">${handClassLabel}</span>` : ''}</div>` : '';
-    modal.innerHTML=`<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-orange-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${betFreq}"></div></div><div class="text-xs font-black text-orange-400 w-12 text-right">C-Bet ${betFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${checkFreq}"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Check ${checkFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
-    requestAnimationFrame(() => { modal.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); });
+function showPostflopFeedback(spot, result) {
+    _showPostflopBetCheckFeedback(spot, result, {
+        betActionKey: 'bet33', betLabel: 'C-Bet', betColor: 'orange-500', betLabelColor: 'orange-400',
+        headerText: `${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}`
+    });
 }
 function closePostflopFeedback(){
     const m = document.getElementById('postflop-feedback-modal');
@@ -3379,243 +3384,36 @@ function renderTurnDefenderButtons(hidden) {
 }
 
 function handleTurnCBetInput(action) {
-    if (!__beginResolve()) return;
-    const grid = document.querySelector('#action-buttons > div');
-    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot = state.postflop;
-    if (!spot || !spot.strategy) { __endResolve(); return; }
-    const result = scoreTurnAction(action, spot.strategy, spot);
-
-    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
-    SR.update(srKey, result.correct ? 'Good' : 'Again');
-    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
-
-    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
-    postflopStats.byArchetype[spot.boardArchetype].total++;
-    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
-    postflopStats.byFamily[spot.preflopFamily].total++;
-    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
-    postflopStats.byPosition[spot.positionState].total++;
-
-    const sc = 'POSTFLOP_TURN_CBET';
-    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
-    state.global.byScenario[sc].total++;
-    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-    state.global.bySpot[spot.spotKey].total++;
-
-    const _pfHero = spot.heroPos;
-    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
-    state.global.byPos[_pfHero].total++;
-    const _pfPg = normalizePos(_pfHero);
-    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
-    state.global.byPosGroup[_pfPg].total++;
-
-    if (dailyRunState && dailyRunState.active) {
-        dailyRunState.total++;
-        if (result.correct) {
-            dailyRunState.correct++; dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
-        } else {
-            dailyRunState.ended = true;
-            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
-        }
-        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[spot.spotKey].total++;
-        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
-    }
-
-    const logEntry = {
-        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
-        hand: flopStr(spot.flopCards), action,
-        correctAction: result.correct ? action : (action === 'BARREL' ? 'CHECK' : 'BARREL'),
-        correct: result.correct, spotKey: spot.spotKey,
-        archetype: spot.boardArchetype, positionState: spot.positionState,
-        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
-        turnFamily: spot.turnFamily, strategy: spot.strategy,
-        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
-        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
-    };
-    state.sessionLog.unshift(logEntry);
-
-    if (result.correct) {
-        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
-        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
-        postflopStats.byArchetype[spot.boardArchetype].correct++;
-        postflopStats.byFamily[spot.preflopFamily].correct++;
-        postflopStats.byPosition[spot.positionState].correct++;
-        state.global.byScenario[sc].correct++;
-        state.global.bySpot[spot.spotKey].correct++;
-        state.global.byPos[_pfHero].correct++;
-        state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
-        updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
-    } else {
-        postflopStats.streak = 0; state.sessionStats.streak = 0;
-        const fb = result.grade === 'marginal_wrong'
-            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
-            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb, 'incorrect', 2000);
-        updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(() => showTurnCBetFeedback(spot, result), 200);
-    }
+    _resolvePostflopAction({
+        action, scoreFn: scoreTurnAction, scenario: 'POSTFLOP_TURN_CBET',
+        feedbackFn: showTurnCBetFeedback,
+        srDiscriminator: _postflopSRDiscriminator,
+        correctActionFn: (a, r) => r.correct ? a : (a === 'BARREL' ? 'CHECK' : 'BARREL'),
+        includeTurn: true
+    });
 }
 
 function handleTurnDefenderInput(action) {
-    if (!__beginResolve()) return;
-    const grid = document.querySelector('#action-buttons > div');
-    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot = state.postflop;
-    if (!spot || !spot.strategy) { __endResolve(); return; }
-    const result = scoreTurnDefenderAction(action, spot.strategy, spot);
-
-    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
-    SR.update(srKey, result.correct ? 'Good' : 'Again');
-    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
-
-    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
-    postflopStats.byArchetype[spot.boardArchetype].total++;
-    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
-    postflopStats.byFamily[spot.preflopFamily].total++;
-    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
-    postflopStats.byPosition[spot.positionState].total++;
-
-    const sc = 'POSTFLOP_TURN_DEFEND';
-    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
-    state.global.byScenario[sc].total++;
-    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-    state.global.bySpot[spot.spotKey].total++;
-
-    const _pfHero = spot.heroPos;
-    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
-    state.global.byPos[_pfHero].total++;
-    const _pfPg = normalizePos(_pfHero);
-    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
-    state.global.byPosGroup[_pfPg].total++;
-
-    if (dailyRunState && dailyRunState.active) {
-        dailyRunState.total++;
-        if (result.correct) {
-            dailyRunState.correct++; dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
-        } else {
-            dailyRunState.ended = true;
-            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
-        }
-        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[spot.spotKey].total++;
-        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
-    }
-
-    const logEntry = {
-        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
-        hand: flopStr(spot.flopCards), action,
-        correctAction: result.correct ? action : result.preferredLabel.toLowerCase(),
-        correct: result.correct, spotKey: spot.spotKey,
-        archetype: spot.boardArchetype, positionState: spot.positionState,
-        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
-        turnFamily: spot.turnFamily, strategy: spot.strategy,
-        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
-        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
-    };
-    state.sessionLog.unshift(logEntry);
-
-    if (result.correct) {
-        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
-        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
-        postflopStats.byArchetype[spot.boardArchetype].correct++;
-        postflopStats.byFamily[spot.preflopFamily].correct++;
-        postflopStats.byPosition[spot.positionState].correct++;
-        state.global.byScenario[sc].correct++;
-        state.global.bySpot[spot.spotKey].correct++;
-        state.global.byPos[_pfHero].correct++;
-        state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
-        updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
-    } else {
-        postflopStats.streak = 0; state.sessionStats.streak = 0;
-        const fb = result.grade === 'marginal_wrong'
-            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
-            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb, 'incorrect', 2000);
-        updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(() => showTurnDefenderFeedback(spot, result), 200);
-    }
+    _resolvePostflopAction({
+        action, scoreFn: scoreTurnDefenderAction, scenario: 'POSTFLOP_TURN_DEFEND',
+        feedbackFn: showTurnDefenderFeedback,
+        srDiscriminator: _postflopSRDiscriminator,
+        correctActionFn: (a, r) => r.correct ? a : r.preferredLabel.toLowerCase(),
+        includeTurn: true
+    });
 }
 
 function showTurnCBetFeedback(spot, result) {
-    let modal = document.getElementById('postflop-feedback-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'postflop-feedback-modal';
-        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
-        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
-        document.body.appendChild(modal);
-    }
-    const flopHtml = _flopCardsHtmlDark(spot.flopCards);
-    const turnHtml = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
-    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
-    const tfLabel = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
-    const heroHtml = _heroCardsHtml(spot.heroHand);
-    const hcLabel = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
-    const actions = (spot.strategy && spot.strategy.actions) || {};
-    const barrelFreq = Math.round((actions.bet50 || 0) * 100);
-    const checkFreq  = Math.round((actions.check  || 0) * 100);
-    const isCorrect  = result.correct;
-    const borderCol  = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Turn · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width:${barrelFreq}%"></div></div><div class="text-xs font-black text-indigo-400 w-20 text-right">Barrel ${barrelFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-20 text-right">Check ${checkFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
+    _showPostflopBetCheckFeedback(spot, result, {
+        betActionKey: 'bet50', betLabel: 'Barrel', betColor: 'indigo-500', betLabelColor: 'indigo-400',
+        headerText: `${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Turn · ${spot.positionState}`
+    });
 }
 
 function showTurnDefenderFeedback(spot, result) {
-    let modal = document.getElementById('postflop-feedback-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'postflop-feedback-modal';
-        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
-        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
-        document.body.appendChild(modal);
-    }
-    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
-    const turnHtml  = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
-    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
-    const tfLabel   = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
-    const heroHtml  = _heroCardsHtml(spot.heroHand);
-    const hcLabel   = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
-    const actions   = (spot.strategy && spot.strategy.actions) || {};
-    const foldFreq  = Math.round((actions.fold  || 0) * 100);
-    const callFreq  = Math.round((actions.call  || 0) * 100);
-    const raiseFreq = Math.round((actions.raise || 0) * 100);
-    const isCorrect = result.correct;
-    const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos] || spot.villainPos} turn bet · Defend</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:${foldFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-14 text-right">Fold ${foldFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:${callFreq}%"></div></div><div class="text-xs font-black text-emerald-400 w-14 text-right">Call ${callFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:${raiseFreq}%"></div></div><div class="text-xs font-black text-red-400 w-14 text-right">Raise ${raiseFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
+    _showPostflopFCRFeedback(spot, result, {
+        headerText: `BB vs ${POS_LABELS[spot.villainPos] || spot.villainPos} turn bet · Defend`
+    });
 }
 
 // ============================================================
@@ -3631,124 +3429,21 @@ function renderDelayedTurnButtons(hidden) {
 }
 
 function handleDelayedTurnInput(action) {
-    if (!__beginResolve()) return;
-    const grid = document.querySelector('#action-buttons > div');
-    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot = state.postflop;
-    if (!spot || !spot.strategy) { __endResolve(); return; }
-    // Map UI action labels to strategy keys (same as barrel: BET→bet50, CHECK→check)
-    const engineAction = action === 'BET' ? 'BARREL' : 'CHECK';
-    const result = scoreDelayedTurnAction(engineAction, spot.strategy, spot);
-
-    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
-    SR.update(srKey, result.correct ? 'Good' : 'Again');
-    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
-
-    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
-    postflopStats.byArchetype[spot.boardArchetype].total++;
-    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
-    postflopStats.byFamily[spot.preflopFamily].total++;
-    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
-    postflopStats.byPosition[spot.positionState].total++;
-
-    const sc = 'POSTFLOP_TURN_DELAYED_CBET';
-    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
-    state.global.byScenario[sc].total++;
-    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-    state.global.bySpot[spot.spotKey].total++;
-
-    const _pfHero = spot.heroPos;
-    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
-    state.global.byPos[_pfHero].total++;
-    const _pfPg = normalizePos(_pfHero);
-    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
-    state.global.byPosGroup[_pfPg].total++;
-
-    if (dailyRunState && dailyRunState.active) {
-        dailyRunState.total++;
-        if (result.correct) {
-            dailyRunState.correct++; dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
-        } else {
-            dailyRunState.ended = true;
-            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
-        }
-        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[spot.spotKey].total++;
-        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
-    }
-
-    const logEntry = {
-        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
-        hand: flopStr(spot.flopCards), action,
-        correctAction: result.correct ? action : (action === 'BET' ? 'CHECK' : 'BET'),
-        correct: result.correct, spotKey: spot.spotKey,
-        archetype: spot.boardArchetype, positionState: spot.positionState,
-        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
-        turnFamily: spot.turnFamily, strategy: spot.strategy,
-        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
-        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
-    };
-    state.sessionLog.unshift(logEntry);
-
-    if (result.correct) {
-        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
-        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
-        postflopStats.byArchetype[spot.boardArchetype].correct++;
-        postflopStats.byFamily[spot.preflopFamily].correct++;
-        postflopStats.byPosition[spot.positionState].correct++;
-        state.global.byScenario[sc].correct++;
-        state.global.bySpot[spot.spotKey].correct++;
-        state.global.byPos[_pfHero].correct++;
-        state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
-        updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
-    } else {
-        postflopStats.streak = 0; state.sessionStats.streak = 0;
-        const fb = result.grade === 'marginal_wrong'
-            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
-            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb, 'incorrect', 2000);
-        updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(() => showDelayedTurnFeedback(spot, result), 200);
-    }
+    _resolvePostflopAction({
+        action, scoreFn: scoreDelayedTurnAction, scenario: 'POSTFLOP_TURN_DELAYED_CBET',
+        feedbackFn: showDelayedTurnFeedback,
+        srDiscriminator: _postflopSRDiscriminator,
+        engineActionFn: a => a === 'BET' ? 'BARREL' : 'CHECK',
+        correctActionFn: (a, r) => r.correct ? a : (a === 'BET' ? 'CHECK' : 'BET'),
+        includeTurn: true
+    });
 }
 
 function showDelayedTurnFeedback(spot, result) {
-    let modal = document.getElementById('postflop-feedback-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'postflop-feedback-modal';
-        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
-        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
-        document.body.appendChild(modal);
-    }
-    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
-    const turnHtml  = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
-    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
-    const tfLabel   = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
-    const heroHtml  = _heroCardsHtml(spot.heroHand);
-    const hcLabel   = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
-    const actions   = (spot.strategy && spot.strategy.actions) || {};
-    const betFreq   = Math.round((actions.bet50 || 0) * 100);
-    const checkFreq = Math.round((actions.check  || 0) * 100);
-    const isCorrect = result.correct;
-    const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Delayed C-Bet · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-violet-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-violet-400 w-20 text-right">Bet ${betFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-20 text-right">Check ${checkFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
+    _showPostflopBetCheckFeedback(spot, result, {
+        betActionKey: 'bet50', betLabel: 'Bet', betColor: 'violet-500', betLabelColor: 'violet-400',
+        headerText: `${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Delayed C-Bet · ${spot.positionState}`
+    });
 }
 // ============================================================
 // TURN PROBE — BUTTONS, HANDLERS, FEEDBACK
@@ -3765,124 +3460,19 @@ function renderTurnProbeButtons(hidden) {
 }
 
 function handleTurnProbeInput(action) {
-    if (!__beginResolve()) return;
-    const grid = document.querySelector('#action-buttons > div');
-    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot = state.postflop;
-    if (!spot || !spot.strategy) { __endResolve(); return; }
-    const result = scoreTurnProbeAction(action, spot.strategy, spot);
-
-    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
-    SR.update(srKey, result.correct ? 'Good' : 'Again');
-    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
-
-    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
-    postflopStats.byArchetype[spot.boardArchetype].total++;
-    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
-    postflopStats.byFamily[spot.preflopFamily].total++;
-    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
-    postflopStats.byPosition[spot.positionState].total++;
-
-    const sc = 'POSTFLOP_TURN_PROBE';
-    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
-    state.global.byScenario[sc].total++;
-    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-    state.global.bySpot[spot.spotKey].total++;
-
-    const _pfHero = spot.heroPos;
-    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
-    state.global.byPos[_pfHero].total++;
-    const _pfPg = normalizePos(_pfHero);
-    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
-    state.global.byPosGroup[_pfPg].total++;
-
-    if (dailyRunState && dailyRunState.active) {
-        dailyRunState.total++;
-        if (result.correct) {
-            dailyRunState.correct++; dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
-        } else {
-            dailyRunState.ended = true;
-            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
-        }
-        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[spot.spotKey].total++;
-        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
-    }
-
-    const logEntry = {
-        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
-        hand: flopStr(spot.flopCards), action,
-        correctAction: result.correct ? action : result.preferredAction,
-        correct: result.correct, spotKey: spot.spotKey,
-        archetype: spot.boardArchetype, positionState: spot.positionState,
-        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
-        turnFamily: spot.turnFamily, strategy: spot.strategy,
-        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
-        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
-    };
-    state.sessionLog.unshift(logEntry);
-
-    if (result.correct) {
-        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
-        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
-        postflopStats.byArchetype[spot.boardArchetype].correct++;
-        postflopStats.byFamily[spot.preflopFamily].correct++;
-        postflopStats.byPosition[spot.positionState].correct++;
-        state.global.byScenario[sc].correct++;
-        state.global.bySpot[spot.spotKey].correct++;
-        state.global.byPos[_pfHero].correct++;
-        state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
-        updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
-    } else {
-        postflopStats.streak = 0; state.sessionStats.streak = 0;
-        const fb = result.grade === 'marginal_wrong'
-            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
-            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb, 'incorrect', 2000);
-        updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(() => showTurnProbeFeedback(spot, result), 200);
-    }
+    _resolvePostflopAction({
+        action, scoreFn: scoreTurnProbeAction, scenario: 'POSTFLOP_TURN_PROBE',
+        feedbackFn: showTurnProbeFeedback,
+        srDiscriminator: _postflopSRDiscriminator,
+        correctActionFn: (a, r) => r.correct ? a : r.preferredAction,
+        includeTurn: true
+    });
 }
 
 function showTurnProbeFeedback(spot, result) {
-    let modal = document.getElementById('postflop-feedback-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'postflop-feedback-modal';
-        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
-        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
-        document.body.appendChild(modal);
-    }
-    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
-    const turnHtml  = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
-    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
-    const tfLabel   = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
-    const heroHtml  = _heroCardsHtml(spot.heroHand);
-    const hcLabel   = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
-    const actions   = (spot.strategy && spot.strategy.actions) || {};
-    const foldFreq  = Math.round((actions.fold  || 0) * 100);
-    const callFreq  = Math.round((actions.call  || 0) * 100);
-    const raiseFreq = Math.round((actions.raise || 0) * 100);
-    const isCorrect = result.correct;
-    const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} probe · IP Defense</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:${foldFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-14 text-right">Fold ${foldFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:${callFreq}%"></div></div><div class="text-xs font-black text-emerald-400 w-14 text-right">Call ${callFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:${raiseFreq}%"></div></div><div class="text-xs font-black text-red-400 w-14 text-right">Raise ${raiseFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
+    _showPostflopFCRFeedback(spot, result, {
+        headerText: `${POS_LABELS[spot.heroPos] || spot.heroPos} vs ${POS_LABELS[spot.villainPos] || spot.villainPos} probe · IP Defense`
+    });
 }
 
 // ============================================================
@@ -3900,121 +3490,19 @@ function renderTurnProbeDefendButtons(hidden) {
 }
 
 function handleTurnProbeDefendInput(action) {
-    if (!__beginResolve()) return;
-    const grid = document.querySelector('#action-buttons > div');
-    if (grid) { grid.classList.remove('action-buttons-revealed'); grid.classList.add('action-buttons-hidden'); }
-    const spot = state.postflop;
-    if (!spot || !spot.strategy) { __endResolve(); return; }
-    const engineAction = action === 'BET' ? 'BARREL' : 'CHECK';
-    const result = scoreTurnProbeDefendAction(engineAction, spot.strategy, spot);
-
-    postflopStats.total++; state.sessionStats.total++; state.global.totalHands++;
-
-    const srKey = buildPostflopSRKey(spot.spotKey, spot.turnFamily || spot.boardArchetype);
-    SR.update(srKey, result.correct ? 'Good' : 'Again');
-    if (reviewSession.active) reviewSession.todayDoneKeys.add(srKey);
-
-    if (!postflopStats.byArchetype[spot.boardArchetype]) postflopStats.byArchetype[spot.boardArchetype] = { total: 0, correct: 0 };
-    postflopStats.byArchetype[spot.boardArchetype].total++;
-    if (!postflopStats.byFamily[spot.preflopFamily]) postflopStats.byFamily[spot.preflopFamily] = { total: 0, correct: 0 };
-    postflopStats.byFamily[spot.preflopFamily].total++;
-    if (!postflopStats.byPosition[spot.positionState]) postflopStats.byPosition[spot.positionState] = { total: 0, correct: 0 };
-    postflopStats.byPosition[spot.positionState].total++;
-
-    const sc = 'POSTFLOP_TURN_PROBE_DEFEND';
-    if (!state.global.byScenario[sc]) state.global.byScenario[sc] = { total: 0, correct: 0 };
-    state.global.byScenario[sc].total++;
-    if (!state.global.bySpot[spot.spotKey]) state.global.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-    state.global.bySpot[spot.spotKey].total++;
-
-    const _pfHero = spot.heroPos;
-    if (!state.global.byPos[_pfHero]) state.global.byPos[_pfHero] = { total: 0, correct: 0 };
-    state.global.byPos[_pfHero].total++;
-    const _pfPg = normalizePos(_pfHero);
-    if (!state.global.byPosGroup[_pfPg]) state.global.byPosGroup[_pfPg] = { total: 0, correct: 0 };
-    state.global.byPosGroup[_pfPg].total++;
-
-    if (dailyRunState && dailyRunState.active) {
-        dailyRunState.total++;
-        if (result.correct) {
-            dailyRunState.correct++; dailyRunState.runStreak++;
-            try { updateDRRoundCounter(); } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate(25); } catch(_) {}
-        } else {
-            dailyRunState.ended = true;
-            try { const ov = document.getElementById('miss-flash-overlay'); if (ov) { ov.classList.remove('active'); void ov.offsetWidth; ov.classList.add('active'); } } catch(_) {}
-            try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(_) {}
-        }
-        if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
-        dailyRunState.bySpot[spot.spotKey].total++;
-        if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
-    }
-
-    const logEntry = {
-        scenario: sc, pos: spot.heroPos, oppPos: spot.villainPos,
-        hand: flopStr(spot.flopCards), action,
-        correctAction: result.correct ? action : (action === 'BET' ? 'CHECK' : 'BET'),
-        correct: result.correct, spotKey: spot.spotKey,
-        archetype: spot.boardArchetype, positionState: spot.positionState,
-        feedback: result.feedback, flopCards: spot.flopCards, turnCard: spot.turnCard,
-        turnFamily: spot.turnFamily, strategy: spot.strategy,
-        grade: result.grade, freqPct: result.freqPct, reasoning: result.reasoning,
-        heroHand: spot.heroHand || null, heroHandClass: spot.heroHandClass || null
-    };
-    state.sessionLog.unshift(logEntry);
-
-    if (result.correct) {
-        postflopStats.correct++; postflopStats.streak = (postflopStats.streak || 0) + 1;
-        state.sessionStats.correct++; state.sessionStats.streak++; state.global.totalCorrect++;
-        if (state.sessionStats.streak > (state.global.bestStreak || 0)) state.global.bestStreak = state.sessionStats.streak;
-        postflopStats.byArchetype[spot.boardArchetype].correct++;
-        postflopStats.byFamily[spot.preflopFamily].correct++;
-        postflopStats.byPosition[spot.positionState].correct++;
-        state.global.byScenario[sc].correct++;
-        state.global.bySpot[spot.spotKey].correct++;
-        state.global.byPos[_pfHero].correct++;
-        state.global.byPosGroup[_pfPg].correct++;
-        showToast(result.grade === 'marginal' ? 'Correct · Close spot' : 'Correct', 'correct', result.grade === 'marginal' ? 700 : 500);
-        updateUI(); saveProgress(); savePostflopStats();
-        window.__roundGuard.nextTimer = setTimeout(() => { __endResolve(); if (!checkDrillComplete() && !checkDailyRunComplete()) safeGenerateNextRound(); }, 600);
-    } else {
-        postflopStats.streak = 0; state.sessionStats.streak = 0;
-        const fb = result.grade === 'marginal_wrong'
-            ? `Close · ${result.preferredLabel} preferred (${result.freqPct}%)`
-            : `Incorrect · ${result.preferredLabel} (${result.freqPct}%)`;
-        showToast(fb, 'incorrect', 2000);
-        updateUI(); saveProgress(); savePostflopStats();
-        setTimeout(() => showTurnProbeDefendFeedback(spot, result), 200);
-    }
+    _resolvePostflopAction({
+        action, scoreFn: scoreTurnProbeDefendAction, scenario: 'POSTFLOP_TURN_PROBE_DEFEND',
+        feedbackFn: showTurnProbeDefendFeedback,
+        srDiscriminator: _postflopSRDiscriminator,
+        engineActionFn: a => a === 'BET' ? 'BARREL' : 'CHECK',
+        correctActionFn: (a, r) => r.correct ? a : (a === 'BET' ? 'CHECK' : 'BET'),
+        includeTurn: true
+    });
 }
 
 function showTurnProbeDefendFeedback(spot, result) {
-    let modal = document.getElementById('postflop-feedback-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'postflop-feedback-modal';
-        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6';
-        modal.onclick = e => { if (e.target === modal) closePostflopFeedback(); };
-        document.body.appendChild(modal);
-    }
-    const flopHtml  = _flopCardsHtmlDark(spot.flopCards);
-    const turnHtml  = spot.turnCard ? `<span style="color:${_darkBgSuitColor(spot.turnCard.suit)};font-weight:900;">${spot.turnCard.rank}${SUIT_SYMBOLS[spot.turnCard.suit]}</span>` : '';
-    const archLabel = ARCHETYPE_LABELS[spot.flopArchetype || spot.boardArchetype] || (spot.flopArchetype || spot.boardArchetype) || '';
-    const tfLabel   = (typeof TURN_FAMILY_LABELS !== 'undefined' && TURN_FAMILY_LABELS[spot.turnFamily]) || spot.turnFamily || '';
-    const heroHtml  = _heroCardsHtml(spot.heroHand);
-    const hcLabel   = (spot.heroHandClass && typeof TURN_HAND_CLASS_LABELS !== 'undefined') ? (TURN_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
-    const heroSection = heroHtml ? `<div class="flex items-center gap-3 mb-3 bg-slate-950/50 rounded-xl px-3 py-2.5 border border-slate-800/50"><div class="flex items-center gap-1.5">${heroHtml}</div>${hcLabel ? `<span class="text-xs font-bold text-slate-300">${hcLabel}</span>` : ''}</div>` : '';
-    const actions   = (spot.strategy && spot.strategy.actions) || {};
-    const betFreq   = Math.round((actions.bet50 || 0) * 100);
-    const checkFreq = Math.round((actions.check  || 0) * 100);
-    const isCorrect = result.correct;
-    const borderCol = isCorrect ? 'border-emerald-600' : 'border-slate-700';
-    modal.innerHTML = `<div class="bg-slate-900 border ${borderCol} rounded-2xl p-5 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-        <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Turn Probe · OOP</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
-        <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 mx-1">·</span> ${turnHtml} <span class="text-slate-500 text-[10px] font-bold uppercase tracking-wider ml-1">(${archLabel} · ${tfLabel})</span></div>
-        ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-teal-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-teal-400 w-24 text-right">Probe ${betFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-24 text-right">Check ${checkFreq}%</div></div>
-        <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
-    modal.classList.remove('hidden');
+    _showPostflopBetCheckFeedback(spot, result, {
+        betActionKey: 'bet50', betLabel: 'Probe', betColor: 'teal-500', betLabelColor: 'teal-400',
+        headerText: `BB vs ${POS_LABELS[spot.villainPos] || spot.villainPos} · Turn Probe · OOP`
+    });
 }

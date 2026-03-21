@@ -116,6 +116,13 @@ function buildPostflopSRKey(spotKey, archetype) {
     return `${spotKey}|${archetype}`;
 }
 
+// Returns the most-specific street discriminator for a postflop spot's SR key.
+// Chains riverFamily → turnFamily → boardArchetype so every street resolves
+// without callers needing to know which fields a given street populates.
+function _postflopSRDiscriminator(spot) {
+    return spot.riverFamily || spot.turnFamily || spot.boardArchetype;
+}
+
 /**
  * computeCorrectAction — THE single source of truth for correct preflop action derivation.
  * All grading paths (handleInput, EdgeWeight, chart tooltips) must route through this function.
