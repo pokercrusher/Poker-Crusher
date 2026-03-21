@@ -4241,6 +4241,239 @@ function scoreDelayedTurnAction(playerAction, strategy, spot) {
 }
 
 // ============================================================
+// SRP POSTFLOP — TURN DELAYED DEFEND
+// ============================================================
+// Line: SRP → flop check-check → PFR bets turn → BB decides fold/call/raise.
+// BB is uncapped (full range) and PFR is capped (checked flop).
+// BB calls/raises wider than standard turn defend; semi-bluffs more aggressively.
+
+/**
+ * makeDelayedTurnDefendSpotKeyV1
+ * SRP|{family}|TURN|DEFENDER|OOP|TURN_DELAYED_DEFEND_DECISION|{turnFamily}|{heroHandClass}
+ */
+function makeDelayedTurnDefendSpotKeyV1(spot) {
+    return `SRP|${spot.preflopFamily}|TURN|DEFENDER|OOP|TURN_DELAYED_DEFEND_DECISION|${spot.turnFamily}|${spot.heroHandClass}`;
+}
+
+const POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY = {};
+(function() {
+    // BB is uncapped after flop check-through; PFR is capped.
+    // BB folds less, raises more with value and semi-bluffs vs PFR's capped range.
+    const BASE = {
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.08, raise: 0.92 } },
+        QUADS:          { _default: { fold: 0.00, call: 0.12, raise: 0.88 } },
+        FULL_HOUSE:     { _default: { fold: 0.00, call: 0.16, raise: 0.84 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.14, raise: 0.86 } },
+        FLUSH:          { _default: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        STRAIGHT:       { _default: { fold: 0.00, call: 0.28, raise: 0.72 } },
+        SET:            { _default: { fold: 0.00, call: 0.28, raise: 0.72 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        TRIPS:          { _default: { fold: 0.00, call: 0.26, raise: 0.74 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.20, raise: 0.80 },
+                          STRAIGHT_COMPLETE: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        BOARD_TRIPS:    { _default: { fold: 0.08, call: 0.67, raise: 0.25 },
+                          BRICK: { fold: 0.06, call: 0.70, raise: 0.24 },
+                          FLUSH_COMPLETE: { fold: 0.14, call: 0.62, raise: 0.24 },
+                          STRAIGHT_COMPLETE: { fold: 0.16, call: 0.60, raise: 0.24 },
+                          ACE_OVERCARD: { fold: 0.12, call: 0.65, raise: 0.23 } },
+        TWO_PAIR:       { _default: { fold: 0.00, call: 0.42, raise: 0.58 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.50, raise: 0.46 },
+                          STRAIGHT_COMPLETE: { fold: 0.04, call: 0.52, raise: 0.44 } },
+        OVERPAIR:       { _default: { fold: 0.00, call: 0.65, raise: 0.35 },
+                          ACE_OVERCARD: { fold: 0.00, call: 0.72, raise: 0.28 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.68, raise: 0.28 },
+                          STRAIGHT_COMPLETE: { fold: 0.06, call: 0.66, raise: 0.28 },
+                          BROADWAY_OVERCARD: { fold: 0.00, call: 0.68, raise: 0.32 } },
+        TOP_PAIR:       { _default: { fold: 0.05, call: 0.75, raise: 0.20 },
+                          BRICK: { fold: 0.03, call: 0.78, raise: 0.19 },
+                          LOW_BLANK: { fold: 0.02, call: 0.80, raise: 0.18 },
+                          ACE_OVERCARD: { fold: 0.15, call: 0.72, raise: 0.13 },
+                          FLUSH_COMPLETE: { fold: 0.16, call: 0.70, raise: 0.14 },
+                          STRAIGHT_COMPLETE: { fold: 0.18, call: 0.68, raise: 0.14 },
+                          BROADWAY_OVERCARD: { fold: 0.10, call: 0.74, raise: 0.16 } },
+        SECOND_PAIR:    { _default: { fold: 0.28, call: 0.58, raise: 0.14 },
+                          BRICK: { fold: 0.22, call: 0.62, raise: 0.16 },
+                          ACE_OVERCARD: { fold: 0.42, call: 0.48, raise: 0.10 },
+                          FLUSH_COMPLETE: { fold: 0.45, call: 0.44, raise: 0.11 },
+                          STRAIGHT_COMPLETE: { fold: 0.48, call: 0.42, raise: 0.10 } },
+        THIRD_PAIR:     { _default: { fold: 0.48, call: 0.40, raise: 0.12 },
+                          BRICK: { fold: 0.40, call: 0.48, raise: 0.12 },
+                          FLUSH_COMPLETE: { fold: 0.58, call: 0.30, raise: 0.12 } },
+        UNDERPAIR:      { _default: { fold: 0.52, call: 0.36, raise: 0.12 },
+                          BRICK: { fold: 0.45, call: 0.43, raise: 0.12 } },
+        COMBO_DRAW:     { _default: { fold: 0.00, call: 0.42, raise: 0.58 },
+                          FLUSH_COMPLETE: { fold: 0.06, call: 0.46, raise: 0.48 },
+                          STRAIGHT_COMPLETE: { fold: 0.06, call: 0.44, raise: 0.50 } },
+        STRONG_DRAW:    { _default: { fold: 0.05, call: 0.55, raise: 0.40 },
+                          FLUSH_COMPLETE: { fold: 0.10, call: 0.55, raise: 0.35 },
+                          BRICK: { fold: 0.04, call: 0.58, raise: 0.38 } },
+        OESD:           { _default: { fold: 0.12, call: 0.56, raise: 0.32 },
+                          STRAIGHT_COMPLETE: { fold: 0.08, call: 0.48, raise: 0.44 },
+                          BRICK: { fold: 0.10, call: 0.60, raise: 0.30 } },
+        GUTSHOT:        { _default: { fold: 0.38, call: 0.50, raise: 0.12 },
+                          BRICK: { fold: 0.32, call: 0.56, raise: 0.12 } },
+        ACE_HIGH:       { _default: { fold: 0.42, call: 0.44, raise: 0.14 },
+                          BRICK: { fold: 0.35, call: 0.52, raise: 0.13 } },
+        OVERCARDS:      { _default: { fold: 0.55, call: 0.32, raise: 0.13 },
+                          BRICK: { fold: 0.46, call: 0.40, raise: 0.14 } },
+        AIR:            { _default: { fold: 0.72, call: 0.16, raise: 0.12 },
+                          BRICK: { fold: 0.62, call: 0.22, raise: 0.16 } }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — raise for maximum value. PFR is capped from flop check.',
+        QUADS:          'Quads — raise to build the pot vs PFR\'s capped range.',
+        FULL_HOUSE:     'Full house — raise for value. PFR checked flop, so your slow-play is well-disguised.',
+        FLUSH:          'Made flush — raise for value, or flat to trap PFR\'s capped range.',
+        STRAIGHT:       'Made straight — raise for value vs PFR\'s capped delayed bet.',
+        SET:            'Set — raise or flat. BB is uncapped here; raises are very credible.',
+        TRIPS:          'Trips — raise or call confidently. PFR\'s range is capped after flop check.',
+        BOARD_TRIPS:    'Board trips — call down. Kicker matters; PFR may have the same trips.',
+        TWO_PAIR:       'Two pair — raise for value. BB is uncapped; PFR is capped. Excellent spot to build the pot.',
+        OVERPAIR:       'Overpair — call or raise. BB is uncapped; this is top of your range after check-through.',
+        TOP_PAIR:       'Top pair — call mainly. Fold on scary turns; raise on safe turns as protection.',
+        SECOND_PAIR:    'Second pair — call more vs delayed bet; PFR\'s capped range means more bluffs.',
+        THIRD_PAIR:     'Third pair — marginal. Call on brick turns; fold on scary turns.',
+        UNDERPAIR:      'Underpair — mostly fold. Call selectively on blank turns with implied odds.',
+        COMBO_DRAW:     'Combo draw — raise as semi-bluff. Excellent equity vs PFR\'s capped delayed range.',
+        STRONG_DRAW:    'Flush draw — raise or call. BB is uncapped; semi-bluff more vs capped PFR.',
+        OESD:           'OESD — call or raise as semi-bluff. PFR\'s capped range gives you fold equity.',
+        GUTSHOT:        'Gutshot — call or fold. Raise selectively on favorable turns.',
+        ACE_HIGH:       'Ace-high — call on brick turns, fold on scary boards. More call vs delayed bet.',
+        OVERCARDS:      'Overcards — fold on most turns. Occasional semi-bluff raise on brick turns.',
+        AIR:            'Air — mostly fold. Raise-bluff selectively on favorable textures vs capped PFR.'
+    };
+
+    // Family offsets: CO_vs_BB and SB_vs_BB defenders get small extra calling width
+    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+
+    for (const fam of DEFENDER_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const off = FAM_OFF[fam] || 0;
+
+        for (const tf of TURN_FAMILIES) {
+            for (const hc of TURN_HAND_CLASSES) {
+                const hcData = BASE[hc];
+                if (!hcData) continue;
+                const raw = hcData[tf] || hcData._default;
+                if (!raw) continue;
+
+                let fold  = Math.max(0, raw.fold - off);
+                let call  = raw.call + off * 0.5;
+                let raise = raw.raise + off * 0.5;
+                const total = fold + call + raise;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+
+                const sk = makeDelayedTurnDefendSpotKeyV1({
+                    preflopFamily: fam, turnFamily: tf, heroHandClass: hc
+                });
+                POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Turn Delayed Defend (BB vs PFR delayed bet)'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[TurnDelayedDefend] Built ${Object.keys(POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY).length} delayed turn defend strategy entries.`);
+    }
+})();
+
+/**
+ * generateTurnDelayedDefendSpot — BB's fold/call/raise facing PFR's delayed turn bet.
+ * Line: SRP → flop check-check → PFR bets turn → BB decides.
+ * Hero is BB; uses _dealDefenderHeroHand for OOP range.
+ */
+function generateTurnDelayedDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...DEFENDER_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'TURN', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'TURN_DELAYED_DEFEND_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            turnFamily: ts.turnFamily, heroHandClass: ts.turnHandCls,
+            flopHandClass: fs.flopHandClass,
+            heroPos: 'BB', villainPos: fs.heroPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            turnTexture: ts.turnTexture,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_DELAYED_CBET'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeDelayedTurnDefendSpotKeyV1(spot);
+        const baseStrat = POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY[spot.spotKey] || null;
+        spot.strategy = _enrichTurnDefendStrategy(baseStrat, ts.turnHandCls, ts.turnTexture, 'TURN_DELAYED_DEFEND_DECISION') || baseStrat;
+
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    console.warn('[TurnDelayedDefend] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fbHeroHand = _dealDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => fbHeroHand) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'OOP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHeroHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHeroHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'TURN', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'TURN_DELAYED_DEFEND_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        turnFamily: tsFB.turnFamily, heroHandClass: tsFB.turnHandCls,
+        flopHandClass: fsFB.flopHandClass,
+        heroPos: 'BB', villainPos: fsFB.heroPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        turnTexture: tsFB.turnTexture,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_DELAYED_CBET'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeDelayedTurnDefendSpotKeyV1(spotFB);
+    const baseStratFB = POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY[spotFB.spotKey] || null;
+    spotFB.strategy = _enrichTurnDefendStrategy(baseStratFB, tsFB.turnHandCls, tsFB.turnTexture, 'TURN_DELAYED_DEFEND_DECISION') || baseStratFB;
+    return spotFB;
+}
+
+/**
+ * scoreTurnDelayedDefenderAction — score BB's fold/call/raise vs PFR's delayed turn bet.
+ * Delegates to scoreTurnDefenderAction since the action mapping is identical.
+ */
+function scoreTurnDelayedDefenderAction(playerAction, strategy, spot) {
+    return scoreTurnDefenderAction(playerAction, strategy, spot);
+}
+
+// ============================================================
 // SRP POSTFLOP PHASE 2 — TURN PROBE
 // ============================================================
 // Line: SRP → flop checked through → BB probes turn → IP hero responds (fold/call/raise).
@@ -5674,5 +5907,1171 @@ function generateRiverDelayedDefendSpot(maxRetries, familyFilter) {
 }
 
 function scoreRiverDelayedDefenderAction(playerAction, strategy, spot) {
+    return scoreRiverDefenderAction(playerAction, strategy, spot);
+}
+
+// ============================================================
+// SRP POSTFLOP TIER 3 — RIVER PROBE
+// ============================================================
+// Line: SRP → flop check-check → turn check-check → river probe.
+// Pot: 1.0× flop SRP pot (no betting on flop or turn).
+// POSTFLOP_RIVER_PROBE:     IP PFR faces BB's river probe (fold/call/raise).
+// POSTFLOP_RIVER_PROBE_BET: BB decides to probe river or check (bet50/check).
+
+function makeRiverProbeSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|PFR|IP|RIVER_PROBE_FACING_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+function makeRiverProbeBetSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|DEFENDER|OOP|RIVER_PROBE_BET_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_PROBE_STRATEGY = {};
+(function() {
+    // IP PFR faces BB's river probe after DOUBLE check-through.
+    // IP's range is very capped (checked flop AND turn back).
+    // BB's probe is polar on river: strong value or bluffs (no draws remain).
+    // IP must defend ~67% MDF vs 50% bet, but range is condensed.
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { fold: 0.00, call: 0.05, raise: 0.95 },
+        QUADS:          { fold: 0.00, call: 0.08, raise: 0.92 },
+        FULL_HOUSE:     { fold: 0.00, call: 0.12, raise: 0.88,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.18, raise: 0.82 } },
+        FLUSH:          { fold: 0.00, call: 0.15, raise: 0.85,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        STRAIGHT:       { fold: 0.00, call: 0.18, raise: 0.82 },
+        SET:            { fold: 0.00, call: 0.20, raise: 0.80,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.30, raise: 0.70 },
+                          STRAIGHT_COMPLETE: { fold: 0.00, call: 0.32, raise: 0.68 } },
+        TRIPS:          { fold: 0.00, call: 0.25, raise: 0.75,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.38, raise: 0.62 },
+                          STRAIGHT_COMPLETE: { fold: 0.00, call: 0.42, raise: 0.58 },
+                          ACE_OVERCARD: { fold: 0.00, call: 0.30, raise: 0.70 } },
+        BOARD_TRIPS:    { fold: 0.06, call: 0.62, raise: 0.32,
+                          FLUSH_COMPLETE: { fold: 0.12, call: 0.66, raise: 0.22 },
+                          STRAIGHT_COMPLETE: { fold: 0.14, call: 0.66, raise: 0.20 },
+                          ACE_OVERCARD: { fold: 0.10, call: 0.65, raise: 0.25 } },
+        TWO_PAIR:       { fold: 0.00, call: 0.36, raise: 0.64,
+                          FLUSH_COMPLETE: { fold: 0.06, call: 0.58, raise: 0.36 },
+                          STRAIGHT_COMPLETE: { fold: 0.08, call: 0.60, raise: 0.32 },
+                          ACE_OVERCARD: { fold: 0.03, call: 0.42, raise: 0.55 } },
+        OVERPAIR:       { fold: 0.06, call: 0.68, raise: 0.26,
+                          ACE_OVERCARD: { fold: 0.24, call: 0.66, raise: 0.10 },
+                          FLUSH_COMPLETE: { fold: 0.16, call: 0.68, raise: 0.16 },
+                          STRAIGHT_COMPLETE: { fold: 0.20, call: 0.66, raise: 0.14 },
+                          BROADWAY_OVERCARD: { fold: 0.12, call: 0.70, raise: 0.18 },
+                          OVERCARD: { fold: 0.14, call: 0.68, raise: 0.18 },
+                          BOARD_PAIR: { fold: 0.08, call: 0.64, raise: 0.28 },
+                          BRICK: { fold: 0.03, call: 0.54, raise: 0.43 },
+                          LOW_BLANK: { fold: 0.02, call: 0.50, raise: 0.48 } },
+        TOP_PAIR:       { fold: 0.10, call: 0.74, raise: 0.16,
+                          BRICK: { fold: 0.05, call: 0.66, raise: 0.29 },
+                          LOW_BLANK: { fold: 0.05, call: 0.64, raise: 0.31 },
+                          ACE_OVERCARD: { fold: 0.34, call: 0.59, raise: 0.07 },
+                          FLUSH_COMPLETE: { fold: 0.28, call: 0.64, raise: 0.08 },
+                          STRAIGHT_COMPLETE: { fold: 0.32, call: 0.61, raise: 0.07 },
+                          BROADWAY_OVERCARD: { fold: 0.22, call: 0.69, raise: 0.09 },
+                          OVERCARD: { fold: 0.24, call: 0.68, raise: 0.08 },
+                          BOARD_PAIR: { fold: 0.12, call: 0.72, raise: 0.16 } },
+        SECOND_PAIR:    { fold: 0.36, call: 0.58, raise: 0.06,
+                          BRICK: { fold: 0.22, call: 0.70, raise: 0.08 },
+                          LOW_BLANK: { fold: 0.20, call: 0.72, raise: 0.08 },
+                          ACE_OVERCARD: { fold: 0.58, call: 0.38, raise: 0.04 },
+                          FLUSH_COMPLETE: { fold: 0.56, call: 0.40, raise: 0.04 },
+                          STRAIGHT_COMPLETE: { fold: 0.60, call: 0.36, raise: 0.04 },
+                          BROADWAY_OVERCARD: { fold: 0.48, call: 0.48, raise: 0.04 },
+                          OVERCARD: { fold: 0.46, call: 0.50, raise: 0.04 } },
+        THIRD_PAIR:     { fold: 0.62, call: 0.35, raise: 0.03,
+                          BRICK: { fold: 0.46, call: 0.50, raise: 0.04 },
+                          LOW_BLANK: { fold: 0.42, call: 0.54, raise: 0.04 },
+                          ACE_OVERCARD: { fold: 0.78, call: 0.20, raise: 0.02 },
+                          FLUSH_COMPLETE: { fold: 0.76, call: 0.22, raise: 0.02 } },
+        UNDERPAIR:      { fold: 0.68, call: 0.30, raise: 0.02,
+                          BRICK: { fold: 0.52, call: 0.45, raise: 0.03 },
+                          LOW_BLANK: { fold: 0.48, call: 0.49, raise: 0.03 },
+                          ACE_OVERCARD: { fold: 0.82, call: 0.17, raise: 0.01 },
+                          FLUSH_COMPLETE: { fold: 0.80, call: 0.18, raise: 0.02 } },
+        ACE_HIGH:       { fold: 0.48, call: 0.44, raise: 0.08,
+                          BRICK: { fold: 0.30, call: 0.56, raise: 0.14 },
+                          LOW_BLANK: { fold: 0.26, call: 0.60, raise: 0.14 },
+                          ACE_OVERCARD: { fold: 0.42, call: 0.50, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.64, call: 0.32, raise: 0.04 },
+                          STRAIGHT_COMPLETE: { fold: 0.68, call: 0.28, raise: 0.04 } },
+        OVERCARDS:      { fold: 0.68, call: 0.28, raise: 0.04,
+                          BRICK: { fold: 0.50, call: 0.44, raise: 0.06 },
+                          LOW_BLANK: { fold: 0.46, call: 0.48, raise: 0.06 },
+                          ACE_OVERCARD: { fold: 0.64, call: 0.32, raise: 0.04 },
+                          FLUSH_COMPLETE: { fold: 0.80, call: 0.18, raise: 0.02 },
+                          STRAIGHT_COMPLETE: { fold: 0.84, call: 0.14, raise: 0.02 } },
+        AIR:            { fold: 0.80, call: 0.14, raise: 0.06,
+                          BRICK: { fold: 0.62, call: 0.28, raise: 0.10 },
+                          LOW_BLANK: { fold: 0.58, call: 0.32, raise: 0.10 },
+                          FLUSH_COMPLETE: { fold: 0.88, call: 0.10, raise: 0.02 },
+                          STRAIGHT_COMPLETE: { fold: 0.90, call: 0.08, raise: 0.02 },
+                          ACE_OVERCARD: { fold: 0.74, call: 0.20, raise: 0.06 } }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush vs river probe — raise for max value. IP slow-played, now gets paid.',
+        QUADS:          'Quads — raise for value vs BB\'s polar river probe.',
+        FULL_HOUSE:     'Full house vs river probe — raise. IP is double-capped so raising is correct.',
+        FLUSH:          'Flush vs river probe — raise. IP\'s double-check-back still contains nutted slow-plays.',
+        STRAIGHT:       'Straight — raise for value vs BB\'s river probe.',
+        SET:            'Set vs river probe — raise. IP checked twice, so raises here are credible slow-plays.',
+        TRIPS:          'Trips vs river probe — raise or call depending on texture.',
+        BOARD_TRIPS:    'Board trips — kicker-dependent. Call down vs river probe. IP is capped.',
+        TWO_PAIR:       'Two pair vs probe — raise or call. IP double-checked; two-pair is top of range.',
+        OVERPAIR:       'Overpair — call on most rivers. IP is heavily capped but overpair is top of range.',
+        TOP_PAIR:       'Top pair vs probe — call on safe rivers, fold on scary rivers. IP is capped.',
+        SECOND_PAIR:    'Second pair — fold on bad rivers, call on brick rivers with sufficient pot odds.',
+        THIRD_PAIR:     'Third pair — mostly fold. River probe is too strong to profitably call.',
+        UNDERPAIR:      'Underpair — mostly fold. Against a polar river probe, too little equity.',
+        ACE_HIGH:       'Ace-high — call on blank rivers, fold on scary boards. IP double-checked.',
+        OVERCARDS:      'Overcards — mostly fold. Call only on pure blank rivers against heavy bluffing lines.',
+        AIR:            'Air — fold vs river probe. No equity, no implied odds on the river.'
+    };
+
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.02 };
+
+    for (const fam of PROBE_IP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseEntry = BASE_IP[hc];
+                if (!baseEntry) continue;
+                const rfEntry = baseEntry[rf];
+                let fold, call, raise;
+                if (rfEntry && typeof rfEntry === 'object' && 'fold' in rfEntry) {
+                    fold = rfEntry.fold; call = rfEntry.call; raise = rfEntry.raise;
+                } else {
+                    fold = baseEntry.fold; call = baseEntry.call; raise = baseEntry.raise;
+                }
+                if (fold === undefined) continue;
+
+                call  = parseFloat(Math.max(0, Math.min(1, call  + famOff)).toFixed(2));
+                fold  = parseFloat(Math.max(0, Math.min(1, fold  - famOff * 0.5)).toFixed(2));
+                raise = parseFloat(Math.max(0, Math.min(1, raise - famOff * 0.5)).toFixed(2));
+
+                const total = fold + call + raise;
+                if (total <= 0) continue;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+
+                const sk = makeRiverProbeSpotKeyV1({ preflopFamily: fam, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_PROBE_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Tier 3: River Probe Facing (IP hero)'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[RiverProbe] Built ${Object.keys(POSTFLOP_RIVER_PROBE_STRATEGY).length} probe-facing strategy entries.`);
+    }
+})();
+
+// ---- Strategy: BB hero probes river (bet50 vs check) after double check-through ----
+// Both ranges are fully resolved on river — no draws remain.
+// IP has double-checked back: very capped (weak-medium made hands).
+// BB strategy is more polar than turn probe: bet strong value + bluffs, check marginal hands.
+const POSTFLOP_RIVER_PROBE_BET_STRATEGY = {};
+(function() {
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.92 },
+        QUADS:          { _default: 0.90 },
+        FULL_HOUSE:     { _default: 0.90, FLUSH_COMPLETE: 0.82, STRAIGHT_COMPLETE: 0.80 },
+        FLUSH:          { _default: 0.88, FLUSH_COMPLETE: 0.82 },
+        STRAIGHT:       { _default: 0.86 },
+        SET:            { _default: 0.88, FLUSH_COMPLETE: 0.74, STRAIGHT_COMPLETE: 0.70 },
+        TRIPS:          { _default: 0.82, FLUSH_COMPLETE: 0.70, STRAIGHT_COMPLETE: 0.66,
+                          BOARD_PAIR: 0.80, ACE_OVERCARD: 0.76 },
+        BOARD_TRIPS:    { _default: 0.55, BRICK: 0.62, LOW_BLANK: 0.66, FLUSH_COMPLETE: 0.38,
+                          STRAIGHT_COMPLETE: 0.34, ACE_OVERCARD: 0.48, BROADWAY_OVERCARD: 0.52,
+                          OVERCARD: 0.50, BOARD_PAIR: 0.52, DYNAMIC_CONNECTOR: 0.50 },
+        TWO_PAIR:       { _default: 0.80, FLUSH_COMPLETE: 0.64, STRAIGHT_COMPLETE: 0.62,
+                          ACE_OVERCARD: 0.72, BROADWAY_OVERCARD: 0.74, BRICK: 0.84 },
+        OVERPAIR:       { _default: 0.48, ACE_OVERCARD: 0.30, FLUSH_COMPLETE: 0.36,
+                          STRAIGHT_COMPLETE: 0.32, BROADWAY_OVERCARD: 0.40, OVERCARD: 0.38,
+                          BOARD_PAIR: 0.44, BRICK: 0.55, LOW_BLANK: 0.58 },
+        TOP_PAIR:       { _default: 0.40, BRICK: 0.50, LOW_BLANK: 0.54, ACE_OVERCARD: 0.24,
+                          FLUSH_COMPLETE: 0.26, STRAIGHT_COMPLETE: 0.22, BROADWAY_OVERCARD: 0.32,
+                          OVERCARD: 0.30, BOARD_PAIR: 0.36 },
+        SECOND_PAIR:    { _default: 0.20, BRICK: 0.30, LOW_BLANK: 0.34, ACE_OVERCARD: 0.10,
+                          FLUSH_COMPLETE: 0.08, STRAIGHT_COMPLETE: 0.07, BROADWAY_OVERCARD: 0.15,
+                          OVERCARD: 0.12, BOARD_PAIR: 0.18 },
+        THIRD_PAIR:     { _default: 0.12, BRICK: 0.20, LOW_BLANK: 0.24, ACE_OVERCARD: 0.06,
+                          FLUSH_COMPLETE: 0.05, STRAIGHT_COMPLETE: 0.04 },
+        UNDERPAIR:      { _default: 0.14, BRICK: 0.22, LOW_BLANK: 0.26, ACE_OVERCARD: 0.06,
+                          FLUSH_COMPLETE: 0.05, STRAIGHT_COMPLETE: 0.04 },
+        ACE_HIGH:       { _default: 0.46, BRICK: 0.58, LOW_BLANK: 0.64, ACE_OVERCARD: 0.36,
+                          FLUSH_COMPLETE: 0.22, STRAIGHT_COMPLETE: 0.18, BROADWAY_OVERCARD: 0.40,
+                          OVERCARD: 0.38, BOARD_PAIR: 0.42 },
+        OVERCARDS:      { _default: 0.34, BRICK: 0.46, LOW_BLANK: 0.52, ACE_OVERCARD: 0.22,
+                          FLUSH_COMPLETE: 0.14, STRAIGHT_COMPLETE: 0.12, BROADWAY_OVERCARD: 0.26,
+                          OVERCARD: 0.22, BOARD_PAIR: 0.28 },
+        AIR:            { _default: 0.52, BRICK: 0.64, LOW_BLANK: 0.68, ACE_OVERCARD: 0.44,
+                          FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.24, BROADWAY_OVERCARD: 0.46,
+                          OVERCARD: 0.42, BOARD_PAIR: 0.48 }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush after double check-through — probe for max value. IP cannot have the nuts.',
+        QUADS:          'Quads — probe for value. IP checked twice and cannot fight back.',
+        FULL_HOUSE:     'Full house — probe. IP\'s double-check-back range is very weak.',
+        FLUSH:          'Made flush — probe for value. IP is heavily capped after double check.',
+        STRAIGHT:       'Straight — probe. IP\'s range cannot have premium holdings.',
+        SET:            'Set — probe for value. IP double-checked, so BB dominates with sets.',
+        TRIPS:          'Trips — probe for value on most rivers. IP has few trips combos after double-check.',
+        BOARD_TRIPS:    'Board trips — probe selectively. Kicker matters; IP can have kickers too.',
+        TWO_PAIR:       'Two pair — probe for value. IP\'s double-check range pays off medium-value hands.',
+        OVERPAIR:       'Overpair — mixed strategy. Good showdown value; probe on blank rivers only.',
+        TOP_PAIR:       'Top pair — probe on blank rivers for thin value. Check on dynamic rivers.',
+        SECOND_PAIR:    'Second pair — mostly check. Thin probe only on blank rivers.',
+        THIRD_PAIR:     'Third pair — mostly check. Probe selectively only on blank rivers.',
+        UNDERPAIR:      'Underpair — mostly check. Very thin probe only on pure blank rivers.',
+        ACE_HIGH:       'Ace-high (missed draw) — probe as bluff. IP double-checked, range is very weak.',
+        OVERCARDS:      'Overcards (missed draws) — probe as bluff on favorable rivers. IP has little calling range.',
+        AIR:            'Air (complete miss) — probe as bluff. IP\'s double-check-back range cannot call wide.'
+    };
+
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.02 };
+
+    for (const fam of PROBE_IP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseFreqs = BASE_OOP[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[rf] !== undefined) ? baseFreqs[rf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeRiverProbeBetSpotKeyV1({ preflopFamily: fam, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_PROBE_BET_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Tier 3: River Probe Bet (OOP BB)'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[RiverProbeBet] Built ${Object.keys(POSTFLOP_RIVER_PROBE_BET_STRATEGY).length} probe-bet strategy entries.`);
+    }
+})();
+
+// ---- Generator: IP hero faces BB's river probe ----
+/**
+ * generateRiverProbeSpot — IP PFR faces BB's probe after double check-through.
+ * Line: SRP → flop check-check → turn check-check → BB probes river → IP responds.
+ * Hero is BTN or CO; uses _dealPostflopHeroHand for IP range.
+ */
+function generateRiverProbeSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...PROBE_IP_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+            positionState: 'IP', nodeType: 'RIVER_PROBE_FACING_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_CHECK', 'TURN_CHECK_BACK', 'RIVER_PROBE'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverProbeSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_PROBE_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    console.warn('[RiverProbe] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', fi => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+        positionState: 'IP', nodeType: 'RIVER_PROBE_FACING_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_CHECK', 'TURN_CHECK_BACK', 'RIVER_PROBE'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverProbeSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_PROBE_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+// ---- Generator: BB hero decides to probe river or check ----
+/**
+ * generateRiverProbeBetSpot — BB hero decides bet vs check after double check-through.
+ * Line: SRP → flop check-check → turn check-check → BB hero acts on river.
+ * Hero is BB; uses _dealDefenderHeroHand for OOP calling range.
+ */
+function generateRiverProbeBetSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...PROBE_IP_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'RIVER_PROBE_BET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: 'BB', villainPos: fs.heroPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_CHECK', 'TURN_CHECK_BACK'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverProbeBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_PROBE_BET_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    console.warn('[RiverProbeBet] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fbHeroHand = _dealDefenderHeroHand('BTN') || _concreteHand('AJs', true);
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => fbHeroHand) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHeroHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHeroHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'RIVER_PROBE_BET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: 'BB', villainPos: fsFB.heroPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_CHECK', 'TURN_CHECK_BACK'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverProbeBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_PROBE_BET_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+/**
+ * scoreRiverProbeAction — score IP hero's fold/call/raise vs BB river probe.
+ * Delegates to scoreRiverDefenderAction since the action mapping is identical.
+ */
+function scoreRiverProbeAction(playerAction, strategy, spot) {
+    return scoreRiverDefenderAction(playerAction, strategy, spot);
+}
+
+/**
+ * scoreRiverProbeBetAction — score BB hero's bet/check river probe decision.
+ * Delegates to scoreRiverAction (same bet50/check mapping as barrel/delayed-cbet).
+ */
+function scoreRiverProbeBetAction(playerAction, strategy, spot) {
+    return scoreRiverAction(playerAction, strategy, spot);
+}
+
+// =============================================================================
+// POSTFLOP_RIVER_TURN_CHECK_CBET
+// Line: Flop c-bet (called) → turn check-check → river barrel or check
+// Pot size: 1.66x flop SRP (flop c-bet called, turn no betting)
+// Hero: PFR (all HERO_HAND_AWARE_FAMILIES)
+// =============================================================================
+
+function makeRiverTurnCheckCBetSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|PFR|' + spot.positionState + '|RIVER_TURN_CHECK_CBET_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY = {};
+(function() {
+    // PFR c-bet flop, called. Both checked turn. BB's calling range is stronger than vs delayed cbet.
+    // Strong hands bet slightly more (were trapping). Medium hands similar. Bluffs slightly less.
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.95 },
+        QUADS:          { _default: 0.93 },
+        FULL_HOUSE:     { _default: 0.92, FLUSH_COMPLETE: 0.87, STRAIGHT_COMPLETE: 0.85 },
+        FLUSH:          { _default: 0.90, FLUSH_COMPLETE: 0.81 },
+        STRAIGHT:       { _default: 0.84 },
+        SET:            { _default: 0.90, FLUSH_COMPLETE: 0.77, STRAIGHT_COMPLETE: 0.73 },
+        TRIPS:          { _default: 0.84, FLUSH_COMPLETE: 0.69, STRAIGHT_COMPLETE: 0.65, BOARD_PAIR: 0.80, ACE_OVERCARD: 0.73, BROADWAY_OVERCARD: 0.75 },
+        BOARD_TRIPS:    { _default: 0.43, BRICK: 0.49, LOW_BLANK: 0.51, FLUSH_COMPLETE: 0.27, STRAIGHT_COMPLETE: 0.23, ACE_OVERCARD: 0.33, BROADWAY_OVERCARD: 0.37, BOARD_PAIR: 0.39, OVERCARD: 0.35 },
+        TWO_PAIR:       { _default: 0.74, FLUSH_COMPLETE: 0.57, STRAIGHT_COMPLETE: 0.54, ACE_OVERCARD: 0.63 },
+        OVERPAIR:       { _default: 0.57, ACE_OVERCARD: 0.19, FLUSH_COMPLETE: 0.41, STRAIGHT_COMPLETE: 0.37, BROADWAY_OVERCARD: 0.45, OVERCARD: 0.43, BOARD_PAIR: 0.53, DYNAMIC_CONNECTOR: 0.49 },
+        TOP_PAIR:       { _default: 0.43, BRICK: 0.49, LOW_BLANK: 0.51, ACE_OVERCARD: 0.23, FLUSH_COMPLETE: 0.27, STRAIGHT_COMPLETE: 0.24, BROADWAY_OVERCARD: 0.33, OVERCARD: 0.31, BOARD_PAIR: 0.39, DYNAMIC_CONNECTOR: 0.37 },
+        SECOND_PAIR:    { _default: 0.16, BRICK: 0.20, LOW_BLANK: 0.23, ACE_OVERCARD: 0.08, FLUSH_COMPLETE: 0.08, STRAIGHT_COMPLETE: 0.06 },
+        THIRD_PAIR:     { _default: 0.08, BRICK: 0.11, FLUSH_COMPLETE: 0.04 },
+        UNDERPAIR:      { _default: 0.09, BRICK: 0.12, FLUSH_COMPLETE: 0.04 },
+        ACE_HIGH:       { _default: 0.35, BRICK: 0.40, LOW_BLANK: 0.42, ACE_OVERCARD: 0.18, FLUSH_COMPLETE: 0.16, STRAIGHT_COMPLETE: 0.13, BROADWAY_OVERCARD: 0.27, OVERCARD: 0.22, BOARD_PAIR: 0.28 },
+        OVERCARDS:      { _default: 0.19, BRICK: 0.23, LOW_BLANK: 0.25, ACE_OVERCARD: 0.09, FLUSH_COMPLETE: 0.08, STRAIGHT_COMPLETE: 0.06 },
+        AIR:            { _default: 0.17, BRICK: 0.21, LOW_BLANK: 0.23, ACE_OVERCARD: 0.07, FLUSH_COMPLETE: 0.06, STRAIGHT_COMPLETE: 0.05, BROADWAY_OVERCARD: 0.12 }
+    };
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.86 },
+        QUADS:          { _default: 0.84 },
+        FULL_HOUSE:     { _default: 0.83, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.74 },
+        FLUSH:          { _default: 0.80, FLUSH_COMPLETE: 0.72 },
+        STRAIGHT:       { _default: 0.74 },
+        SET:            { _default: 0.80, FLUSH_COMPLETE: 0.66, STRAIGHT_COMPLETE: 0.62 },
+        TRIPS:          { _default: 0.72, FLUSH_COMPLETE: 0.58, STRAIGHT_COMPLETE: 0.54, BOARD_PAIR: 0.70, ACE_OVERCARD: 0.62, BROADWAY_OVERCARD: 0.64 },
+        BOARD_TRIPS:    { _default: 0.31, BRICK: 0.37, LOW_BLANK: 0.39, FLUSH_COMPLETE: 0.17, STRAIGHT_COMPLETE: 0.14, ACE_OVERCARD: 0.23, BROADWAY_OVERCARD: 0.27, OVERCARD: 0.25, BOARD_PAIR: 0.29 },
+        TWO_PAIR:       { _default: 0.62, FLUSH_COMPLETE: 0.46, STRAIGHT_COMPLETE: 0.44, ACE_OVERCARD: 0.54 },
+        OVERPAIR:       { _default: 0.44, ACE_OVERCARD: 0.13, FLUSH_COMPLETE: 0.29, STRAIGHT_COMPLETE: 0.25, BROADWAY_OVERCARD: 0.32, OVERCARD: 0.29, BOARD_PAIR: 0.39, DYNAMIC_CONNECTOR: 0.35 },
+        TOP_PAIR:       { _default: 0.32, BRICK: 0.38, LOW_BLANK: 0.40, ACE_OVERCARD: 0.15, FLUSH_COMPLETE: 0.16, STRAIGHT_COMPLETE: 0.14, BROADWAY_OVERCARD: 0.21, OVERCARD: 0.19, BOARD_PAIR: 0.27, DYNAMIC_CONNECTOR: 0.24 },
+        SECOND_PAIR:    { _default: 0.10, BRICK: 0.14, FLUSH_COMPLETE: 0.05 },
+        THIRD_PAIR:     { _default: 0.05 },
+        UNDERPAIR:      { _default: 0.06 },
+        ACE_HIGH:       { _default: 0.24, BRICK: 0.30, LOW_BLANK: 0.33, FLUSH_COMPLETE: 0.11 },
+        OVERCARDS:      { _default: 0.12, BRICK: 0.16, FLUSH_COMPLETE: 0.05 },
+        AIR:            { _default: 0.10, BRICK: 0.14, LOW_BLANK: 0.16, FLUSH_COMPLETE: 0.04 }
+    };
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush after c-bet/call flop, check-check turn — extract max value on river.',
+        QUADS:          'Quads slow-played turn — extract full value on river.',
+        FULL_HOUSE:     'Full house — bet for value. BB called flop c-bet but checked turn.',
+        FLUSH:          'Flush — bet for value after turn trap.',
+        STRAIGHT:       'Straight slow-played — bet for value on river.',
+        SET:            'Set — bet for full value. BB checked turn, slightly weighted medium.',
+        TRIPS:          'Trips — barrel for value. BB\'s range is solid but trips is ahead.',
+        BOARD_TRIPS:    'Board trips — marginal. Bet selectively on blank rivers only.',
+        TWO_PAIR:       'Two pair — barrel for value. BB has strong calling hands but two pair is ahead on blank rivers.',
+        OVERPAIR:       'Overpair — be selective. BB called flop c-bet; range is solid.',
+        TOP_PAIR:       'Top pair — thin value on blank rivers only. BB has medium-strong hands.',
+        SECOND_PAIR:    'Second pair — mostly check. BB has too many strong hands.',
+        THIRD_PAIR:     'Third pair — check. No value.',
+        UNDERPAIR:      'Underpair — check. No value on river.',
+        ACE_HIGH:       'Ace-high — bluff selectively. BB calling range is robust after flop call.',
+        OVERCARDS:      'Overcards — mostly give up. BB range is stronger than delayed-cbet line.',
+        AIR:            'Air — check. BB survived flop c-bet; range is too strong to bluff into.'
+    };
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.03, HJ_vs_BB: -0.02, LJ_vs_BB: -0.01, UTG_vs_BB: 0.02, BTN_vs_SB: 0.02, SB_vs_BB: 0, CO_vs_BTN: -0.03 };
+    for (const fam of HERO_HAND_AWARE_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[rf] !== undefined) ? baseFreqs[rf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeRiverTurnCheckCBetSpotKeyV1({ preflopFamily: fam, positionState: fi.positionState, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY[sk] = { actions: { check: chk, bet50: bet }, preferredAction: preferred, reasoning: REASONING[hc] || '' };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) { console.log('[RiverTurnCheckCBet] Built ' + Object.keys(POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY).length + ' entries.'); }
+})();
+
+function generateRiverTurnCheckCBetSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+            positionState: fs.positionState, nodeType: 'RIVER_TURN_CHECK_CBET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CBET', 'FLOP_CALLED', 'TURN_CHECK', 'TURN_CHECK_BACK'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverTurnCheckCBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[RiverTurnCheckCBet] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }], turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }], riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+        positionState: fsFB.positionState, nodeType: 'RIVER_TURN_CHECK_CBET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CBET', 'FLOP_CALLED', 'TURN_CHECK', 'TURN_CHECK_BACK'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverTurnCheckCBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function scoreRiverTurnCheckAction(playerAction, strategy, spot) {
+    return scoreRiverAction(playerAction, strategy, spot);
+}
+
+// =============================================================================
+// POSTFLOP_RIVER_TURN_CHECK_DEFEND
+// Line: Flop c-bet (called) → turn check-check → river: BB faces PFR's barrel
+// Pot size: 1.66x flop SRP
+// Hero: BB (DEFENDER_FAMILIES: BTN_vs_BB, CO_vs_BB, SB_vs_BB)
+// =============================================================================
+
+function makeRiverTurnCheckDefendSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|DEFENDER|OOP|RIVER_TURN_CHECK_DEFEND_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY = {};
+(function() {
+    // PFR c-bet flop, called, then checked turn back — range is capped (no big hands).
+    // BB calls more than vs standard river barrel because PFR capped himself by checking turn.
+    const BASE = {
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.05, raise: 0.95 } },
+        QUADS:          { _default: { fold: 0.00, call: 0.08, raise: 0.92 } },
+        FULL_HOUSE:     { _default: { fold: 0.00, call: 0.13, raise: 0.87 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.11, raise: 0.89 } },
+        FLUSH:          { _default: { fold: 0.00, call: 0.16, raise: 0.84 } },
+        STRAIGHT:       { _default: { fold: 0.00, call: 0.20, raise: 0.80 } },
+        SET:            { _default: { fold: 0.00, call: 0.22, raise: 0.78 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.16, raise: 0.84 } },
+        TRIPS:          { _default: { fold: 0.00, call: 0.20, raise: 0.80 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.14, raise: 0.86 } },
+        BOARD_TRIPS:    { _default: { fold: 0.04, call: 0.76, raise: 0.20 },
+                          FLUSH_COMPLETE: { fold: 0.12, call: 0.72, raise: 0.16 },
+                          STRAIGHT_COMPLETE: { fold: 0.10, call: 0.74, raise: 0.16 } },
+        TWO_PAIR:       { _default: { fold: 0.00, call: 0.58, raise: 0.42 },
+                          FLUSH_COMPLETE: { fold: 0.02, call: 0.64, raise: 0.34 },
+                          STRAIGHT_COMPLETE: { fold: 0.03, call: 0.66, raise: 0.31 } },
+        OVERPAIR:       { _default: { fold: 0.00, call: 0.84, raise: 0.16 },
+                          ACE_OVERCARD: { fold: 0.00, call: 0.89, raise: 0.11 },
+                          FLUSH_COMPLETE: { fold: 0.03, call: 0.82, raise: 0.15 },
+                          STRAIGHT_COMPLETE: { fold: 0.06, call: 0.79, raise: 0.15 } },
+        TOP_PAIR:       { _default: { fold: 0.04, call: 0.87, raise: 0.09 },
+                          BRICK: { fold: 0.02, call: 0.90, raise: 0.08 },
+                          LOW_BLANK: { fold: 0.01, call: 0.91, raise: 0.08 },
+                          ACE_OVERCARD: { fold: 0.14, call: 0.78, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.16, call: 0.76, raise: 0.08 },
+                          STRAIGHT_COMPLETE: { fold: 0.18, call: 0.74, raise: 0.08 } },
+        SECOND_PAIR:    { _default: { fold: 0.37, call: 0.56, raise: 0.07 },
+                          BRICK: { fold: 0.27, call: 0.66, raise: 0.07 },
+                          FLUSH_COMPLETE: { fold: 0.52, call: 0.42, raise: 0.06 } },
+        THIRD_PAIR:     { _default: { fold: 0.55, call: 0.40, raise: 0.05 },
+                          BRICK: { fold: 0.45, call: 0.49, raise: 0.06 } },
+        UNDERPAIR:      { _default: { fold: 0.60, call: 0.34, raise: 0.06 },
+                          BRICK: { fold: 0.50, call: 0.44, raise: 0.06 } },
+        ACE_HIGH:       { _default: { fold: 0.55, call: 0.39, raise: 0.06 },
+                          BRICK: { fold: 0.43, call: 0.50, raise: 0.07 } },
+        OVERCARDS:      { _default: { fold: 0.65, call: 0.27, raise: 0.08 },
+                          BRICK: { fold: 0.52, call: 0.39, raise: 0.09 } },
+        AIR:            { _default: { fold: 0.75, call: 0.17, raise: 0.08 },
+                          BRICK: { fold: 0.62, call: 0.27, raise: 0.11 } }
+    };
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — raise for max value. PFR checked turn, range is capped.',
+        QUADS:          'Quads — raise; PFR checking turn after c-bet is very range-capping.',
+        FULL_HOUSE:     'Full house — raise; PFR\'s capped range cannot fight back.',
+        FLUSH:          'Flush — raise; PFR\'s turn check-back caps nut holdings.',
+        STRAIGHT:       'Straight — raise; PFR is range-capped from turn check-back.',
+        SET:            'Set — raise; PFR has fewer premium hands after checking turn.',
+        TRIPS:          'Trips — raise; PFR\'s range is merged-weak after check-back.',
+        BOARD_TRIPS:    'Board trips — call wider; PFR is capped from checking turn after c-betting flop.',
+        TWO_PAIR:       'Two pair — raise or call; PFR\'s range is weak-medium after turn check.',
+        OVERPAIR:       'Overpair — call wider; PFR checked turn after c-bet, very capped range.',
+        TOP_PAIR:       'Top pair — call; PFR\'s turn check-back means more bluffs on river.',
+        SECOND_PAIR:    'Second pair — call some; PFR has many missed draws after 2-street check.',
+        THIRD_PAIR:     'Third pair — lean fold; PFR still has some value hands in range.',
+        UNDERPAIR:      'Underpair — lean fold; PFR\'s range still has enough value combos.',
+        ACE_HIGH:       'Ace-high — call slightly more than usual; PFR has high bluff frequency here.',
+        OVERCARDS:      'Overcards — fold most; PFR\'s range has enough value to make calling thin.',
+        AIR:            'Air — fold; no equity against even a capped PFR range.'
+    };
+    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+    for (const fam of DEFENDER_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const off = FAM_OFF[fam] || 0;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const hcData = BASE[hc];
+                if (!hcData) continue;
+                const raw = hcData[rf] || hcData._default;
+                if (!raw) continue;
+                let fold  = Math.max(0, raw.fold - off);
+                let call  = raw.call + off * 0.5;
+                let raise = raw.raise + off * 0.5;
+                const total = fold + call + raise;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+                const sk = makeRiverTurnCheckDefendSpotKeyV1({ preflopFamily: fam, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || ''
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) { console.log('[RiverTurnCheckDefend] Built ' + Object.keys(POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY).length + ' entries.'); }
+})();
+
+function generateRiverTurnCheckDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...DEFENDER_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'RIVER_TURN_CHECK_DEFEND_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: 'BB', villainPos: fs.heroPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED', 'TURN_CHECK', 'TURN_CHECK_BACK', 'RIVER_BET'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverTurnCheckDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[RiverTurnCheckDefend] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fbHand = _dealDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => fbHand) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'OOP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }], turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }], riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'RIVER_TURN_CHECK_DEFEND_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: 'BB', villainPos: fsFB.heroPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED', 'TURN_CHECK', 'TURN_CHECK_BACK', 'RIVER_BET'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverTurnCheckDefendSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function scoreRiverTurnCheckDefenderAction(playerAction, strategy, spot) {
+    return scoreRiverDefenderAction(playerAction, strategy, spot);
+}
+
+// =============================================================================
+// POSTFLOP_RIVER_PROBE_CALL_BET
+// Line: Flop check-check → BB turn probe → IP calls → river: BB bets or checks
+// Pot size: 2.0x flop SRP
+// Hero: BB (PROBE_IP_FAMILIES: BTN_vs_BB, CO_vs_BB)
+// =============================================================================
+
+function makeRiverProbeCallBetSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|DEFENDER|OOP|RIVER_PROBE_CALL_BET_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY = {};
+(function() {
+    // BB probed turn and IP called. River strategy is very polar (2-barrel).
+    // Bet strong value + air bluffs aggressively; check medium made hands.
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.94 },
+        QUADS:          { _default: 0.92 },
+        FULL_HOUSE:     { _default: 0.91, FLUSH_COMPLETE: 0.84, STRAIGHT_COMPLETE: 0.82 },
+        FLUSH:          { _default: 0.90, FLUSH_COMPLETE: 0.84 },
+        STRAIGHT:       { _default: 0.88 },
+        SET:            { _default: 0.90, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.72 },
+        TRIPS:          { _default: 0.86, FLUSH_COMPLETE: 0.74, STRAIGHT_COMPLETE: 0.70,
+                          BOARD_PAIR: 0.84, ACE_OVERCARD: 0.80 },
+        BOARD_TRIPS:    { _default: 0.52, BRICK: 0.60, LOW_BLANK: 0.64, FLUSH_COMPLETE: 0.34,
+                          STRAIGHT_COMPLETE: 0.30, ACE_OVERCARD: 0.44, BROADWAY_OVERCARD: 0.48,
+                          OVERCARD: 0.46, BOARD_PAIR: 0.50 },
+        TWO_PAIR:       { _default: 0.82, FLUSH_COMPLETE: 0.66, STRAIGHT_COMPLETE: 0.64,
+                          ACE_OVERCARD: 0.74, BROADWAY_OVERCARD: 0.76, BRICK: 0.86 },
+        OVERPAIR:       { _default: 0.44, ACE_OVERCARD: 0.26, FLUSH_COMPLETE: 0.32,
+                          STRAIGHT_COMPLETE: 0.28, BROADWAY_OVERCARD: 0.36, OVERCARD: 0.34,
+                          BOARD_PAIR: 0.40, BRICK: 0.52, LOW_BLANK: 0.55 },
+        TOP_PAIR:       { _default: 0.36, BRICK: 0.46, LOW_BLANK: 0.50, ACE_OVERCARD: 0.20,
+                          FLUSH_COMPLETE: 0.22, STRAIGHT_COMPLETE: 0.18, BROADWAY_OVERCARD: 0.28,
+                          OVERCARD: 0.26, BOARD_PAIR: 0.32 },
+        SECOND_PAIR:    { _default: 0.16, BRICK: 0.26, LOW_BLANK: 0.30, ACE_OVERCARD: 0.08,
+                          FLUSH_COMPLETE: 0.06, STRAIGHT_COMPLETE: 0.05, BROADWAY_OVERCARD: 0.12,
+                          OVERCARD: 0.10, BOARD_PAIR: 0.14 },
+        THIRD_PAIR:     { _default: 0.10, BRICK: 0.18, LOW_BLANK: 0.22, ACE_OVERCARD: 0.05,
+                          FLUSH_COMPLETE: 0.04, STRAIGHT_COMPLETE: 0.03 },
+        UNDERPAIR:      { _default: 0.12, BRICK: 0.20, LOW_BLANK: 0.24, ACE_OVERCARD: 0.05,
+                          FLUSH_COMPLETE: 0.04, STRAIGHT_COMPLETE: 0.03 },
+        ACE_HIGH:       { _default: 0.58, BRICK: 0.70, LOW_BLANK: 0.74, ACE_OVERCARD: 0.48,
+                          FLUSH_COMPLETE: 0.30, STRAIGHT_COMPLETE: 0.24, BROADWAY_OVERCARD: 0.52,
+                          OVERCARD: 0.50, BOARD_PAIR: 0.55 },
+        OVERCARDS:      { _default: 0.60, BRICK: 0.72, LOW_BLANK: 0.76, ACE_OVERCARD: 0.50,
+                          FLUSH_COMPLETE: 0.32, STRAIGHT_COMPLETE: 0.26, BROADWAY_OVERCARD: 0.54,
+                          OVERCARD: 0.52, BOARD_PAIR: 0.58 },
+        AIR:            { _default: 0.65, BRICK: 0.76, LOW_BLANK: 0.80, ACE_OVERCARD: 0.55,
+                          FLUSH_COMPLETE: 0.36, STRAIGHT_COMPLETE: 0.30, BROADWAY_OVERCARD: 0.58,
+                          OVERCARD: 0.55, BOARD_PAIR: 0.62 }
+    };
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — 2-barrel for max value. IP called turn probe and is capped.',
+        QUADS:          'Quads — fire 2nd barrel for full value.',
+        FULL_HOUSE:     'Full house — 2-barrel. IP called but his range is capped after calling probe.',
+        FLUSH:          'Flush — fire 2nd barrel for value.',
+        STRAIGHT:       'Straight — 2-barrel for value.',
+        SET:            'Set — fire 2nd barrel. IP\'s calling range on turn probe is medium-strong.',
+        TRIPS:          'Trips — 2-barrel for value on most runouts.',
+        BOARD_TRIPS:    'Board trips — bet selectively. Kicker matters on river after 2 streets.',
+        TWO_PAIR:       'Two pair — 2-barrel for value. IP has medium hands; two pair gets called.',
+        OVERPAIR:       'Overpair — check more. Too thin for a 2nd barrel; IP will call with medium-plus.',
+        TOP_PAIR:       'Top pair — mostly check. IP will call down with top pair; 2-barrel is thin.',
+        SECOND_PAIR:    'Second pair — check. Two streets of aggression with 2nd pair is too thin.',
+        THIRD_PAIR:     'Third pair — check. No value for 2nd barrel.',
+        UNDERPAIR:      'Underpair — check. No value.',
+        ACE_HIGH:       'Ace-high — fire 2nd barrel as bluff. Fold equity is high after 2 streets.',
+        OVERCARDS:      'Overcards — fire 2nd barrel aggressively. High fold equity after probe-call.',
+        AIR:            'Air — fire 2nd barrel bluff. IP cannot call down wide after probe-call.'
+    };
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.02 };
+    for (const fam of PROBE_IP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseFreqs = BASE_OOP[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[rf] !== undefined) ? baseFreqs[rf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeRiverProbeCallBetSpotKeyV1({ preflopFamily: fam, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || ''
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) { console.log('[RiverProbeCallBet] Built ' + Object.keys(POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY).length + ' entries.'); }
+})();
+
+function generateRiverProbeCallBetSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...PROBE_IP_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'RIVER_PROBE_CALL_BET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: 'BB', villainPos: fs.heroPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_PROBE', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverProbeCallBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[RiverProbeCallBet] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fbHand = _dealDefenderHeroHand('BTN') || _concreteHand('AJs', true);
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => fbHand) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }], turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }], riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'RIVER_PROBE_CALL_BET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: 'BB', villainPos: fsFB.heroPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_PROBE', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverProbeCallBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function scoreRiverProbeCallBetAction(playerAction, strategy, spot) {
+    return scoreRiverAction(playerAction, strategy, spot);
+}
+
+// =============================================================================
+// POSTFLOP_RIVER_PROBE_CALL_DEFEND
+// Line: Flop check-check → BB turn probe → IP calls → river: BB bets → IP responds
+// Pot size: 2.0x flop SRP
+// Hero: IP PFR (PROBE_IP_FAMILIES: BTN_vs_BB, CO_vs_BB)
+// =============================================================================
+
+function makeRiverProbeCallDefendSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|PFR|IP|RIVER_PROBE_CALL_DEFEND_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY = {};
+(function() {
+    // BB bet twice (probe turn + 2nd barrel river). IP's range is capped (called probe, checked back flop).
+    // BB is polar (strong value + bluffs). IP folds more medium hands vs this 2-barrel line.
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { fold: 0.00, call: 0.04, raise: 0.96 },
+        QUADS:          { fold: 0.00, call: 0.07, raise: 0.93 },
+        FULL_HOUSE:     { fold: 0.00, call: 0.10, raise: 0.90,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.16, raise: 0.84 } },
+        FLUSH:          { fold: 0.00, call: 0.13, raise: 0.87,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.20, raise: 0.80 } },
+        STRAIGHT:       { fold: 0.00, call: 0.16, raise: 0.84 },
+        SET:            { fold: 0.00, call: 0.18, raise: 0.82,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.28, raise: 0.72 },
+                          STRAIGHT_COMPLETE: { fold: 0.00, call: 0.30, raise: 0.70 } },
+        TRIPS:          { fold: 0.00, call: 0.22, raise: 0.78,
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.36, raise: 0.64 },
+                          STRAIGHT_COMPLETE: { fold: 0.00, call: 0.40, raise: 0.60 },
+                          ACE_OVERCARD: { fold: 0.00, call: 0.28, raise: 0.72 } },
+        BOARD_TRIPS:    { fold: 0.08, call: 0.60, raise: 0.32,
+                          FLUSH_COMPLETE: { fold: 0.14, call: 0.64, raise: 0.22 },
+                          STRAIGHT_COMPLETE: { fold: 0.16, call: 0.64, raise: 0.20 },
+                          ACE_OVERCARD: { fold: 0.12, call: 0.62, raise: 0.26 } },
+        TWO_PAIR:       { fold: 0.00, call: 0.34, raise: 0.66,
+                          FLUSH_COMPLETE: { fold: 0.08, call: 0.56, raise: 0.36 },
+                          STRAIGHT_COMPLETE: { fold: 0.10, call: 0.58, raise: 0.32 },
+                          ACE_OVERCARD: { fold: 0.05, call: 0.40, raise: 0.55 } },
+        OVERPAIR:       { fold: 0.10, call: 0.66, raise: 0.24,
+                          ACE_OVERCARD: { fold: 0.28, call: 0.64, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.20, call: 0.66, raise: 0.14 },
+                          STRAIGHT_COMPLETE: { fold: 0.24, call: 0.64, raise: 0.12 },
+                          BROADWAY_OVERCARD: { fold: 0.16, call: 0.68, raise: 0.16 },
+                          OVERCARD: { fold: 0.18, call: 0.66, raise: 0.16 },
+                          BOARD_PAIR: { fold: 0.10, call: 0.62, raise: 0.28 },
+                          BRICK: { fold: 0.05, call: 0.52, raise: 0.43 },
+                          LOW_BLANK: { fold: 0.04, call: 0.48, raise: 0.48 } },
+        TOP_PAIR:       { fold: 0.14, call: 0.72, raise: 0.14,
+                          BRICK: { fold: 0.08, call: 0.64, raise: 0.28 },
+                          LOW_BLANK: { fold: 0.07, call: 0.62, raise: 0.31 },
+                          ACE_OVERCARD: { fold: 0.38, call: 0.56, raise: 0.06 },
+                          FLUSH_COMPLETE: { fold: 0.32, call: 0.62, raise: 0.06 },
+                          STRAIGHT_COMPLETE: { fold: 0.36, call: 0.58, raise: 0.06 },
+                          BROADWAY_OVERCARD: { fold: 0.26, call: 0.67, raise: 0.07 },
+                          OVERCARD: { fold: 0.28, call: 0.66, raise: 0.06 },
+                          BOARD_PAIR: { fold: 0.16, call: 0.70, raise: 0.14 } },
+        SECOND_PAIR:    { fold: 0.42, call: 0.54, raise: 0.04,
+                          BRICK: { fold: 0.28, call: 0.66, raise: 0.06 },
+                          LOW_BLANK: { fold: 0.26, call: 0.68, raise: 0.06 },
+                          ACE_OVERCARD: { fold: 0.64, call: 0.34, raise: 0.02 },
+                          FLUSH_COMPLETE: { fold: 0.62, call: 0.36, raise: 0.02 },
+                          STRAIGHT_COMPLETE: { fold: 0.66, call: 0.32, raise: 0.02 },
+                          BROADWAY_OVERCARD: { fold: 0.54, call: 0.44, raise: 0.02 },
+                          OVERCARD: { fold: 0.52, call: 0.46, raise: 0.02 } },
+        THIRD_PAIR:     { fold: 0.68, call: 0.30, raise: 0.02,
+                          BRICK: { fold: 0.52, call: 0.46, raise: 0.02 },
+                          LOW_BLANK: { fold: 0.48, call: 0.50, raise: 0.02 },
+                          ACE_OVERCARD: { fold: 0.84, call: 0.15, raise: 0.01 },
+                          FLUSH_COMPLETE: { fold: 0.82, call: 0.17, raise: 0.01 } },
+        UNDERPAIR:      { fold: 0.74, call: 0.25, raise: 0.01,
+                          BRICK: { fold: 0.58, call: 0.41, raise: 0.01 },
+                          LOW_BLANK: { fold: 0.54, call: 0.45, raise: 0.01 },
+                          ACE_OVERCARD: { fold: 0.88, call: 0.11, raise: 0.01 },
+                          FLUSH_COMPLETE: { fold: 0.86, call: 0.13, raise: 0.01 } },
+        ACE_HIGH:       { fold: 0.54, call: 0.40, raise: 0.06,
+                          BRICK: { fold: 0.36, call: 0.52, raise: 0.12 },
+                          LOW_BLANK: { fold: 0.32, call: 0.56, raise: 0.12 },
+                          ACE_OVERCARD: { fold: 0.48, call: 0.46, raise: 0.06 },
+                          FLUSH_COMPLETE: { fold: 0.70, call: 0.28, raise: 0.02 },
+                          STRAIGHT_COMPLETE: { fold: 0.74, call: 0.24, raise: 0.02 } },
+        OVERCARDS:      { fold: 0.74, call: 0.24, raise: 0.02,
+                          BRICK: { fold: 0.56, call: 0.40, raise: 0.04 },
+                          LOW_BLANK: { fold: 0.52, call: 0.44, raise: 0.04 },
+                          ACE_OVERCARD: { fold: 0.70, call: 0.28, raise: 0.02 },
+                          FLUSH_COMPLETE: { fold: 0.86, call: 0.13, raise: 0.01 },
+                          STRAIGHT_COMPLETE: { fold: 0.90, call: 0.09, raise: 0.01 } },
+        AIR:            { fold: 0.86, call: 0.10, raise: 0.04,
+                          BRICK: { fold: 0.68, call: 0.24, raise: 0.08 },
+                          LOW_BLANK: { fold: 0.64, call: 0.28, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.92, call: 0.07, raise: 0.01 },
+                          STRAIGHT_COMPLETE: { fold: 0.94, call: 0.05, raise: 0.01 },
+                          ACE_OVERCARD: { fold: 0.80, call: 0.16, raise: 0.04 } }
+    };
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush vs 2nd barrel — raise for max value. IP slow-played twice.',
+        QUADS:          'Quads — raise; BB bet twice, now we extract.',
+        FULL_HOUSE:     'Full house vs 2nd barrel — raise. IP\'s slow-play gets paid off.',
+        FLUSH:          'Flush vs 2nd barrel — raise. IP slow-played; now raise.',
+        STRAIGHT:       'Straight — raise vs BB\'s 2nd barrel.',
+        SET:            'Set vs 2nd barrel — raise. IP is capped but set is top of range.',
+        TRIPS:          'Trips vs 2nd barrel — raise or call depending on texture.',
+        BOARD_TRIPS:    'Board trips — call; IP is capped but BB is polar on 2-barrel.',
+        TWO_PAIR:       'Two pair vs 2nd barrel — raise or call. IP has few nut holdings.',
+        OVERPAIR:       'Overpair — call on most rivers. IP is capped; fold more than vs single probe.',
+        TOP_PAIR:       'Top pair vs 2nd barrel — call only on safe runouts. Fold more than vs single probe.',
+        SECOND_PAIR:    'Second pair — fold more. BB firing 2nd barrel has very high value frequency.',
+        THIRD_PAIR:     'Third pair — mostly fold. BB\'s 2-barrel range is very strong.',
+        UNDERPAIR:      'Underpair — fold mostly. Against 2 streets of BB aggression.',
+        ACE_HIGH:       'Ace-high — call blank rivers; fold scary boards.',
+        OVERCARDS:      'Overcards — mostly fold vs 2-barrel. BB has too much value.',
+        AIR:            'Air — fold vs 2-barrel probe. BB cannot be bluffing enough.'
+    };
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.02 };
+    for (const fam of PROBE_IP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseEntry = BASE_IP[hc];
+                if (!baseEntry) continue;
+                const rfEntry = baseEntry[rf];
+                let fold, call, raise;
+                if (rfEntry && typeof rfEntry === 'object' && 'fold' in rfEntry) {
+                    fold = rfEntry.fold; call = rfEntry.call; raise = rfEntry.raise;
+                } else {
+                    fold = baseEntry.fold; call = baseEntry.call; raise = baseEntry.raise;
+                }
+                if (fold === undefined) continue;
+                call  = parseFloat(Math.max(0, Math.min(1, call  + famOff)).toFixed(2));
+                fold  = parseFloat(Math.max(0, Math.min(1, fold  - famOff * 0.5)).toFixed(2));
+                raise = parseFloat(Math.max(0, Math.min(1, raise - famOff * 0.5)).toFixed(2));
+                const total = fold + call + raise;
+                if (total <= 0) continue;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+                const sk = makeRiverProbeCallDefendSpotKeyV1({ preflopFamily: fam, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || ''
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) { console.log('[RiverProbeCallDefend] Built ' + Object.keys(POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY).length + ' entries.'); }
+})();
+
+function generateRiverProbeCallDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...PROBE_IP_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+            positionState: 'IP', nodeType: 'RIVER_PROBE_CALL_DEFEND_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_PROBE', 'TURN_CALLED', 'RIVER_BET'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverProbeCallDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[RiverProbeCallDefend] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', fi => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }], turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }], riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+        positionState: 'IP', nodeType: 'RIVER_PROBE_CALL_DEFEND_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_PROBE', 'TURN_CALLED', 'RIVER_BET'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverProbeCallDefendSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function scoreRiverProbeCallDefenderAction(playerAction, strategy, spot) {
     return scoreRiverDefenderAction(playerAction, strategy, spot);
 }

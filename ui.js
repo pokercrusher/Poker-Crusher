@@ -797,8 +797,8 @@ function getScenarioPot$(scenario) {
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
         return open$ * 2 + getSmallBlind$();
     }
-    if (scenario === 'POSTFLOP_TURN_PROBE') {
-        // Probe line: flop checked through, no flop bet — same pot as delayed cbet
+    if (scenario === 'POSTFLOP_TURN_PROBE' || scenario === 'POSTFLOP_TURN_DELAYED_DEFEND') {
+        // Flop checked through, no flop bet — pot = 1.0x flop SRP
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
         return open$ * 2 + getSmallBlind$();
     }
@@ -818,6 +818,21 @@ function getScenarioPot$(scenario) {
     }
     if (scenario === 'POSTFLOP_RIVER_DELAYED_CBET' || scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND') {
         // Flop checked through (no growth) + turn 50% bet → river pot = 2.0x flop pot
+        if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 2.0);
+        return Math.round((open$ * 2 + getSmallBlind$()) * 2.0);
+    }
+    if (scenario === 'POSTFLOP_RIVER_PROBE' || scenario === 'POSTFLOP_RIVER_PROBE_BET') {
+        // Double check-through (no betting) → river pot = 1.0x flop pot
+        if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
+        return open$ * 2 + getSmallBlind$();
+    }
+    if (scenario === 'POSTFLOP_RIVER_TURN_CHECK_CBET' || scenario === 'POSTFLOP_RIVER_TURN_CHECK_DEFEND') {
+        // Flop c-bet called, turn checks → river pot = 1.66x flop SRP
+        if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 1.66);
+        return Math.round((open$ * 2 + getSmallBlind$()) * 1.66);
+    }
+    if (scenario === 'POSTFLOP_RIVER_PROBE_CALL_BET' || scenario === 'POSTFLOP_RIVER_PROBE_CALL_DEFEND') {
+        // Flop check + turn probe called → river pot = 2.0x flop SRP
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 2.0);
         return Math.round((open$ * 2 + getSmallBlind$()) * 2.0);
     }
@@ -1699,7 +1714,7 @@ function formatSpotLabel(rawSpotId) {
     if (rawSpotId === '1L' || rawSpotId === '2L' || rawSpotId === '3P') return '';
     return POS_LABELS[clean] || clean;
 }
-const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend' };
+const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn D-Defend', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend', POSTFLOP_RIVER_PROBE: 'River Probe', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River TCC-Bet', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River TCC-Def', POSTFLOP_RIVER_PROBE_CALL_BET: 'River P2-Bet', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River P2-Def' };
 const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
 
 function showSessionLog() {
@@ -1762,7 +1777,9 @@ function logRowChart(idx) {
         e.scenario === 'POSTFLOP_TURN_DELAYED_CBET' ||
         e.scenario === 'POSTFLOP_TURN_PROBE' || e.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' ||
         e.scenario === 'POSTFLOP_RIVER_CBET' || e.scenario === 'POSTFLOP_RIVER_DEFEND' ||
-        e.scenario === 'POSTFLOP_RIVER_DELAYED_CBET' || e.scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND') {
+        e.scenario === 'POSTFLOP_RIVER_DELAYED_CBET' || e.scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND' ||
+        e.scenario === 'POSTFLOP_RIVER_TURN_CHECK_CBET' || e.scenario === 'POSTFLOP_RIVER_TURN_CHECK_DEFEND' ||
+        e.scenario === 'POSTFLOP_RIVER_PROBE_CALL_BET' || e.scenario === 'POSTFLOP_RIVER_PROBE_CALL_DEFEND') {
         hideSessionLog();
         const logSpot = {
             heroPos: e.pos,
@@ -1802,6 +1819,11 @@ function logRowChart(idx) {
             logSpot.turnFamily = e.turnFamily || null;
             logSpot.flopArchetype = e.archetype || '';
             showDelayedTurnFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_TURN_DELAYED_DEFEND' && typeof showDelayedTurnDefendFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showDelayedTurnDefendFeedback(logSpot, logResult);
         } else if (e.scenario === 'POSTFLOP_TURN_PROBE' && typeof showTurnProbeFeedback === 'function') {
             logSpot.turnCard = e.turnCard || null;
             logSpot.turnFamily = e.turnFamily || null;
@@ -1840,6 +1862,48 @@ function logRowChart(idx) {
             logSpot.riverFamily = e.riverFamily || null;
             logSpot.flopArchetype = e.archetype || '';
             showRiverDelayedDefenderFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_PROBE' && typeof showRiverProbeFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverProbeFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_PROBE_BET' && typeof showRiverProbeBetFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverProbeBetFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_TURN_CHECK_CBET' && typeof showRiverTurnCheckFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverTurnCheckFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_TURN_CHECK_DEFEND' && typeof showRiverTurnCheckDefenderFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverTurnCheckDefenderFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_PROBE_CALL_BET' && typeof showRiverProbeCallBetFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverProbeCallBetFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_PROBE_CALL_DEFEND' && typeof showRiverProbeCallDefenderFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverProbeCallDefenderFeedback(logSpot, logResult);
         } else {
             showPostflopFeedback(logSpot, logResult, e.correct);
         }
