@@ -16,16 +16,19 @@ function placeCardBacks(cardsLayer, coords, animated, folded) {
     let cL = parseFloat(coords.left), cT = parseFloat(coords.top);
     let offL = 0, offT = 0;
     const isMob = SEAT_COORDS === SEAT_COORDS_MOBILE;
-    const cbOff = isMob ? 3 : 4;
+    // Separate H/V offsets because the felt is ~2.5x wider than tall:
+    // a uniform % offset clears seat edges horizontally but not vertically.
+    const cbOffH = isMob ? 7 : 4;
+    const cbOffV = isMob ? 12 : 4;
     // Bottom-center seat (hero) needs a bigger upward offset so cards sit above the box
     const isBottomCenter = Math.abs(cL - 50) < 10 && cT > 75;
     if (isBottomCenter) {
         offT = isMob ? -8 : -7;
     } else {
-        if (cL < 35) offL = cbOff; else if (cL > 65) offL = -cbOff;
-        if (cT < 35) offT = cbOff; else if (cT > 65) offT = -cbOff;
-        if (Math.abs(cL - 50) < 15 && cT < 35) offT = cbOff;
-        if (Math.abs(cL - 50) < 15 && cT > 65) offT = -cbOff;
+        if (cL < 35) offL = cbOffH; else if (cL > 65) offL = -cbOffH;
+        if (cT < 35) offT = cbOffV; else if (cT > 65) offT = -cbOffV;
+        if (Math.abs(cL - 50) < 15 && cT < 35) offT = cbOffV;
+        if (Math.abs(cL - 50) < 15 && cT > 65) offT = -cbOffV;
     }
     el.style.left = (cL + offL) + '%';
     el.style.top = (cT + offT) + '%';
@@ -2117,6 +2120,9 @@ function drilldownSpot(spotKey) {
         if (tableWrapper) {
             const newMaxH = isMobile ? '' : Math.round(winH * 0.62) + 'px';
             if (tableWrapper.style.maxHeight !== newMaxH) tableWrapper.style.maxHeight = newMaxH;
+            // On mobile: felt sits at the bottom of the wrapper so it's flush with hero cards
+            const newAlign = isMobile ? 'flex-end' : 'center';
+            if (tableWrapper.style.alignItems !== newAlign) tableWrapper.style.alignItems = newAlign;
         }
 
         // On mobile portrait, use window height as the reference for UI elements
@@ -2178,8 +2184,8 @@ function drilldownSpot(spotKey) {
         root.setProperty('--hero-rank-size', Math.round(cardW * 0.52) + 'px');
         root.setProperty('--hero-suit-size', Math.round(cardW * 0.42) + 'px');
         root.setProperty('--card-gap', Math.round(cardW * 0.2) + 'px');
-        // Hint text
-        root.setProperty('--hint-size', Math.max(12, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.038 : 0.018))) + 'px');
+        // Hint text — also drives _renderSpotHeader title via CSS var
+        root.setProperty('--hint-size', Math.max(13, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.050 : 0.024))) + 'px');
         // Community cards (postflop)
         const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.09 : 0.065)));
         root.setProperty('--cc-w', ccW + 'px');

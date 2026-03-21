@@ -3161,12 +3161,12 @@ function _renderSpotHeader(eyebrow, contextLine, accentColor) {
             title = '';
         }
 
-        const badgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:10px;font-weight:900;letter-spacing:.08em;white-space:nowrap;">${badge}</span>`;
+        const badgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:calc(var(--hint-size,14px) * 0.73);font-weight:900;letter-spacing:.08em;white-space:nowrap;">${badge}</span>`;
         const titleHtml = title
-            ? `<div style="color:#f1f5f9;font-size:15px;font-weight:900;letter-spacing:-.01em;line-height:1.2;margin-top:3px;">${title}</div>`
+            ? `<div style="color:#f1f5f9;font-size:var(--hint-size,16px);font-weight:900;letter-spacing:-.01em;line-height:1.2;margin-top:3px;">${title}</div>`
             : '';
         const contextHtml = contextLine
-            ? `<div style="color:#64748b;font-size:10px;font-weight:600;margin-top:2px;line-height:1.4;">${contextLine}</div>`
+            ? `<div style="color:#64748b;font-size:calc(var(--hint-size,14px) * 0.73);font-weight:600;margin-top:2px;line-height:1.4;">${contextLine}</div>`
             : '';
 
         el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;">${badgeHtml}</div>${titleHtml}${contextHtml}`;
