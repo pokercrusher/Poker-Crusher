@@ -841,8 +841,10 @@ function renderPotBadge(betsLayer, total$) {
     // Position in the gap between the left side-seats (left ~3-12%) and the
     // community cards (centered at left:50%). left:22% sits comfortably in that
     // gap on both desktop and mobile. Vertically aligned with the card row (top:50%).
-    const potLeft = isMob ? 21 : 22;
-    const potTop  = 50;
+    // Mobile: community cards moved to strip below felt, so felt center is free.
+    // Center the pot badge at 50% to sit naturally in the now-open felt.
+    const potLeft = isMob ? 50 : 22;
+    const potTop  = isMob ? 48 : 50;
     const badge = document.createElement('div');
     badge.id = 'pot-badge';
     badge.className = 'absolute z-35 pointer-events-none flex flex-col items-center gap-0.5';
@@ -2241,8 +2243,9 @@ function drilldownSpot(spotKey) {
         // observed table-wrapper, so using it here creates a feedback loop:
         // bigger hint → taller hint-row → shorter wrapper → smaller feltW → different hint → repeat.
         root.setProperty('--hint-size', Math.max(13, Math.round(winW * (isMobile ? 0.050 : 0.017))) + 'px');
-        // Community cards (postflop)
-        const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.09 : 0.065)));
+        // Community cards (postflop) — on mobile cards live in the strip below the felt,
+        // so they have more horizontal room and can be sized a bit larger.
+        const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.13 : 0.065)));
         root.setProperty('--cc-w', ccW + 'px');
         root.setProperty('--cc-h', Math.round(ccW * 1.38) + 'px');
         root.setProperty('--cc-rank-size', Math.round(ccW * 0.4) + 'px');

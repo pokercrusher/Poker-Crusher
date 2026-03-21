@@ -3171,13 +3171,32 @@ function showDefenderFeedback(spot, result) {
     });
 }
 
+function _renderCardRow(container, cards){
+    cards.forEach((c,i)=>{ const color=flopSuitColor(c.suit); const el=document.createElement('div'); el.className='card-display'; el.style.cssText=`width:var(--cc-w,42px);height:var(--cc-h,58px);display:flex;flex-direction:column;align-items:center;justify-content:center;animation:ccDeal 0.25s ease-out both;animation-delay:${i*0.12}s;`; el.innerHTML=`<div style="font-size:var(--cc-rank-size,16px);font-weight:900;color:${color};line-height:1;">${c.rank}</div><div style="font-size:var(--cc-suit-size,14px);color:${color};line-height:1;">${SUIT_SYMBOLS[c.suit]}</div>`; container.appendChild(el); });
+}
 function renderCommunityCards(cards){
+    const isMob = typeof SEAT_COORDS !== 'undefined' && typeof SEAT_COORDS_MOBILE !== 'undefined' && SEAT_COORDS === SEAT_COORDS_MOBILE;
+    if (isMob) {
+        // Clear any stale felt cards
+        const feltCc = document.getElementById('community-cards'); if (feltCc) feltCc.innerHTML = '';
+        // Render into the dedicated strip below the felt
+        const strip = document.getElementById('community-cards-strip'); if (!strip) return;
+        strip.innerHTML = ''; strip.classList.remove('hidden');
+        _renderCardRow(strip, cards);
+        return;
+    }
+    // Desktop: render inside felt
     let cc=document.getElementById('community-cards');
     if(!cc){ const felt=document.getElementById('poker-felt-container'); if(!felt) return; cc=document.createElement('div'); cc.id='community-cards'; cc.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;gap:clamp(3px,0.8vw,8px);z-index:25;pointer-events:none;'; felt.appendChild(cc); }
     cc.innerHTML='';
-    cards.forEach((c,i)=>{ const color=flopSuitColor(c.suit); const el=document.createElement('div'); el.className='card-display'; el.style.cssText=`width:var(--cc-w,42px);height:var(--cc-h,58px);display:flex;flex-direction:column;align-items:center;justify-content:center;animation:ccDeal 0.25s ease-out both;animation-delay:${i*0.12}s;`; el.innerHTML=`<div style="font-size:var(--cc-rank-size,16px);font-weight:900;color:${color};line-height:1;">${c.rank}</div><div style="font-size:var(--cc-suit-size,14px);color:${color};line-height:1;">${SUIT_SYMBOLS[c.suit]}</div>`; cc.appendChild(el); });
+    _renderCardRow(cc, cards);
 }
-function clearCommunityCards(){ const cc=document.getElementById('community-cards'); if(cc) cc.innerHTML=''; const fi=document.getElementById('flop-info-line'); if(fi) fi.classList.add('hidden'); const tc=document.getElementById('turn-context-line'); if(tc){ tc.classList.add('hidden'); tc.innerHTML=''; } }
+function clearCommunityCards(){
+    const cc=document.getElementById('community-cards'); if(cc) cc.innerHTML='';
+    const strip=document.getElementById('community-cards-strip'); if(strip){ strip.innerHTML=''; strip.classList.add('hidden'); }
+    const fi=document.getElementById('flop-info-line'); if(fi) fi.classList.add('hidden');
+    const tc=document.getElementById('turn-context-line'); if(tc){ tc.classList.add('hidden'); tc.innerHTML=''; }
+}
 
 // --- Turn context UI layer ---
 // _renderSpotHeader: unified trainer header for ALL scenarios.
