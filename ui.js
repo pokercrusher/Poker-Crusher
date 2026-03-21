@@ -2132,9 +2132,17 @@ function drilldownSpot(spotKey) {
             if (tableWrapper.style.alignItems === 'flex-end') tableWrapper.style.alignItems = '';
         }
 
-        // On mobile portrait, use window height as the reference for UI elements
-        // outside the felt (buttons, cards, header) since feltH is tiny (~170px)
-        const refH = (isMobile && isPortrait) ? winH : feltH;
+        // outerW / outerH: stable proxy dimensions for elements OUTSIDE table-wrapper
+        // (hero cards, action buttons, toast spacer).  Derived from winW/winH only —
+        // never from feltW/feltH — so that CSS vars computed from these cannot trigger
+        // a new ResizeObserver callback.  Without this, the felt can enter a
+        // height-constrained regime (feltW = wrapperH * ratio) where any
+        // felt-derived variable that affects sibling heights creates a closed loop.
+        // On mobile, feltW is always width-constrained (maxHeight = feltH*1.06 proof),
+        // so using feltW/feltH there is safe and gives accurate sizing.
+        const outerW = isMobile ? feltW : Math.round(Math.min(winW * 0.88, 1150));
+        const outerH = isMobile ? feltH : Math.round(Math.min(winH * 0.56, outerW / (isMobile ? 2.0 : 2.4)));
+        const refH = (isMobile && isPortrait) ? winH : outerH;
 
         // Switch seat coordinate set based on screen size
         SEAT_COORDS = isMobile ? SEAT_COORDS_MOBILE : SEAT_COORDS_DESKTOP;
@@ -2168,7 +2176,7 @@ function drilldownSpot(spotKey) {
         root.setProperty('--chip-size', chipSize + 'px');
         root.setProperty('--chip-font', Math.max(8, Math.round(chipSize * 0.6)) + 'px');
         // Toast — size relative to window width on mobile, felt on desktop
-        const toastFont = Math.max(13, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.038 : 0.016)));
+        const toastFont = Math.max(13, Math.round((isMobile ? winW : outerW) * (isMobile ? 0.038 : 0.016)));
         const toastH = Math.round(toastFont * 2.6);
         root.setProperty('--toast-font', toastFont + 'px');
         root.setProperty('--toast-pad-x', Math.round(toastFont * 0.9) + 'px');
@@ -2184,7 +2192,7 @@ function drilldownSpot(spotKey) {
         // Hero cards — scale off window height on mobile portrait
         const cardScale = isMobile ? 0.17 : 0.09;
         const cardHScale = isMobile ? (isPortrait ? 0.11 : 0.48) : 0.35;
-        const cardW = Math.max(52, Math.round(Math.min(feltW * cardScale, refH * cardHScale)));
+        const cardW = Math.max(52, Math.round(Math.min(outerW * cardScale, refH * cardHScale)));
         const cardH = Math.round(cardW * 1.5);
         root.setProperty('--hero-card-w', cardW + 'px');
         root.setProperty('--hero-card-h', cardH + 'px');
@@ -2204,7 +2212,7 @@ function drilldownSpot(spotKey) {
         root.setProperty('--cc-suit-size', Math.round(ccW * 0.32) + 'px');
         // Action buttons — scale off window height on mobile portrait
         const btnPad = Math.max(14, Math.round(refH * (isMobile ? 0.047 : 0.06)));
-        const btnFont = Math.max(15, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.041 : 0.022)));
+        const btnFont = Math.max(15, Math.round((isMobile ? winW : outerW) * (isMobile ? 0.041 : 0.022)));
         root.setProperty('--btn-pad', btnPad + 'px');
         root.setProperty('--btn-font', btnFont + 'px');
         root.setProperty('--btn-max-w', Math.min(640, Math.round(feltW * 0.95)) + 'px');
