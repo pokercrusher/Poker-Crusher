@@ -249,11 +249,12 @@ function saveCloudSettings(obj) {
     try { localStorage.setItem(PC_CLOUD_SETTINGS_KEY, JSON.stringify(obj || {})); } catch(e) {}
 }
 function hydrateCloudUI() {
-    const cs = loadCloudSettings();
-    const u = document.getElementById('cloud-username');
-    const c = document.getElementById('cloud-code');
-    if (u && typeof cs.username === 'string') u.value = cs.username;
-    if (c && typeof cs.code === 'string') c.value = cs.code;
+    // Legacy — kept for backward compat, delegates to auth UI
+    hydrateAuthUI();
+}
+function hydrateAuthUI() {
+    _updateAuthUI(getCurrentUser());
+    hydrateCloudAutoUI();
 }
 
 
@@ -310,23 +311,17 @@ function markCloudDirty() {
 }
 
 async function cloudSaveSilent() {
-    // Uses stored settings; no UI required; no toasts.
-    const cs = loadCloudSettings();
-    const username = (cs && cs.username) ? String(cs.username) : '';
-    const code = (cs && cs.code) ? String(cs.code) : '';
-
-    if (!username) return false;
-    if (!initCloud(true)) return false;
-
-    const docId = await getCloudDocId(username, code);
-    if (!docId) return false;
+    const user = getCurrentUser();
+    if (!user) return false;
+    if (!window.PokerCrusherCloud) return false;
 
     const payload = buildTrainerPayloadForSync();
     payload.cloudSavedAt = new Date().toISOString();
 
     try {
-        await window.PokerCrusherCloud.save(docId, payload);
-        try { localStorage.setItem('pc_last_cloud_autosave_at', new Date().toISOString()); } catch(e) {}
+        await window.PokerCrusherCloud.save(user.uid, payload);
+        try { localStorage.setItem('pc_last_cloud_sync_at', new Date().toISOString()); } catch(e) {}
+        _refreshLastSyncUI();
         return true;
     } catch (e) {
         console.warn('Cloud autosave error:', e);
@@ -336,7 +331,7 @@ async function cloudSaveSilent() {
 
 function startCloudAutosaveLoop(forceRestart=false) {
     const prefs = getCloudAutoPrefs();
-    if (!prefs.enabled) {
+    if (!prefs.enabled || !getCurrentUser()) {
         if (_pcCloudAutosaveTimer) { clearInterval(_pcCloudAutosaveTimer); _pcCloudAutosaveTimer = null; }
         return;
     }
@@ -446,31 +441,16 @@ function applyTrainerPayload(payload) {
 }
 
 
-async function cloudSaveNow() {
-    const uEl = document.getElementById('cloud-username');
-    const cEl = document.getElementById('cloud-code');
-    const username = uEl ? uEl.value : '';
-    const code = cEl ? cEl.value : '';
-
-    saveCloudSettings({ username, code });
-
-    if (!initCloud()) return;
-
-    const docId = await getCloudDocId(username, code);
-    if (!docId) { showToast('Enter a username', 'incorrect', 1600); return; }
-
-    const payload = buildTrainerPayloadForSync();
-    payload.cloudSavedAt = new Date().toISOString();
-
-    try {
-        showToast('Saving to cloud...', 'correct', 900);
-        await window.PokerCrusherCloud.save(docId, payload);
-        showToast('Saved to cloud', 'correct', 1400);
-    } catch (e) {
-        console.warn('Cloud save error:', e);
-        showToast('Cloud save failed', 'incorrect', 2200);
-    }
+async function cloudSyncNow() {
+    const user = getCurrentUser();
+    if (!user) { showToast('Sign in to sync', 'incorrect', 1800); return; }
+    showToast('Syncing...', 'correct', 800);
+    const ok = await cloudSaveSilent();
+    if (ok) { showToast('Synced to cloud', 'correct', 1600); _refreshLastSyncUI(); }
+    else showToast('Sync failed — check connection', 'incorrect', 2200);
 }
+// Legacy alias kept for any residual onclick references
+async function cloudSaveNow() { return cloudSyncNow(); }
 
 async function cloudLoadNow() {
     const uEl = document.getElementById('cloud-username');
@@ -510,11 +490,11 @@ async function cloudLoadNow() {
     }
 }
 
-// Populate fields when Settings opens
+// Populate auth UI when Settings opens
 const _oldShowSettings = window.showSettings;
 window.showSettings = function() {
     try { if (_oldShowSettings) _oldShowSettings(); } catch(e) {}
-    setTimeout(hydrateCloudUI, 50);
+    setTimeout(hydrateAuthUI, 50);
 };
 
 
@@ -1096,3 +1076,114 @@ function renderUserStats() {
 
     document.getElementById('stats-body').innerHTML = html;
 }
+
+// ============================================================
+// FIREBASE AUTH — Google sign-in, auto-sync, account UI
+// ============================================================
+
+function getCurrentUser() {
+    if (!window.PokerCrusherCloud || typeof window.PokerCrusherCloud.getCurrentUser !== 'function') return null;
+    return window.PokerCrusherCloud.getCurrentUser();
+}
+
+async function signInWithGoogle() {
+    if (!window.PokerCrusherCloud) { showToast('Cloud not ready — try again in a moment', 'incorrect', 2000); return; }
+    try {
+        await window.PokerCrusherCloud.signInWithGoogle();
+        // Auth state listener handles everything after this
+    } catch(e) {
+        if (e && e.code !== 'auth/popup-closed-by-user') {
+            console.warn('[PC] Sign-in error:', e);
+            showToast('Sign in failed', 'incorrect', 2000);
+        }
+    }
+}
+
+async function signOutCloud() {
+    if (!window.PokerCrusherCloud) return;
+    try {
+        await window.PokerCrusherCloud.signOut();
+        // Auth state listener fires with null and updates UI
+    } catch(e) {
+        console.warn('[PC] Sign-out error:', e);
+    }
+}
+
+async function _handleAuthStateChange(user) {
+    _updateAuthUI(user);
+    if (user) {
+        try {
+            const cloudData = await window.PokerCrusherCloud.load(user.uid);
+            const hasCloudData = cloudData && cloudData.data && Object.keys(cloudData.data).length > 0;
+
+            if (!hasCloudData) {
+                // First sign-in — push local data up so it's immediately safe
+                await cloudSaveSilent();
+                showToast('Signed in · Progress backed up', 'correct', 2200);
+            } else {
+                // Compare timestamps: take the newer copy
+                const cloudMs = cloudData.cloudSavedAt ? new Date(cloudData.cloudSavedAt).getTime() : 0;
+                const localMs = (() => { try { const t = localStorage.getItem('pc_last_cloud_sync_at'); return t ? new Date(t).getTime() : 0; } catch(e) { return 0; } })();
+
+                if (cloudMs > localMs + 30000) {
+                    // Cloud is meaningfully newer — load it
+                    const ok = applyTrainerPayload(cloudData);
+                    if (ok) {
+                        showToast('Signed in · Syncing latest progress…', 'correct', 1800);
+                        setTimeout(() => location.reload(), 600);
+                        return; // Don't start loop — page is reloading
+                    }
+                } else {
+                    // Local is newer or same — push up
+                    await cloudSaveSilent();
+                    showToast('Signed in · Progress synced', 'correct', 2000);
+                }
+            }
+        } catch(e) {
+            console.warn('[PC] Auth sync error:', e);
+            showToast('Signed in · Sync unavailable', 'incorrect', 2000);
+        }
+        startCloudAutosaveLoop();
+    } else {
+        // Signed out — kill the loop
+        if (_pcCloudAutosaveTimer) { clearInterval(_pcCloudAutosaveTimer); _pcCloudAutosaveTimer = null; }
+    }
+}
+
+function _updateAuthUI(user) {
+    const signedOut = document.getElementById('auth-signed-out');
+    const signedIn  = document.getElementById('auth-signed-in');
+    const emailEl   = document.getElementById('auth-user-email');
+    const avatarEl  = document.getElementById('auth-user-avatar');
+
+    if (user) {
+        if (signedOut) signedOut.classList.add('hidden');
+        if (signedIn)  signedIn.classList.remove('hidden');
+        if (emailEl)   emailEl.textContent = user.email || user.displayName || 'Signed in';
+        if (avatarEl)  { avatarEl.src = user.photoURL || ''; avatarEl.style.display = user.photoURL ? '' : 'none'; }
+        _refreshLastSyncUI();
+    } else {
+        if (signedOut) signedOut.classList.remove('hidden');
+        if (signedIn)  signedIn.classList.add('hidden');
+    }
+}
+
+function _refreshLastSyncUI() {
+    const el = document.getElementById('auth-last-sync');
+    if (!el) return;
+    try {
+        const t = localStorage.getItem('pc_last_cloud_sync_at');
+        if (!t) { el.textContent = 'Not yet synced'; return; }
+        const secs = Math.round((Date.now() - new Date(t).getTime()) / 1000);
+        if (secs < 10)   el.textContent = 'Synced just now';
+        else if (secs < 3600) el.textContent = `Synced ${Math.round(secs / 60)}m ago`;
+        else el.textContent = `Synced ${Math.round(secs / 3600)}h ago`;
+    } catch(e) { el.textContent = ''; }
+}
+
+// Wire auth listener once Firebase finishes its async init
+window.addEventListener('pcCloudReady', function _onPcCloudReady() {
+    window.removeEventListener('pcCloudReady', _onPcCloudReady);
+    if (!window.PokerCrusherCloud || typeof window.PokerCrusherCloud.onAuthStateChanged !== 'function') return;
+    window.PokerCrusherCloud.onAuthStateChanged(_handleAuthStateChange);
+});
