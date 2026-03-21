@@ -1692,7 +1692,7 @@ function formatSpotLabel(rawSpotId) {
     if (rawSpotId === '1L' || rawSpotId === '2L' || rawSpotId === '3P') return '';
     return POS_LABELS[clean] || clean;
 }
-const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet' };
+const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense' };
 const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
 
 function showSessionLog() {
@@ -1753,7 +1753,8 @@ function logRowChart(idx) {
     if (e.scenario === 'POSTFLOP_CBET' || e.scenario === 'POSTFLOP_DEFEND' ||
         e.scenario === 'POSTFLOP_TURN_CBET' || e.scenario === 'POSTFLOP_TURN_DEFEND' ||
         e.scenario === 'POSTFLOP_TURN_DELAYED_CBET' ||
-        e.scenario === 'POSTFLOP_TURN_PROBE' || e.scenario === 'POSTFLOP_TURN_PROBE_DEFEND') {
+        e.scenario === 'POSTFLOP_TURN_PROBE' || e.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' ||
+        e.scenario === 'POSTFLOP_RIVER_CBET' || e.scenario === 'POSTFLOP_RIVER_DEFEND') {
         hideSessionLog();
         const logSpot = {
             heroPos: e.pos,
@@ -1803,6 +1804,20 @@ function logRowChart(idx) {
             logSpot.turnFamily = e.turnFamily || null;
             logSpot.flopArchetype = e.archetype || '';
             showTurnProbeDefendFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_CBET' && typeof showRiverCBetFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverCBetFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_DEFEND' && typeof showRiverDefenderFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverDefenderFeedback(logSpot, logResult);
         } else {
             showPostflopFeedback(logSpot, logResult, e.correct);
         }
