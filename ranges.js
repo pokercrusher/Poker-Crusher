@@ -5324,3 +5324,160 @@ function scoreRiverDefenderAction(playerAction, strategy, spot) {
 
     return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
 }
+
+// =============================================================================
+// POSTFLOP_RIVER_DELAYED
+// Line: Flop check-through | Turn delayed bet (called) | River barrel or check
+// Pot size: 2.0x flop SRP pot
+// =============================================================================
+
+function makeRiverDelayedCBetSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|PFR|' + spot.positionState + '|RIVER_DELAYED_CBET_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_DELAYED_STRATEGY = {};
+(function() {
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.94 },
+        QUADS:          { _default: 0.92 },
+        FULL_HOUSE:     { _default: 0.91, FLUSH_COMPLETE: 0.86, STRAIGHT_COMPLETE: 0.84 },
+        FLUSH:          { _default: 0.88, FLUSH_COMPLETE: 0.80 },
+        STRAIGHT:       { _default: 0.82 },
+        SET:            { _default: 0.88, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.72 },
+        TRIPS:          { _default: 0.82, FLUSH_COMPLETE: 0.68, STRAIGHT_COMPLETE: 0.64, BOARD_PAIR: 0.78, ACE_OVERCARD: 0.72, BROADWAY_OVERCARD: 0.74 },
+        BOARD_TRIPS:    { _default: 0.44, BRICK: 0.50, LOW_BLANK: 0.52, FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.24, ACE_OVERCARD: 0.34, BROADWAY_OVERCARD: 0.38, BOARD_PAIR: 0.40, OVERCARD: 0.36 },
+        TWO_PAIR:       { _default: 0.74, FLUSH_COMPLETE: 0.58, STRAIGHT_COMPLETE: 0.55, ACE_OVERCARD: 0.64 },
+        OVERPAIR:       { _default: 0.58, ACE_OVERCARD: 0.20, FLUSH_COMPLETE: 0.42, STRAIGHT_COMPLETE: 0.38, BROADWAY_OVERCARD: 0.46, OVERCARD: 0.44, BOARD_PAIR: 0.54, DYNAMIC_CONNECTOR: 0.50 },
+        TOP_PAIR:       { _default: 0.44, BRICK: 0.50, LOW_BLANK: 0.52, ACE_OVERCARD: 0.24, FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.25, BROADWAY_OVERCARD: 0.34, OVERCARD: 0.32, BOARD_PAIR: 0.40, DYNAMIC_CONNECTOR: 0.38 },
+        SECOND_PAIR:    { _default: 0.18, BRICK: 0.22, LOW_BLANK: 0.25, ACE_OVERCARD: 0.09, FLUSH_COMPLETE: 0.09, STRAIGHT_COMPLETE: 0.07 },
+        THIRD_PAIR:     { _default: 0.09, BRICK: 0.12, FLUSH_COMPLETE: 0.04 },
+        UNDERPAIR:      { _default: 0.10, BRICK: 0.13, FLUSH_COMPLETE: 0.04 },
+        ACE_HIGH:       { _default: 0.38, BRICK: 0.43, LOW_BLANK: 0.45, ACE_OVERCARD: 0.20, FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.15, BROADWAY_OVERCARD: 0.30, OVERCARD: 0.25, BOARD_PAIR: 0.30 },
+        OVERCARDS:      { _default: 0.22, BRICK: 0.26, LOW_BLANK: 0.28, ACE_OVERCARD: 0.10, FLUSH_COMPLETE: 0.09, STRAIGHT_COMPLETE: 0.07 },
+        AIR:            { _default: 0.20, BRICK: 0.24, LOW_BLANK: 0.26, ACE_OVERCARD: 0.08, FLUSH_COMPLETE: 0.07, STRAIGHT_COMPLETE: 0.05, BROADWAY_OVERCARD: 0.14 }
+    };
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.84 },
+        QUADS:          { _default: 0.82 },
+        FULL_HOUSE:     { _default: 0.81, FLUSH_COMPLETE: 0.74, STRAIGHT_COMPLETE: 0.72 },
+        FLUSH:          { _default: 0.78, FLUSH_COMPLETE: 0.70 },
+        STRAIGHT:       { _default: 0.72 },
+        SET:            { _default: 0.78, FLUSH_COMPLETE: 0.64, STRAIGHT_COMPLETE: 0.60 },
+        TRIPS:          { _default: 0.70, FLUSH_COMPLETE: 0.56, STRAIGHT_COMPLETE: 0.52, BOARD_PAIR: 0.68, ACE_OVERCARD: 0.60, BROADWAY_OVERCARD: 0.62 },
+        BOARD_TRIPS:    { _default: 0.32, BRICK: 0.38, LOW_BLANK: 0.40, FLUSH_COMPLETE: 0.18, STRAIGHT_COMPLETE: 0.15, ACE_OVERCARD: 0.24, BROADWAY_OVERCARD: 0.28, OVERCARD: 0.26, BOARD_PAIR: 0.30 },
+        TWO_PAIR:       { _default: 0.62, FLUSH_COMPLETE: 0.46, STRAIGHT_COMPLETE: 0.44, ACE_OVERCARD: 0.54 },
+        OVERPAIR:       { _default: 0.45, ACE_OVERCARD: 0.14, FLUSH_COMPLETE: 0.30, STRAIGHT_COMPLETE: 0.26, BROADWAY_OVERCARD: 0.33, OVERCARD: 0.30, BOARD_PAIR: 0.40, DYNAMIC_CONNECTOR: 0.36 },
+        TOP_PAIR:       { _default: 0.33, BRICK: 0.39, LOW_BLANK: 0.41, ACE_OVERCARD: 0.16, FLUSH_COMPLETE: 0.17, STRAIGHT_COMPLETE: 0.15, BROADWAY_OVERCARD: 0.22, OVERCARD: 0.20, BOARD_PAIR: 0.28, DYNAMIC_CONNECTOR: 0.25 },
+        SECOND_PAIR:    { _default: 0.11, BRICK: 0.15, FLUSH_COMPLETE: 0.05 },
+        THIRD_PAIR:     { _default: 0.06 },
+        UNDERPAIR:      { _default: 0.07 },
+        ACE_HIGH:       { _default: 0.26, BRICK: 0.32, LOW_BLANK: 0.35, FLUSH_COMPLETE: 0.12 },
+        OVERCARDS:      { _default: 0.14, BRICK: 0.18, FLUSH_COMPLETE: 0.06 },
+        AIR:            { _default: 0.12, BRICK: 0.16, LOW_BLANK: 0.18, FLUSH_COMPLETE: 0.04 }
+    };
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush slow-played through flop -- ultimate value bet on river.',
+        QUADS:          'Quads slow-played -- extract max value on river.',
+        FULL_HOUSE:     'Full house slow-played through flop -- bet for full value.',
+        FLUSH:          'Flush slow-played -- bet for value now.',
+        STRAIGHT:       'Straight slow-played -- bet for value.',
+        SET:            'Set slow-played flop, bet turn -- extract full value on river.',
+        TRIPS:          'Trips -- strong enough to barrel the river for value.',
+        BOARD_TRIPS:    'Board trips -- marginal value. Bet selectively on safe rivers.',
+        TWO_PAIR:       'Two pair -- barrel for value on blank rivers.',
+        OVERPAIR:       'Overpair -- villain range is strong after flop check-through. Be selective on 2nd barrel.',
+        TOP_PAIR:       'Top pair -- thin value only on pure blank rivers. Villain is uncapped.',
+        SECOND_PAIR:    'Second pair -- check. Villain has too many strong hands after flop check-through.',
+        THIRD_PAIR:     'Third pair -- check. No value on river.',
+        UNDERPAIR:      'Underpair -- check. No value on river.',
+        ACE_HIGH:       'Ace-high -- bluff only on perfect runouts. Villain range is strong after calling delayed c-bet.',
+        OVERCARDS:      'Overcards -- give up mostly. Villain uncapped range makes bluffing very thin.',
+        AIR:            'Air -- check. Villain is too strong after surviving flop check-through.'
+    };
+    const FAMILY_OFF = { BTN_vs_BB: 0, CO_vs_BB: -0.03, HJ_vs_BB: -0.02, LJ_vs_BB: -0.01, UTG_vs_BB: 0.02, BTN_vs_SB: 0.02, SB_vs_BB: 0, CO_vs_BTN: -0.03 };
+    for (const fam of HERO_HAND_AWARE_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[rf] !== undefined) ? baseFreqs[rf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeRiverDelayedCBetSpotKeyV1({ preflopFamily: fam, positionState: fi.positionState, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_DELAYED_STRATEGY[sk] = { actions: { check: chk, bet50: bet }, preferredAction: preferred, reasoning: REASONING[hc] || '', simplification: 'Phase 3: River Barrel -- Delayed Line (50% pot)' };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) { console.log('[RiverDelayed] Built ' + Object.keys(POSTFLOP_RIVER_DELAYED_STRATEGY).length + ' delayed river strategy entries.'); }
+})();
+
+function scoreRiverDelayedAction(playerAction, strategy, spot) { return scoreRiverAction(playerAction, strategy, spot); }
+
+function generateRiverDelayedCBetSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+            positionState: fs.positionState, nodeType: 'RIVER_DELAYED_CBET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_DELAYED_CBET', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverDelayedCBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_DELAYED_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[RiverDelayed] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }], turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }], riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+        positionState: fsFB.positionState, nodeType: 'RIVER_DELAYED_CBET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_DELAYED_CBET', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverDelayedCBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_DELAYED_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
