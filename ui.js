@@ -1682,6 +1682,35 @@ function updateMenuUI() {
         }
     } catch(_) {}
 
+    // Challenge progress label under Challenge Mode button
+    try {
+        const cpEl = document.getElementById('menu-challenge-progress');
+        if (cpEl && typeof CHALLENGE_NODES !== 'undefined' && typeof getChallengeProgress === 'function') {
+            const prog = getChallengeProgress();
+            const done = CHALLENGE_NODES.filter(n => isNodePassed(prog, n.id)).length;
+            if (done > 0) {
+                let label = '';
+                if (prog.completedAt) {
+                    label = 'Poker Crusher Champion \uD83C\uDFC6 \u00B7 ' + done + '/' + CHALLENGE_NODES.length + ' nodes';
+                } else {
+                    // Highest cleared tier's playerLabel
+                    let playerLabel = '';
+                    for (let i = CHALLENGE_TIERS.length - 1; i >= 0; i--) {
+                        if (_allTierNodesPassed(prog, CHALLENGE_TIERS[i].id)) {
+                            playerLabel = CHALLENGE_TIERS[i].playerLabel;
+                            break;
+                        }
+                    }
+                    label = (playerLabel ? playerLabel + ' \u00B7 ' : '') + done + '/' + CHALLENGE_NODES.length + ' nodes';
+                }
+                cpEl.textContent = label;
+                cpEl.classList.remove('hidden');
+            } else {
+                cpEl.classList.add('hidden');
+            }
+        }
+    } catch(_) {}
+
     // Prescription card
     renderPrescriptionCard();
 }

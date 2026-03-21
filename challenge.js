@@ -7,15 +7,15 @@
 // TIER DEFINITIONS
 // ============================================================
 const CHALLENGE_TIERS = [
-    { id: 'T1', name: 'Opening Fundamentals', icon: '\u2660', color: 'indigo' },
-    { id: 'T2', name: 'Defending',            icon: '\uD83D\uDEE1', color: 'blue' },
-    { id: 'T3', name: 'Facing 3-Bets',        icon: '\u2694', color: 'purple' },
-    { id: 'T4', name: 'Limper Trees',          icon: '\uD83C\uDF33', color: 'teal' },
-    { id: 'T5', name: 'Squeeze Pressure',      icon: '\uD83D\uDCA5', color: 'orange' },
-    { id: 'T6', name: 'Postflop: Flop',        icon: '\uD83C\uDCCF', color: 'cyan' },
-    { id: 'T7', name: 'Postflop: Turn',        icon: '\uD83C\uDF00', color: 'sky' },
-    { id: 'T8', name: 'Integration Trials',    icon: '\uD83D\uDD25', color: 'rose' },
-    { id: 'T9', name: 'Boss',                  icon: '\uD83D\uDC51', color: 'amber' },
+    { id: 'T1', name: 'Opening Fundamentals', playerLabel: 'Recreational Player', icon: '\u2660', color: 'indigo' },
+    { id: 'T2', name: 'Defending',            playerLabel: 'Thinking Player',      icon: '\uD83D\uDEE1', color: 'blue' },
+    { id: 'T3', name: 'Facing 3-Bets',        playerLabel: '3-Bet Aware',          icon: '\u2694', color: 'purple' },
+    { id: 'T4', name: 'Limper Trees',          playerLabel: 'Multi-Way Grinder',   icon: '\uD83C\uDF33', color: 'teal' },
+    { id: 'T5', name: 'Squeeze Pressure',      playerLabel: 'Squeeze Artist',      icon: '\uD83D\uDCA5', color: 'orange' },
+    { id: 'T6', name: 'Postflop: Flop',        playerLabel: 'Flop Reader',         icon: '\uD83C\uDCCF', color: 'cyan' },
+    { id: 'T7', name: 'Postflop: Turn',        playerLabel: 'Turn Master',         icon: '\uD83C\uDF00', color: 'sky' },
+    { id: 'T8', name: 'Integration Trials',    playerLabel: 'GTO Aware',           icon: '\uD83D\uDD25', color: 'rose' },
+    { id: 'T9', name: 'Boss',                  playerLabel: 'Poker Crusher',       icon: '\uD83D\uDC51', color: 'amber' },
 ];
 
 // ============================================================
@@ -603,13 +603,29 @@ function renderChallengeComplete(total, correct, accuracy) {
     const medal = computeMedal(accuracy, thresholds);
     const passed = medal !== 'none';
 
-    // Call finishChallengeAttempt to record progress
+    // Snapshot tier state BEFORE recording so we can detect newly-cleared tiers
+    const nodeTier = node ? node.tier : null;
+    const progBefore = getChallengeProgress();
+    const tierWasCleared = nodeTier ? _allTierNodesPassed(progBefore, nodeTier) : false;
+
+    // Record progress
     try { finishChallengeAttempt(passed, accuracy); } catch(e) {}
 
-    // Determine what was previously best
-    const progress = getChallengeProgress();
-    const rec = progress.nodes[challengeState.nodeId] || {};
+    // Post-record state
+    const freshProg = getChallengeProgress();
+    const rec = freshProg.nodes[challengeState.nodeId] || {};
     const isNewBest = (accuracy === rec.bestAcc);
+    const tierNowCleared = nodeTier ? _allTierNodesPassed(freshProg, nodeTier) : false;
+    const isTierClear = passed && nodeTier && !tierWasCleared && tierNowCleared;
+    const tierObj = nodeTier ? CHALLENGE_TIERS.find(t => t.id === nodeTier) : null;
+
+    // Check for campaign completion (all nodes passed for first time)
+    const allDone = CHALLENGE_NODES.every(n => isNodePassed(freshProg, n.id));
+    const isFirstCampaignComplete = allDone && !progBefore.completedAt;
+    if (isFirstCampaignComplete) {
+        freshProg.completedAt = Date.now();
+        saveChallengeV2(freshProg);
+    }
 
     // Medal display
     let medalIcon, medalLabel, medalColor;
@@ -620,10 +636,16 @@ function renderChallengeComplete(total, correct, accuracy) {
 
     const accColor = accuracy >= thresholds.gold ? 'text-yellow-400' : accuracy >= thresholds.silver ? 'text-slate-200' : accuracy >= thresholds.pass ? 'text-emerald-400' : accuracy >= (thresholds.pass - 5) ? 'text-yellow-400' : 'text-rose-400';
 
-    // Find next unlock info
+    // Tier-clear banner (shown when this pass just completed a full tier)
+    const tierClearHtml = isTierClear && tierObj ? `
+        <div class="w-full mt-1 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-center">
+            <p class="text-amber-300 font-black text-sm">${tierObj.icon} Tier Clear — ${tierObj.name}</p>
+            <p class="text-amber-400/70 text-[11px] mt-0.5 font-bold">You are now: ${tierObj.playerLabel}</p>
+        </div>` : '';
+
+    // Unlock / pass / fail info
     let nextUnlockHtml = '';
-    if (passed) {
-        const freshProg = getChallengeProgress();
+    if (passed && !isTierClear) {
         const newlyUnlocked = CHALLENGE_NODES.filter(n => {
             if (isNodePassed(freshProg, n.id)) return false;
             return isNodeUnlocked(freshProg, n);
@@ -637,14 +659,14 @@ function renderChallengeComplete(total, correct, accuracy) {
                 <p class="text-[11px] text-emerald-300 text-center font-bold">Node complete \u2705</p>
             </div>`;
         }
-    } else {
+    } else if (!passed) {
         nextUnlockHtml = `<div class="w-full mt-1 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
             <p class="text-[11px] text-rose-300 text-center font-bold">Need ${thresholds.pass}% to pass — retry!</p>
         </div>`;
     }
 
     // Threshold bar
-    const threshBar = `<div class="flex items-center gap-2 w-full mt-2 text-[9px] font-bold">
+    const threshBar = `<div class="flex items-center justify-between w-full mt-2 text-[9px] font-bold">
         <span class="text-slate-500">Pass ${thresholds.pass}%</span>
         <span class="text-slate-400">Silver ${thresholds.silver}%</span>
         <span class="text-yellow-500">Gold ${thresholds.gold}%</span>
@@ -678,6 +700,7 @@ function renderChallengeComplete(total, correct, accuracy) {
             </div>
 
             ${threshBar}
+            ${tierClearHtml}
             ${nextUnlockHtml}
         </div>
 
@@ -689,6 +712,11 @@ function renderChallengeComplete(total, correct, accuracy) {
 
     document.getElementById('drill-complete-body').innerHTML = html;
     document.getElementById('drill-complete-screen').classList.remove('hidden');
+
+    // If campaign just completed, pop the celebration screen on top after a beat
+    if (isFirstCampaignComplete) {
+        setTimeout(() => showCampaignComplete(), 600);
+    }
 }
 
 // ============================================================
@@ -747,4 +775,60 @@ function retryChallenge() {
 
 function closeDrillCompleteScreenOnly() {
     document.getElementById('drill-complete-screen').classList.add('hidden');
+}
+
+// ============================================================
+// CAMPAIGN COMPLETE CELEBRATION
+// ============================================================
+function showCampaignComplete() {
+    const prog = getChallengeProgress();
+    let gold = 0, silver = 0, pass = 0;
+    CHALLENGE_NODES.forEach(n => {
+        const m = getNodeMedal(prog, n.id);
+        if (m === 'gold') gold++;
+        else if (m === 'silver') silver++;
+        else if (m === 'pass') pass++;
+    });
+    const total = CHALLENGE_NODES.length;
+    const completedDate = prog.completedAt ? new Date(prog.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+    const el = document.getElementById('campaign-complete-screen');
+    if (!el) return;
+
+    el.querySelector('#campaign-medal-counts').innerHTML = `
+        <div class="grid grid-cols-3 gap-4">
+            <div class="text-center">
+                <div class="text-3xl mb-1">\uD83E\uDD47</div>
+                <div class="text-2xl font-black text-yellow-400">${gold}</div>
+                <div class="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Gold</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl mb-1">\uD83E\uDD48</div>
+                <div class="text-2xl font-black text-slate-300">${silver}</div>
+                <div class="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Silver</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl mb-1">\u2705</div>
+                <div class="text-2xl font-black text-emerald-400">${pass}</div>
+                <div class="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Pass</div>
+            </div>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-700/40 text-center">
+            <span class="text-[10px] text-slate-500 font-bold">${total}/${total} nodes complete${completedDate ? ' · ' + completedDate : ''}</span>
+        </div>`;
+
+    el.classList.remove('hidden');
+}
+
+function closeCampaignComplete() {
+    const el = document.getElementById('campaign-complete-screen');
+    if (el) el.classList.add('hidden');
+    document.getElementById('drill-complete-screen').classList.add('hidden');
+    exitToChallenge();
+}
+
+function closeCampaignCompleteToMenu() {
+    const el = document.getElementById('campaign-complete-screen');
+    if (el) el.classList.add('hidden');
+    endChallengeToMenu();
 }

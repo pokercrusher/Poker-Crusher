@@ -557,9 +557,12 @@
                 <span>🔥</span><span>DAILY RUN</span>
             </button>
 
-            <button onclick="showChallengeMenu()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
-                <span>🏆</span><span>CHALLENGE MODE</span>
-            </button>
+            <div class="flex flex-col gap-1">
+                <button onclick="showChallengeMenu()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
+                    <span>🏆</span><span>CHALLENGE MODE</span>
+                </button>
+                <div id="menu-challenge-progress" class="hidden text-center text-[10px] text-emerald-400/60 font-bold py-0.5"></div>
+            </div>
             <button onclick="showLibrary()" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
                 STRATEGY LIBRARY
@@ -1175,6 +1178,23 @@
 })();
 </script>
 
+
+    <!-- CAMPAIGN COMPLETE SCREEN -->
+    <div id="campaign-complete-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl z-[80] flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-sm flex flex-col items-center gap-6 text-center">
+            <div class="text-7xl animate-bounce">&#127942;</div>
+            <div>
+                <p class="pc-eyebrow text-amber-400/80">Challenge Path Complete</p>
+                <h2 class="pc-title mt-1">Poker Crusher</h2>
+                <p class="text-slate-400 text-sm mt-2 leading-relaxed">You've mastered the complete GTO preflop + postflop system. You have a real edge at the table.</p>
+            </div>
+            <div id="campaign-medal-counts" class="w-full bg-slate-900/60 border border-amber-500/20 rounded-2xl p-5"></div>
+            <div class="flex flex-col gap-3 w-full">
+                <button onclick="closeCampaignComplete()" class="w-full py-4 pc-btn-primary transition-all">Back to Campaign</button>
+                <button onclick="closeCampaignCompleteToMenu()" class="w-full py-4 pc-btn-utility font-bold text-sm">Main Menu</button>
+            </div>
+        </div>
+    </div>
 
 </body>
 </html>
