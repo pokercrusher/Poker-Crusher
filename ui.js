@@ -2169,8 +2169,8 @@ function drilldownSpot(spotKey) {
             : header ? (header.getBoundingClientRect().bottom + 6) : 16;
         root.setProperty('--toast-top', toastTop + 'px');
         // Hero cards — scale off window height on mobile portrait
-        const cardScale = isMobile ? 0.17 : 0.09;
-        const cardHScale = isMobile ? (isPortrait ? 0.11 : 0.48) : 0.35;
+        const cardScale = isMobile ? 0.14 : 0.09;
+        const cardHScale = isMobile ? (isPortrait ? 0.09 : 0.48) : 0.35;
         const cardW = Math.max(52, Math.round(Math.min(feltW * cardScale, refH * cardHScale)));
         const cardH = Math.round(cardW * 1.5);
         root.setProperty('--hero-card-w', cardW + 'px');
@@ -2187,8 +2187,8 @@ function drilldownSpot(spotKey) {
         root.setProperty('--cc-rank-size', Math.round(ccW * 0.4) + 'px');
         root.setProperty('--cc-suit-size', Math.round(ccW * 0.32) + 'px');
         // Action buttons — scale off window height on mobile portrait
-        const btnPad = Math.max(14, Math.round(refH * (isMobile ? 0.055 : 0.06)));
-        const btnFont = Math.max(15, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.048 : 0.022)));
+        const btnPad = Math.max(14, Math.round(refH * (isMobile ? 0.047 : 0.06)));
+        const btnFont = Math.max(15, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.041 : 0.022)));
         root.setProperty('--btn-pad', btnPad + 'px');
         root.setProperty('--btn-font', btnFont + 'px');
         root.setProperty('--btn-max-w', Math.min(640, Math.round(feltW * 0.95)) + 'px');
@@ -2196,7 +2196,7 @@ function drilldownSpot(spotKey) {
         // NOTE: do NOT dynamically scale borderWidth here — changing the border shifts the
         // felt's content-box height (aspect-ratio applies to content box), which resizes
         // table-wrapper, which fires the ResizeObserver again → oscillation loop at 100% zoom.
-        const targetRatio = isMobile ? '2.8/1' : '2.4/1';
+        const targetRatio = isMobile ? '2.5/1' : '2.4/1';
         const feltEl = document.getElementById('poker-felt-container');
         if (feltEl && feltEl.style.aspectRatio !== targetRatio) feltEl.style.aspectRatio = targetRatio;
     }
@@ -2208,7 +2208,7 @@ function drilldownSpot(spotKey) {
             const wW = entry.contentRect.width;
             const wH = entry.contentRect.height;
             // Snap to integer pixels to prevent sub-pixel oscillation
-            const ratio = (window.innerWidth < 600) ? 2.8 : 2.4;
+            const ratio = (window.innerWidth < 600) ? 2.5 : 2.4;
             const newFeltW = Math.round(Math.min(wW, wH * ratio));
             // Only recompute if the felt width changed by at least 2px
             if (Math.abs(newFeltW - feltW) >= 2) {

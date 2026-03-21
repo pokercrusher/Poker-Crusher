@@ -3120,11 +3120,12 @@ function showDefenderFeedback(spot,result){
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">BB vs ${POS_LABELS[spot.villainPos]} c-bet · Defend</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
         ${heroSection}
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:${foldFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Fold ${foldFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:${callFreq}%"></div></div><div class="text-xs font-black text-emerald-400 w-12 text-right">Call ${callFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:${raiseFreq}%"></div></div><div class="text-xs font-black text-red-400 w-12 text-right">Raise ${raiseFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-600 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${foldFreq}"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Fold ${foldFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-2"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${callFreq}"></div></div><div class="text-xs font-black text-emerald-400 w-12 text-right">Call ${callFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-red-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${raiseFreq}"></div></div><div class="text-xs font-black text-red-400 w-12 text-right">Raise ${raiseFreq}%</div></div>
         <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
     modal.classList.remove('hidden');
+    requestAnimationFrame(() => { modal.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); });
 }
 
 function renderCommunityCards(cards){
@@ -3338,10 +3339,11 @@ function showPostflopFeedback(spot,result){
         <div class="flex items-center justify-between mb-3"><div class="text-xs font-black uppercase tracking-widest text-slate-400">${POS_LABELS[spot.heroPos]} vs ${POS_LABELS[spot.villainPos]} · ${spot.positionState}</div><button onclick="closePostflopFeedback()" class="text-slate-500 hover:text-white text-lg font-bold">✕</button></div>
         <div class="text-sm font-bold text-slate-200 mb-2">${flopHtml} <span class="text-slate-500 text-xs">(${archLabel})</span></div>
         ${heroSection}
-        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-orange-500 rounded-full" style="width:${betFreq}%"></div></div><div class="text-xs font-black text-orange-400 w-12 text-right">C-Bet ${betFreq}%</div></div>
-        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:${checkFreq}%"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Check ${checkFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-3"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-orange-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${betFreq}"></div></div><div class="text-xs font-black text-orange-400 w-12 text-right">C-Bet ${betFreq}%</div></div>
+        <div class="flex gap-2 items-center mb-4"><div class="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden"><div class="h-full bg-slate-500 rounded-full" style="width:0%;transition:width 0.4s ease-out" data-w="${checkFreq}"></div></div><div class="text-xs font-black text-slate-400 w-12 text-right">Check ${checkFreq}%</div></div>
         <div class="text-xs text-slate-400 leading-relaxed">${result.reasoning || result.feedback || ''}</div></div>`;
     modal.classList.remove('hidden');
+    requestAnimationFrame(() => { modal.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); });
 }
 function closePostflopFeedback(){
     const m = document.getElementById('postflop-feedback-modal');
