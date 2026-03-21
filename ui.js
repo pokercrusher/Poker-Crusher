@@ -816,7 +816,7 @@ function getScenarioPot$(scenario) {
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 3.3);
         return Math.round((open$ * 2 + getSmallBlind$()) * 3.3);
     }
-    if (scenario === 'POSTFLOP_RIVER_DELAYED_CBET') {
+    if (scenario === 'POSTFLOP_RIVER_DELAYED_CBET' || scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND') {
         // Flop checked through (no growth) + turn 50% bet → river pot = 2.0x flop pot
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 2.0);
         return Math.round((open$ * 2 + getSmallBlind$()) * 2.0);
@@ -1699,7 +1699,7 @@ function formatSpotLabel(rawSpotId) {
     if (rawSpotId === '1L' || rawSpotId === '2L' || rawSpotId === '3P') return '';
     return POS_LABELS[clean] || clean;
 }
-const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed' };
+const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend' };
 const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
 
 function showSessionLog() {
@@ -1762,7 +1762,7 @@ function logRowChart(idx) {
         e.scenario === 'POSTFLOP_TURN_DELAYED_CBET' ||
         e.scenario === 'POSTFLOP_TURN_PROBE' || e.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' ||
         e.scenario === 'POSTFLOP_RIVER_CBET' || e.scenario === 'POSTFLOP_RIVER_DEFEND' ||
-        e.scenario === 'POSTFLOP_RIVER_DELAYED_CBET') {
+        e.scenario === 'POSTFLOP_RIVER_DELAYED_CBET' || e.scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND') {
         hideSessionLog();
         const logSpot = {
             heroPos: e.pos,
@@ -1833,6 +1833,13 @@ function logRowChart(idx) {
             logSpot.riverFamily = e.riverFamily || null;
             logSpot.flopArchetype = e.archetype || '';
             showRiverDelayedFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND' && typeof showRiverDelayedDefenderFeedback === 'function') {
+            logSpot.turnCard = e.turnCard || null;
+            logSpot.turnFamily = e.turnFamily || null;
+            logSpot.riverCard = e.riverCard || null;
+            logSpot.riverFamily = e.riverFamily || null;
+            logSpot.flopArchetype = e.archetype || '';
+            showRiverDelayedDefenderFeedback(logSpot, logResult);
         } else {
             showPostflopFeedback(logSpot, logResult, e.correct);
         }

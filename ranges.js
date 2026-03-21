@@ -5481,3 +5481,198 @@ function generateRiverDelayedCBetSpot(maxRetries, familyFilter) {
     spotFB.strategy = POSTFLOP_RIVER_DELAYED_STRATEGY[spotFB.spotKey] || null;
     return spotFB;
 }
+
+// =============================================================================
+// POSTFLOP_RIVER_DELAYED_DEFEND
+// Line: Flop check-through | Turn delayed bet (called) | River: BB faces barrel
+// Pot size: 2.0x flop SRP pot (same delayed-line pot as PFR side)
+// Key difference from standard RIVER_DEFEND: PFR checked flop → range is wider,
+// less polar, more bluffs → BB calls more, folds less vs this line.
+// =============================================================================
+
+function makeRiverDelayedDefendSpotKeyV1(spot) {
+    return 'SRP|' + spot.preflopFamily + '|RIVER|DEFENDER|OOP|RIVER_DELAYED_DEFEND_DECISION|' + spot.riverFamily + '|' + spot.heroHandClass;
+}
+
+const POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY = {};
+(function() {
+    // PFR checked flop → range is less nut-heavy → BB calls more, folds less, raises more with nuts
+    const BASE = {
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.06, raise: 0.94 } },
+        QUADS:          { _default: { fold: 0.00, call: 0.10, raise: 0.90 } },
+        FULL_HOUSE:     { _default: { fold: 0.00, call: 0.15, raise: 0.85 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.13, raise: 0.87 } },
+        FLUSH:          { _default: { fold: 0.00, call: 0.18, raise: 0.82 } },
+        STRAIGHT:       { _default: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        SET:            { _default: { fold: 0.00, call: 0.24, raise: 0.76 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.18, raise: 0.82 } },
+        TRIPS:          { _default: { fold: 0.00, call: 0.22, raise: 0.78 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.16, raise: 0.84 } },
+        BOARD_TRIPS:    { _default: { fold: 0.05, call: 0.74, raise: 0.21 },
+                          FLUSH_COMPLETE: { fold: 0.14, call: 0.70, raise: 0.16 },
+                          STRAIGHT_COMPLETE: { fold: 0.12, call: 0.72, raise: 0.16 } },
+        TWO_PAIR:       { _default: { fold: 0.00, call: 0.56, raise: 0.44 },
+                          FLUSH_COMPLETE: { fold: 0.03, call: 0.62, raise: 0.35 },
+                          STRAIGHT_COMPLETE: { fold: 0.04, call: 0.64, raise: 0.32 } },
+        OVERPAIR:       { _default: { fold: 0.00, call: 0.82, raise: 0.18 },
+                          ACE_OVERCARD: { fold: 0.00, call: 0.87, raise: 0.13 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.80, raise: 0.16 },
+                          STRAIGHT_COMPLETE: { fold: 0.07, call: 0.77, raise: 0.16 } },
+        TOP_PAIR:       { _default: { fold: 0.05, call: 0.85, raise: 0.10 },
+                          BRICK: { fold: 0.03, call: 0.88, raise: 0.09 },
+                          LOW_BLANK: { fold: 0.02, call: 0.89, raise: 0.09 },
+                          ACE_OVERCARD: { fold: 0.16, call: 0.76, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.18, call: 0.74, raise: 0.08 },
+                          STRAIGHT_COMPLETE: { fold: 0.20, call: 0.72, raise: 0.08 } },
+        SECOND_PAIR:    { _default: { fold: 0.40, call: 0.54, raise: 0.06 },
+                          BRICK: { fold: 0.30, call: 0.63, raise: 0.07 },
+                          FLUSH_COMPLETE: { fold: 0.54, call: 0.40, raise: 0.06 } },
+        THIRD_PAIR:     { _default: { fold: 0.58, call: 0.37, raise: 0.05 },
+                          BRICK: { fold: 0.48, call: 0.46, raise: 0.06 } },
+        UNDERPAIR:      { _default: { fold: 0.63, call: 0.31, raise: 0.06 },
+                          BRICK: { fold: 0.53, call: 0.41, raise: 0.06 } },
+        ACE_HIGH:       { _default: { fold: 0.58, call: 0.36, raise: 0.06 },
+                          BRICK: { fold: 0.46, call: 0.47, raise: 0.07 } },
+        OVERCARDS:      { _default: { fold: 0.68, call: 0.25, raise: 0.07 },
+                          BRICK: { fold: 0.55, call: 0.36, raise: 0.09 } },
+        AIR:            { _default: { fold: 0.78, call: 0.14, raise: 0.08 },
+                          BRICK: { fold: 0.65, call: 0.24, raise: 0.11 } }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — raise for maximum value.',
+        QUADS:          'Quads — raise for maximum value.',
+        FULL_HOUSE:     'Full house — raise; PFR checked flop so range is less polar.',
+        FLUSH:          'Made flush — raise; PFR\'s delayed line is less nut-heavy.',
+        STRAIGHT:       'Made straight — raise; PFR\'s range is capped by flop check.',
+        SET:            'Set — raise; PFR has fewer nutted hands on delayed line.',
+        TRIPS:          'Trips — raise; PFR\'s delayed triple-barrel is bluff-heavy.',
+        BOARD_TRIPS:    'Board trips — PFR checked flop; call down more liberally.',
+        TWO_PAIR:       'Two pair — raise or call; PFR\'s range is merged, not polar.',
+        OVERPAIR:       'Overpair — call; PFR is less polar, call wider than standard river.',
+        TOP_PAIR:       'Top pair — call; PFR\'s delayed line warrants wider defense.',
+        SECOND_PAIR:    'Second pair — call more vs delayed line; PFR has more missed draws.',
+        THIRD_PAIR:     'Third pair — lean fold, but PFR\'s delayed bluff frequency warrants some calls.',
+        UNDERPAIR:      'Underpair — lean fold; still facing a river barrel after turn bet.',
+        ACE_HIGH:       'Ace-high — call more vs delayed line; PFR has more bluffs.',
+        OVERCARDS:      'Overcards — thin; fold most, call some vs heavily bluffed delayed lines.',
+        AIR:            'No hand — fold; even a wider PFR range beats air.'
+    };
+
+    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+
+    for (const fam of DEFENDER_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const off = FAM_OFF[fam] || 0;
+
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const hcData = BASE[hc];
+                if (!hcData) continue;
+                const raw = hcData[rf] || hcData._default;
+                if (!raw) continue;
+
+                let fold  = Math.max(0, raw.fold - off);
+                let call  = raw.call + off * 0.5;
+                let raise = raw.raise + off * 0.5;
+                const total = fold + call + raise;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+
+                const sk = makeRiverDelayedDefendSpotKeyV1({ preflopFamily: fam, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || ''
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[RiverDelayedDefend] Built ${Object.keys(POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY).length} entries.`);
+    }
+})();
+
+function generateRiverDelayedDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...DEFENDER_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'RIVER_DELAYED_DEFEND_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: 'BB', villainPos: fs.heroPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_DELAYED_CBET', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverDelayedDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    console.warn('[RiverDelayedDefend] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fbHand = _dealDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => fbHand) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'OOP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'RIVER_DELAYED_DEFEND_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: 'BB', villainPos: fsFB.heroPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CHECK', 'FLOP_CHECK_BACK', 'TURN_DELAYED_CBET', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverDelayedDefendSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function scoreRiverDelayedDefenderAction(playerAction, strategy, spot) {
+    return scoreRiverDefenderAction(playerAction, strategy, spot);
+}
