@@ -4734,3 +4734,571 @@ function scoreTurnProbeAction(playerAction, strategy, spot) {
 function scoreTurnProbeDefendAction(playerAction, strategy, spot) {
     return scoreTurnAction(playerAction, strategy, spot);
 }
+
+// ============================================================
+// SRP POSTFLOP PHASE 3 — RIVER
+// ============================================================
+// Line: SRP → flop c-bet called → turn barrel called → river decision.
+// River Barrel (PFR): BET (50%) vs CHECK.
+// River Defense (BB): FOLD / CALL / RAISE.
+
+// --- River card family constants ---
+const RIVER_FAMILIES = [
+    'BRICK', 'LOW_BLANK', 'OVERCARD', 'ACE_OVERCARD', 'BROADWAY_OVERCARD',
+    'BOARD_PAIR', 'FLUSH_COMPLETE', 'STRAIGHT_COMPLETE', 'DYNAMIC_CONNECTOR'
+];
+
+const RIVER_FAMILY_LABELS = {
+    BRICK: 'Brick', LOW_BLANK: 'Low blank', OVERCARD: 'Overcard',
+    ACE_OVERCARD: 'Ace overcard', BROADWAY_OVERCARD: 'Broadway overcard',
+    BOARD_PAIR: 'Board pair', FLUSH_COMPLETE: 'Flush complete',
+    STRAIGHT_COMPLETE: 'Straight card', DYNAMIC_CONNECTOR: 'Dynamic river'
+};
+
+// River hand classes — no draws remain on the river.
+const RIVER_HAND_CLASSES = [
+    'STRAIGHT_FLUSH', 'QUADS', 'FULL_HOUSE', 'FLUSH', 'STRAIGHT',
+    'SET', 'TRIPS', 'BOARD_TRIPS', 'TWO_PAIR', 'OVERPAIR',
+    'TOP_PAIR', 'SECOND_PAIR', 'THIRD_PAIR', 'UNDERPAIR',
+    'ACE_HIGH', 'OVERCARDS', 'AIR'
+];
+
+const RIVER_HAND_CLASS_LABELS = {
+    STRAIGHT_FLUSH: 'Straight flush', QUADS: 'Quads', FULL_HOUSE: 'Full house',
+    FLUSH: 'Flush', STRAIGHT: 'Straight', SET: 'Set', TRIPS: 'Trips',
+    BOARD_TRIPS: 'Board trips',
+    TWO_PAIR: 'Two pair', OVERPAIR: 'Overpair', TOP_PAIR: 'Top pair',
+    SECOND_PAIR: 'Second pair', THIRD_PAIR: 'Third pair', UNDERPAIR: 'Underpair',
+    ACE_HIGH: 'Ace-high', OVERCARDS: 'Overcards', AIR: 'Air (busted)'
+};
+
+/**
+ * classifyRiverCard — classify the river card relative to the 4-card turn board.
+ * riverCard: {rank, suit}
+ * turnBoard: array of 4 {rank, suit} (flop + turn)
+ * Returns a RIVER_FAMILIES key.
+ */
+function classifyRiverCard(riverCard, turnBoard) {
+    const bRanks = turnBoard.map(c => RANK_NUM[c.rank]).sort((a, b) => b - a);
+    const bSuits = turnBoard.map(c => c.suit);
+    const rRank = RANK_NUM[riverCard.rank];
+    const rSuit = riverCard.suit;
+    const bTop = bRanks[0];
+    const bBot = bRanks[bRanks.length - 1];
+
+    if (bRanks.includes(rRank)) return 'BOARD_PAIR';
+
+    const suitCount = {};
+    for (const s of bSuits) suitCount[s] = (suitCount[s] || 0) + 1;
+    for (const [s, cnt] of Object.entries(suitCount)) {
+        if (cnt >= 2 && rSuit === s) return 'FLUSH_COMPLETE';
+    }
+
+    const allBoardRanks = [...bRanks, rRank];
+    if (_turnBoardHasStraightDanger(allBoardRanks)) return 'STRAIGHT_COMPLETE';
+
+    if (rRank === 14 && !bRanks.includes(14)) return 'ACE_OVERCARD';
+    if (rRank > bTop && rRank >= 10) return 'BROADWAY_OVERCARD';
+    if (rRank > bTop) return 'OVERCARD';
+    if (rRank <= 5 && rRank < bBot) return 'LOW_BLANK';
+
+    if (rRank >= 4 && rRank <= 9) {
+        const minGap = Math.min(...bRanks.map(r => Math.abs(r - rRank)));
+        if (minGap <= 3) return 'DYNAMIC_CONNECTOR';
+    }
+
+    return 'BRICK';
+}
+
+/**
+ * classifyRiverHand — classify hero's hand on the river (5 community cards).
+ * No draws survive to the river — only made hands are returned.
+ */
+function classifyRiverHand(heroHand, flopCards, turnCard, riverCard) {
+    if (!heroHand || !heroHand.cards || heroHand.cards.length < 2) return 'AIR';
+    if (!flopCards || flopCards.length !== 3) return 'AIR';
+    if (!turnCard || !riverCard) return 'AIR';
+
+    const hr = heroHand.cards;
+    const boardCards = [...flopCards, turnCard, riverCard];
+    const raw = evaluateRawHand(hr, boardCards);
+
+    if (raw.rank >= 2) return _rawToTrainerBucket(raw, hr, boardCards);
+
+    const h1 = RANK_NUM[hr[0].rank], h2 = RANK_NUM[hr[1].rank];
+    const hHigh = Math.max(h1, h2), hLow = Math.min(h1, h2);
+    const bRanks = boardCards.map(c => RANK_NUM[c.rank]).sort((a, b) => b - a);
+    if (hHigh === 14) return 'ACE_HIGH';
+    if (hHigh > bRanks[0] && hLow > bRanks[0]) return 'OVERCARDS';
+    return 'AIR';
+}
+
+// --- Deal a random river card not conflicting with 4-card board or hero hand ---
+function _dealRiverCard(turnBoard, heroHand) {
+    const blocked = new Set();
+    for (const c of turnBoard) blocked.add(c.rank + c.suit);
+    const hCards = (heroHand && heroHand.cards) ? heroHand.cards : [];
+    for (const c of hCards) blocked.add(c.rank + c.suit);
+    const deck = [];
+    for (const r of RANKS) for (const s of SUITS) { if (!blocked.has(r + s)) deck.push({ rank: r, suit: s }); }
+    if (!deck.length) return { rank: '3', suit: 'd' };
+    return deck[Math.floor(Math.random() * deck.length)];
+}
+
+/**
+ * _extendTurnStateToRiver — extends turn state to river.
+ * fs: base flop state, ts: turn extension.
+ * Returns { riverCard, riverBoard, riverFamily, riverHandCls } or null.
+ */
+function _extendTurnStateToRiver(fs, ts) {
+    const riverCard = _dealRiverCard(ts.turnBoard, fs.heroHand);
+    if (!riverCard || !riverCard.rank || !riverCard.suit) return null;
+    return {
+        riverCard,
+        riverBoard: [...ts.turnBoard, riverCard],
+        riverFamily: classifyRiverCard(riverCard, ts.turnBoard),
+        riverHandCls: classifyRiverHand(fs.heroHand, fs.flopCards, ts.turnCard, riverCard)
+    };
+}
+
+// --- River spot key builders ---
+
+function makeRiverCBetSpotKeyV1(spot) {
+    return `SRP|${spot.preflopFamily}|RIVER|PFR|${spot.positionState}|RIVER_CBET_DECISION|${spot.riverFamily}|${spot.heroHandClass}`;
+}
+
+function makeRiverDefendSpotKeyV1(spot) {
+    return `SRP|${spot.preflopFamily}|RIVER|DEFENDER|OOP|RIVER_VS_BET_DECISION|${spot.riverFamily}|${spot.heroHandClass}`;
+}
+
+// --- River strategy: PFR barrel (bet50 vs check) ---
+const POSTFLOP_RIVER_STRATEGY = {};
+
+(function() {
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.92 },
+        QUADS:         { _default: 0.90 },
+        FULL_HOUSE:    { _default: 0.88, FLUSH_COMPLETE: 0.84, STRAIGHT_COMPLETE: 0.82 },
+        FLUSH:         { _default: 0.85, FLUSH_COMPLETE: 0.78 },
+        STRAIGHT:      { _default: 0.80 },
+        SET:           { _default: 0.86, FLUSH_COMPLETE: 0.74, STRAIGHT_COMPLETE: 0.70 },
+        TRIPS:         { _default: 0.82, FLUSH_COMPLETE: 0.70, STRAIGHT_COMPLETE: 0.66,
+                         BOARD_PAIR: 0.78, ACE_OVERCARD: 0.74, BROADWAY_OVERCARD: 0.76 },
+        BOARD_TRIPS:   { _default: 0.50, BRICK: 0.54, LOW_BLANK: 0.56, FLUSH_COMPLETE: 0.34,
+                         STRAIGHT_COMPLETE: 0.30, ACE_OVERCARD: 0.40, BROADWAY_OVERCARD: 0.44,
+                         BOARD_PAIR: 0.46, OVERCARD: 0.42 },
+        TWO_PAIR:      { _default: 0.78, FLUSH_COMPLETE: 0.62, STRAIGHT_COMPLETE: 0.60, ACE_OVERCARD: 0.68 },
+        OVERPAIR:      { _default: 0.65, ACE_OVERCARD: 0.25, FLUSH_COMPLETE: 0.48, STRAIGHT_COMPLETE: 0.45,
+                         BROADWAY_OVERCARD: 0.52, OVERCARD: 0.50, BOARD_PAIR: 0.60, DYNAMIC_CONNECTOR: 0.58 },
+        TOP_PAIR:      { _default: 0.52, BRICK: 0.58, LOW_BLANK: 0.60, ACE_OVERCARD: 0.30,
+                         FLUSH_COMPLETE: 0.35, STRAIGHT_COMPLETE: 0.32, BROADWAY_OVERCARD: 0.40,
+                         OVERCARD: 0.40, BOARD_PAIR: 0.48, DYNAMIC_CONNECTOR: 0.44 },
+        SECOND_PAIR:   { _default: 0.22, BRICK: 0.26, LOW_BLANK: 0.28, ACE_OVERCARD: 0.12,
+                         FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10 },
+        THIRD_PAIR:    { _default: 0.12, BRICK: 0.16, FLUSH_COMPLETE: 0.06 },
+        UNDERPAIR:     { _default: 0.14, BRICK: 0.18, FLUSH_COMPLETE: 0.06 },
+        ACE_HIGH:      { _default: 0.45, BRICK: 0.50, LOW_BLANK: 0.52, ACE_OVERCARD: 0.28,
+                         FLUSH_COMPLETE: 0.25, STRAIGHT_COMPLETE: 0.22, BROADWAY_OVERCARD: 0.38,
+                         OVERCARD: 0.32, BOARD_PAIR: 0.38 },
+        OVERCARDS:     { _default: 0.30, BRICK: 0.34, LOW_BLANK: 0.36, ACE_OVERCARD: 0.15,
+                         FLUSH_COMPLETE: 0.14, STRAIGHT_COMPLETE: 0.12 },
+        AIR:           { _default: 0.28, BRICK: 0.32, LOW_BLANK: 0.34, ACE_OVERCARD: 0.12,
+                         FLUSH_COMPLETE: 0.10, STRAIGHT_COMPLETE: 0.08, BROADWAY_OVERCARD: 0.20 }
+    };
+
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.82 },
+        QUADS:         { _default: 0.80 },
+        FULL_HOUSE:    { _default: 0.78, FLUSH_COMPLETE: 0.72, STRAIGHT_COMPLETE: 0.70 },
+        FLUSH:         { _default: 0.75, FLUSH_COMPLETE: 0.68 },
+        STRAIGHT:      { _default: 0.70 },
+        SET:           { _default: 0.76, FLUSH_COMPLETE: 0.62, STRAIGHT_COMPLETE: 0.58 },
+        TRIPS:         { _default: 0.70, FLUSH_COMPLETE: 0.58, STRAIGHT_COMPLETE: 0.54 },
+        BOARD_TRIPS:   { _default: 0.38, BRICK: 0.42, LOW_BLANK: 0.44, FLUSH_COMPLETE: 0.24,
+                         STRAIGHT_COMPLETE: 0.20, ACE_OVERCARD: 0.30 },
+        TWO_PAIR:      { _default: 0.66, FLUSH_COMPLETE: 0.50, STRAIGHT_COMPLETE: 0.48 },
+        OVERPAIR:      { _default: 0.52, ACE_OVERCARD: 0.18, FLUSH_COMPLETE: 0.38, STRAIGHT_COMPLETE: 0.35 },
+        TOP_PAIR:      { _default: 0.40, BRICK: 0.46, LOW_BLANK: 0.48, ACE_OVERCARD: 0.22,
+                         FLUSH_COMPLETE: 0.24, STRAIGHT_COMPLETE: 0.22 },
+        SECOND_PAIR:   { _default: 0.14, BRICK: 0.18, FLUSH_COMPLETE: 0.07 },
+        THIRD_PAIR:    { _default: 0.08 },
+        UNDERPAIR:     { _default: 0.10 },
+        ACE_HIGH:      { _default: 0.32, BRICK: 0.38, LOW_BLANK: 0.40, FLUSH_COMPLETE: 0.16 },
+        OVERCARDS:     { _default: 0.20, BRICK: 0.24, FLUSH_COMPLETE: 0.08 },
+        AIR:           { _default: 0.18, BRICK: 0.22, LOW_BLANK: 0.25, FLUSH_COMPLETE: 0.06 }
+    };
+
+    const RIVER_REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — the nuts. Bet for maximum value.',
+        QUADS:        'Quads — near-unbeatable. Bet for value.',
+        FULL_HOUSE:   'Full house — strong. Bet for value.',
+        FLUSH:        'Flush made — bet for value.',
+        STRAIGHT:     'Straight made — bet for value.',
+        SET:          'Set is strong — bet for value on most rivers.',
+        TRIPS:        'Trips — bet for value.',
+        BOARD_TRIPS:  'Board trips — kicker-dependent. Bet selectively with strong kickers.',
+        TWO_PAIR:     'Two pair — bet for value.',
+        OVERPAIR:     'Overpair — bet for value on safe rivers; check on dynamic ones.',
+        TOP_PAIR:     'Top pair — bet for thin value on blanks; check on scary rivers.',
+        SECOND_PAIR:  'Second pair — check for showdown value.',
+        THIRD_PAIR:   'Third pair — check; no value on river.',
+        UNDERPAIR:    'Underpair — check; no value on river.',
+        ACE_HIGH:     'Ace-high — bluff on favorable rivers; check otherwise.',
+        OVERCARDS:    'Overcards — occasional bluff; mostly check.',
+        AIR:          'No hand — give up or bluff on the very best runouts.'
+    };
+
+    const FAMILY_OFF = {
+        BTN_vs_BB: 0, CO_vs_BB: -0.03, HJ_vs_BB: -0.02, LJ_vs_BB: -0.01,
+        UTG_vs_BB: 0.02, BTN_vs_SB: 0.02, SB_vs_BB: 0, CO_vs_BTN: -0.03
+    };
+
+    for (const fam of HERO_HAND_AWARE_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[rf] !== undefined) ? baseFreqs[rf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet50' : 'check';
+                const sk = makeRiverCBetSpotKeyV1({
+                    preflopFamily: fam, positionState: fi.positionState,
+                    riverFamily: rf, heroHandClass: hc
+                });
+                POSTFLOP_RIVER_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: preferred,
+                    reasoning: RIVER_REASONING[hc] || '',
+                    simplification: 'Phase 3: River Barrel (50% pot)'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[RiverV1] Built ${Object.keys(POSTFLOP_RIVER_STRATEGY).length} PFR river strategy entries.`);
+    }
+})();
+
+// --- River strategy: defender vs river bet ---
+const POSTFLOP_RIVER_DEFEND_STRATEGY = {};
+
+(function() {
+    const BASE = {
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.10, raise: 0.90 } },
+        QUADS:        { _default: { fold: 0.00, call: 0.15, raise: 0.85 } },
+        FULL_HOUSE:   { _default: { fold: 0.00, call: 0.20, raise: 0.80 },
+                        FLUSH_COMPLETE: { fold: 0.00, call: 0.18, raise: 0.82 } },
+        FLUSH:        { _default: { fold: 0.00, call: 0.25, raise: 0.75 } },
+        STRAIGHT:     { _default: { fold: 0.00, call: 0.28, raise: 0.72 } },
+        SET:          { _default: { fold: 0.00, call: 0.32, raise: 0.68 },
+                        FLUSH_COMPLETE: { fold: 0.00, call: 0.26, raise: 0.74 } },
+        TRIPS:        { _default: { fold: 0.00, call: 0.30, raise: 0.70 },
+                        FLUSH_COMPLETE: { fold: 0.00, call: 0.24, raise: 0.76 } },
+        BOARD_TRIPS:  { _default: { fold: 0.12, call: 0.65, raise: 0.23 },
+                        FLUSH_COMPLETE: { fold: 0.22, call: 0.60, raise: 0.18 },
+                        STRAIGHT_COMPLETE: { fold: 0.20, call: 0.62, raise: 0.18 } },
+        TWO_PAIR:     { _default: { fold: 0.00, call: 0.48, raise: 0.52 },
+                        FLUSH_COMPLETE: { fold: 0.05, call: 0.54, raise: 0.41 },
+                        STRAIGHT_COMPLETE: { fold: 0.06, call: 0.56, raise: 0.38 } },
+        OVERPAIR:     { _default: { fold: 0.00, call: 0.75, raise: 0.25 },
+                        ACE_OVERCARD: { fold: 0.00, call: 0.82, raise: 0.18 },
+                        FLUSH_COMPLETE: { fold: 0.06, call: 0.74, raise: 0.20 },
+                        STRAIGHT_COMPLETE: { fold: 0.10, call: 0.72, raise: 0.18 } },
+        TOP_PAIR:     { _default: { fold: 0.10, call: 0.78, raise: 0.12 },
+                        BRICK: { fold: 0.07, call: 0.82, raise: 0.11 },
+                        LOW_BLANK: { fold: 0.06, call: 0.83, raise: 0.11 },
+                        ACE_OVERCARD: { fold: 0.22, call: 0.70, raise: 0.08 },
+                        FLUSH_COMPLETE: { fold: 0.25, call: 0.66, raise: 0.09 },
+                        STRAIGHT_COMPLETE: { fold: 0.28, call: 0.64, raise: 0.08 } },
+        SECOND_PAIR:  { _default: { fold: 0.55, call: 0.40, raise: 0.05 },
+                        BRICK: { fold: 0.48, call: 0.46, raise: 0.06 },
+                        FLUSH_COMPLETE: { fold: 0.65, call: 0.30, raise: 0.05 } },
+        THIRD_PAIR:   { _default: { fold: 0.72, call: 0.24, raise: 0.04 },
+                        BRICK: { fold: 0.65, call: 0.30, raise: 0.05 } },
+        UNDERPAIR:    { _default: { fold: 0.78, call: 0.18, raise: 0.04 },
+                        BRICK: { fold: 0.70, call: 0.26, raise: 0.04 } },
+        ACE_HIGH:     { _default: { fold: 0.70, call: 0.26, raise: 0.04 },
+                        BRICK: { fold: 0.62, call: 0.32, raise: 0.06 } },
+        OVERCARDS:    { _default: { fold: 0.80, call: 0.16, raise: 0.04 },
+                        BRICK: { fold: 0.72, call: 0.22, raise: 0.06 } },
+        AIR:          { _default: { fold: 0.90, call: 0.07, raise: 0.03 },
+                        BRICK: { fold: 0.82, call: 0.12, raise: 0.06 } }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — raise for maximum value.',
+        QUADS:        'Quads — raise for maximum value.',
+        FULL_HOUSE:   'Full house — raise for value.',
+        FLUSH:        'Made flush — raise or call for value.',
+        STRAIGHT:     'Made straight — raise or call for value.',
+        SET:          'Set — raise for value.',
+        TRIPS:        'Trips — raise or call for value.',
+        BOARD_TRIPS:  'Board trips — kicker matters. Mostly call; raise with the best kickers.',
+        TWO_PAIR:     'Two pair — raise or call for value.',
+        OVERPAIR:     'Overpair is a bluff-catcher on the river — mostly call.',
+        TOP_PAIR:     'Top pair is a bluff-catcher — call; rarely raise.',
+        SECOND_PAIR:  'Second pair is thin on the river — mostly fold.',
+        THIRD_PAIR:   'Third pair — fold to river bets.',
+        UNDERPAIR:    'Underpair — fold to river bets.',
+        ACE_HIGH:     'Ace-high — fold to most river bets.',
+        OVERCARDS:    'Overcards only — fold.',
+        AIR:          'No hand — fold.'
+    };
+
+    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+
+    for (const fam of DEFENDER_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const off = FAM_OFF[fam] || 0;
+
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const hcData = BASE[hc];
+                if (!hcData) continue;
+                const raw = hcData[rf] || hcData._default;
+                if (!raw) continue;
+
+                let fold  = Math.max(0, raw.fold - off);
+                let call  = raw.call + off * 0.5;
+                let raise = raw.raise + off * 0.5;
+                const total = fold + call + raise;
+                fold  = parseFloat((fold  / total).toFixed(2));
+                call  = parseFloat((call  / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+
+                const sk = makeRiverDefendSpotKeyV1({
+                    preflopFamily: fam, riverFamily: rf, heroHandClass: hc
+                });
+                POSTFLOP_RIVER_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: 'Phase 3: River Defender vs Bet'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[RiverV1] Built ${Object.keys(POSTFLOP_RIVER_DEFEND_STRATEGY).length} defender river strategy entries.`);
+    }
+})();
+
+// --- River spot generators ---
+
+function generateRiverCBetSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+            positionState: fs.positionState, nodeType: 'RIVER_CBET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CBET', 'FLOP_CALLED', 'TURN_CBET', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverCBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    console.warn('[RiverCBet] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fsFB = _buildBaseFlopState('BTN_vs_BB', () => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: 'SRP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+        positionState: fsFB.positionState, nodeType: 'RIVER_CBET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_CBET', 'FLOP_CALLED', 'TURN_CBET', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = makeRiverCBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_RIVER_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function generateRiverDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...DEFENDER_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+
+        const spot = {
+            potType: 'SRP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+            positionState: 'OOP', nodeType: 'RIVER_VS_BET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: 'BB', villainPos: fs.heroPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED', 'TURN_BET_FACED', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = makeRiverDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_RIVER_DEFEND_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    console.warn('[RiverDefend] Retries exhausted; forcing BTN_vs_BB fallback.');
+    const fbHeroHand = _dealDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fsFB2 = _buildBaseFlopState('BTN_vs_BB', () => fbHeroHand) ||
+        { preflopFamily: 'BTN_vs_BB', positionState: 'OOP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHeroHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHeroHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB2.heroCards = fsFB2.heroHand.cards;
+    const tsFB2 = _extendFlopStateToTurn(fsFB2) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB2.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB2 = _extendTurnStateToRiver(fsFB2, tsFB2) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB2.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB2 = {
+        potType: 'SRP', preflopFamily: fsFB2.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+        positionState: 'OOP', nodeType: 'RIVER_VS_BET_DECISION',
+        flopArchetype: fsFB2.flopArch, boardArchetype: fsFB2.flopArch,
+        riverFamily: rsFB2.riverFamily, heroHandClass: rsFB2.riverHandCls,
+        turnFamily: tsFB2.turnFamily, flopHandClass: fsFB2.flopHandClass,
+        heroPos: 'BB', villainPos: fsFB2.heroPos,
+        flopCards: fsFB2.flopCards, flopClassification: fsFB2.flopClassification,
+        turnCard: tsFB2.turnCard, turnBoard: tsFB2.turnBoard,
+        riverCard: rsFB2.riverCard, riverBoard: rsFB2.riverBoard,
+        heroHand: fsFB2.heroHand, heroCards: fsFB2.heroCards,
+        actionHistory: ['FLOP_CBET_FACED', 'FLOP_CALLED', 'TURN_BET_FACED', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB2.spotKey = makeRiverDefendSpotKeyV1(spotFB2);
+    spotFB2.strategy = POSTFLOP_RIVER_DEFEND_STRATEGY[spotFB2.spotKey] || null;
+    return spotFB2;
+}
+
+// --- River action scoring ---
+
+function scoreRiverAction(playerAction, strategy, spot) {
+    if (!strategy) return { correct: false, grade: 'unknown', feedback: 'No strategy data.' };
+    const preferred  = strategy.preferredAction;
+    const playerKey  = playerAction === 'BARREL' ? 'bet50' : 'check';
+    const playerFreq = strategy.actions[playerKey] || 0;
+    const isCorrect  = playerKey === preferred;
+
+    let grade;
+    if (playerFreq >= 0.75) grade = 'strong';
+    else if (playerFreq >= 0.50) grade = 'marginal';
+    else if (playerFreq >= 0.35) grade = 'marginal_wrong';
+    else grade = 'clear_wrong';
+
+    const preferredLabel  = preferred === 'check' ? 'Check' : 'Barrel (50%)';
+    const freqPct         = Math.round((strategy.actions[preferred] || 0) * 100);
+    const rfLabel         = (spot && spot.riverFamily) ? (RIVER_FAMILY_LABELS[spot.riverFamily] || spot.riverFamily) : '';
+    const handClassLabel  = (spot && spot.heroHandClass) ? (RIVER_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
+
+    let feedback;
+    if (isCorrect && grade === 'strong') feedback = `Correct. ${preferredLabel} (${freqPct}%).`;
+    else if (isCorrect && grade === 'marginal') feedback = `Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;
+    else if (!isCorrect && grade === 'marginal_wrong') feedback = `Close, but ${preferredLabel} is preferred here (${freqPct}%).`;
+    else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
+
+    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    if (rfLabel && !isCorrect) feedback += ` · River: ${rfLabel}`;
+
+    return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
+}
+
+function scoreRiverDefenderAction(playerAction, strategy, spot) {
+    if (!strategy) return { correct: false, grade: 'unknown', feedback: 'No strategy data.' };
+    const actions    = strategy.actions;
+    const preferred  = strategy.preferredAction;
+    const playerKey  = playerAction.toLowerCase();
+    const playerFreq = actions[playerKey] || 0;
+    const isCorrect  = playerKey === preferred;
+
+    let grade;
+    if (playerFreq >= 0.50) grade = 'strong';
+    else if (playerFreq >= 0.30) grade = 'marginal';
+    else if (playerFreq >= 0.15) grade = 'marginal_wrong';
+    else grade = 'clear_wrong';
+
+    const preferredLabel = preferred.charAt(0).toUpperCase() + preferred.slice(1);
+    const freqPct        = Math.round((actions[preferred] || 0) * 100);
+    const handClassLabel = (spot && spot.heroHandClass) ? (RIVER_HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : '';
+    const rfLabel        = (spot && spot.riverFamily) ? (RIVER_FAMILY_LABELS[spot.riverFamily] || spot.riverFamily) : '';
+
+    let feedback;
+    if (isCorrect && grade === 'strong') feedback = `Correct. ${preferredLabel} (${freqPct}%).`;
+    else if (isCorrect && grade === 'marginal') feedback = `Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;
+    else if (!isCorrect && grade === 'marginal_wrong') feedback = `Close, but ${preferredLabel} is preferred here (${freqPct}%).`;
+    else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
+
+    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    if (rfLabel && !isCorrect) feedback += ` · River: ${rfLabel}`;
+
+    return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
+}

@@ -807,6 +807,15 @@ function getScenarioPot$(scenario) {
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
         return open$ * 2 + getSmallBlind$();
     }
+    if (scenario === 'POSTFLOP_RIVER_CBET') {
+        // Flop 33% bet + turn 50% bet → river pot ≈ 3.3x flop pot
+        if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 3.3);
+        return Math.round((open$ * 2 + getSmallBlind$()) * 3.3);
+    }
+    if (scenario === 'POSTFLOP_RIVER_DEFEND') {
+        if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 3.3);
+        return Math.round((open$ * 2 + getSmallBlind$()) * 3.3);
+    }
     return blinds$;
 }
 
