@@ -1682,17 +1682,93 @@ function updateMenuUI() {
         }
     } catch(_) {}
 
-    // Due badge on review button
-    const badge = document.getElementById('menu-due-badge');
-    const cappedDue = Math.min(dueCount, REVIEW_DAILY_CAP);
-    if (dueCount > 0) {
-        badge.classList.remove('hidden');
-        badge.textContent = dueCount > REVIEW_DAILY_CAP ? REVIEW_DAILY_CAP + '+' : dueCount;
-        try { document.getElementById('menu-due-zero').classList.add('hidden'); } catch(_) {}
-    } else {
-        badge.classList.add('hidden');
-        try { document.getElementById('menu-due-zero').classList.remove('hidden'); } catch(_) {}
+    // Prescription card
+    renderPrescriptionCard();
+}
+
+function renderPrescriptionCard() {
+    const el = document.getElementById('menu-prescription-card');
+    if (!el) return;
+
+    const totalHands = (state.global && state.global.totalHands) || 0;
+    let leaks = [];
+    try { leaks = SR.analyzeWeakSpots(); } catch(_) {}
+
+    if (totalHands < 10 || leaks.length === 0) {
+        el.innerHTML = `<p class="text-slate-500 text-xs text-center py-1">Keep training — your biggest leak will appear here</p>`;
+        return;
     }
+
+    const top = leaks[0];
+    if (top.recentAcc >= 85) {
+        el.innerHTML = `<p class="text-slate-400 text-xs text-center font-semibold py-1">Looking solid — no major leaks detected</p>`;
+        return;
+    }
+
+    const spotName = (typeof prettySpotName === 'function') ? prettySpotName(top.spotKey) : top.spotKey;
+    const handStr = top.worstHands.length ? top.worstHands.join(' · ') : '';
+    const accColor = top.recentAcc >= 70 ? 'text-yellow-400' : 'text-rose-400';
+    const escapedKey = top.spotKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+    el.innerHTML = `
+        <div class="flex items-center justify-between mb-2">
+            <p class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest">Biggest Leak</p>
+            <span class="${accColor} font-black text-sm">${top.recentAcc}%</span>
+        </div>
+        <p class="text-slate-200 font-bold text-sm leading-tight">${spotName}</p>
+        ${handStr ? `<p class="text-slate-500 text-[11px] mt-1">Leaking on: ${handStr}</p>` : ''}
+        <button onclick="launchTargetedSession('${escapedKey}')" class="mt-3 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">
+            Fix This Now — 15 hands
+        </button>`;
+}
+
+function launchTargetedSession(spotKey) {
+    if (!spotKey) return;
+    const PREFLOP_SCENARIOS = ['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD'];
+    const parts = spotKey.split('|');
+    const sc = parts[0];
+
+    if (!PREFLOP_SCENARIOS.includes(sc)) { showToast('Cannot launch targeted drill for this spot.'); return; }
+
+    const spotId = parts[1] || '';
+    let heroPos = null, oppPos = null, limperBucket = null;
+
+    try {
+        if (sc === 'RFI' || sc === 'PUSH_FOLD') {
+            heroPos = spotId;
+        } else if (sc === 'VS_LIMP') {
+            const m = spotId.match(/^(.+)_vs_(.+)_Limp$/);
+            if (m) { heroPos = m[1]; oppPos = m[2]; }
+            limperBucket = parts[2] || null;
+        } else if (sc === 'SQUEEZE' || sc === 'SQUEEZE_2C') {
+            const sq = typeof parseSqueezeKey === 'function' ? parseSqueezeKey(spotId) : null;
+            if (sq) heroPos = sq.hero;
+        } else {
+            const m = spotId.match(/^(.+)_vs_(.+)$/);
+            if (m) { heroPos = m[1]; oppPos = m[2]; }
+            else heroPos = spotId;
+        }
+    } catch(e) {}
+
+    const savedConfig = JSON.parse(JSON.stringify(state.config));
+    const savedBuilder = JSON.parse(JSON.stringify(sessionBuilder));
+
+    state.config.scenarios = [sc];
+    state.config.positions = (heroPos && (typeof ALL_POSITIONS !== 'undefined') && ALL_POSITIONS.includes(heroPos)) ? [heroPos] : (typeof ALL_POSITIONS !== 'undefined' ? [...ALL_POSITIONS] : []);
+    state.config.oppPositions = oppPos ? [oppPos] : null;
+    state.config.postflopFamilies = null;
+
+    drillState.mode = 'focused';
+    drillState.active = true;
+    drillState.handCount = 15;
+    drillState.scenario = sc;
+    drillState.positions = state.config.positions;
+    drillState.lockedLimperBucket = (sc === 'VS_LIMP' && limperBucket) ? limperBucket : null;
+    drillState._savedConfig = savedConfig;
+    drillState._savedSessionBuilder = savedBuilder;
+
+    hideAllScreens();
+    startConfiguredTraining();
 }
 function formatHandKey(r1, r2, s) { const i1 = RANKS.indexOf(r1), i2 = RANKS.indexOf(r2); const hi = i1 < i2 ? r1 : r2, lo = i1 < i2 ? r2 : r1; return hi === lo ? hi + lo : hi + lo + (s ? 's' : 'o'); }
 

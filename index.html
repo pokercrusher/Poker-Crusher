@@ -564,17 +564,14 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
                 STRATEGY LIBRARY
             </button>
+            <!-- Prescription card: populated by updateMenuUI() -->
+            <div id="menu-prescription-card" class="w-full bg-slate-900/60 border border-slate-700/40 rounded-2xl p-4 text-left"></div>
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="showReviewPreview()" id="menu-review-btn" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
-                    REVIEW <span id="menu-due-badge" class="hidden text-[10px] font-black bg-amber-500/20 text-amber-400 rounded-full px-1.5 py-0.5"></span>
-                    <span id="menu-due-zero" class="text-[10px] text-slate-600 font-normal">(0 due)</span>
-                </button>
                 <button onclick="showUserStats()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                     MY STATS
                 </button>
-                <button onclick="showSettings()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm col-span-2">
+                <button onclick="showSettings()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm col-span-1">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.5.36 1.05.36 1.62v.76c0 .57-.12 1.12-.36 1.62Z"/></svg>
                     SETTINGS
                 </button>

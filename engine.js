@@ -542,6 +542,56 @@ const SR = (function() {
             .slice(0, n).map(([k]) => k);
     }
 
+    // ── Weak spot analysis for prescription card ─────────────────
+    function analyzeWeakSpots() {
+        const PREFLOP_SCENARIOS = new Set(['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD']);
+        const spotMap = {};
+
+        for (const k of Object.keys(db)) {
+            if (k.endsWith('|_LEGACY')) continue;
+            const parts = k.split('|');
+            if (parts.length < 2) continue;
+            if (!PREFLOP_SCENARIOS.has(parts[0])) continue;
+            const spotKey = parts.slice(0, -1).join('|');
+            if (!spotMap[spotKey]) spotMap[spotKey] = [];
+            spotMap[spotKey].push(k);
+        }
+
+        const results = [];
+        for (const [spotKey, handKeys] of Object.entries(spotMap)) {
+            let totalAttempts = 0;
+            const pooledRecent = [];
+            const handAccs = [];
+
+            for (const k of handKeys) {
+                const r = db[k];
+                if (!r || r.totalAttempts === 0) continue;
+                totalAttempts += r.totalAttempts;
+                pooledRecent.push(...r.recentResults.slice(-20));
+                const hr = r.recentResults.slice(-10);
+                if (hr.length >= 3) {
+                    handAccs.push({ hand: k.split('|').pop(), acc: hr.filter(x => x).length / hr.length });
+                }
+            }
+
+            if (totalAttempts < 10) continue;
+            const recent = pooledRecent.slice(-30);
+            if (recent.length < 5) continue;
+
+            const recentAcc = recent.filter(x => x).length / recent.length;
+            const leakScore = totalAttempts * (1 - recentAcc);
+            const worstHands = handAccs
+                .sort((a, b) => a.acc - b.acc)
+                .slice(0, 3)
+                .map(h => h.hand);
+
+            results.push({ spotKey, recentAcc: Math.round(recentAcc * 100), totalAttempts, leakScore, worstHands });
+        }
+
+        results.sort((a, b) => b.leakScore - a.leakScore);
+        return results;
+    }
+
     window.srReport = function() {
         const now = Date.now();
         const all = Object.entries(db).filter(([k]) => !k.endsWith('|_LEGACY'));
@@ -553,7 +603,7 @@ const SR = (function() {
         worst.forEach(([k,r]) => console.log(`  ${k}: ${r.totalWrong}/${r.totalAttempts} wrong interval=${r.intervalDays.toFixed(1)}d`));
     };
 
-    return { load, save, update, get, getOrCreate, getAll, selectSpot, getDueSpots, getRecentlyIncorrect, getWeakest, classifySpot, getSpotStats, getHandKeysForSpot, getRelevantHandCount, reset: function() { db = {}; save(); } };
+    return { load, save, update, get, getOrCreate, getAll, selectSpot, getDueSpots, getRecentlyIncorrect, getWeakest, classifySpot, getSpotStats, getHandKeysForSpot, getRelevantHandCount, analyzeWeakSpots, reset: function() { db = {}; save(); } };
 })();
 
 // ============================================================
