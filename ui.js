@@ -2120,9 +2120,14 @@ function drilldownSpot(spotKey) {
         if (tableWrapper) {
             const newMaxH = isMobile ? '' : Math.round(winH * 0.62) + 'px';
             if (tableWrapper.style.maxHeight !== newMaxH) tableWrapper.style.maxHeight = newMaxH;
-            // On mobile: felt sits at the bottom of the wrapper so it's flush with hero cards
-            const newAlign = isMobile ? 'flex-end' : 'center';
-            if (tableWrapper.style.alignItems !== newAlign) tableWrapper.style.alignItems = newAlign;
+            // On mobile: align felt to bottom of wrapper so it's flush with hero cards.
+            // Only write on mobile; never touch alignItems on desktop (avoids writing to
+            // the observed element and potentially tickling the ResizeObserver loop).
+            if (isMobile) {
+                if (tableWrapper.style.alignItems !== 'flex-end') tableWrapper.style.alignItems = 'flex-end';
+            } else if (tableWrapper.style.alignItems === 'flex-end') {
+                tableWrapper.style.alignItems = '';
+            }
         }
 
         // On mobile portrait, use window height as the reference for UI elements
@@ -2184,8 +2189,11 @@ function drilldownSpot(spotKey) {
         root.setProperty('--hero-rank-size', Math.round(cardW * 0.52) + 'px');
         root.setProperty('--hero-suit-size', Math.round(cardW * 0.42) + 'px');
         root.setProperty('--card-gap', Math.round(cardW * 0.2) + 'px');
-        // Hint text — also drives _renderSpotHeader title via CSS var
-        root.setProperty('--hint-size', Math.max(13, Math.round((isMobile ? winW : feltW) * (isMobile ? 0.050 : 0.024))) + 'px');
+        // Hint text — also drives _renderSpotHeader title via CSS var.
+        // IMPORTANT: use winW for BOTH breakpoints — not feltW. feltW is derived from the
+        // observed table-wrapper, so using it here creates a feedback loop:
+        // bigger hint → taller hint-row → shorter wrapper → smaller feltW → different hint → repeat.
+        root.setProperty('--hint-size', Math.max(13, Math.round(winW * (isMobile ? 0.050 : 0.017))) + 'px');
         // Community cards (postflop)
         const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.09 : 0.065)));
         root.setProperty('--cc-w', ccW + 'px');
