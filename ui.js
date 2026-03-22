@@ -320,6 +320,8 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             }
             await delay(150);
             // BB might fold too if oppPos is BB — but BB can 3bet, so show 3bet
+            // Clear prior chips so only the 3-bet shows (realistic re-raise display)
+            betsLayer.innerHTML = '';
             const oppCoords = getSeatCoords(heroPos, oppPos);
             const threeBetAnim$ = get3betSize$(oppPos, heroPos);
             const threeBetAnimBB = threeBetAnim$ / BB_DOLLARS;
@@ -359,13 +361,15 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
                 await delay(100);
             }
             await delay(150);
-            // Hero 3-bets
+            // Hero 3-bets — clear prior chips so only current bet shows
+            betsLayer.innerHTML = '';
             const heroCoords4 = getSeatCoords(heroPos, heroPos);
             const threeBet4$ = get3betSize$(heroPos, oppPos);
             animateChip(betsLayer, heroCoords4, threeBet4$ / getBigBlind$());
             showActionBadge(document.getElementById(`seat-${heroPos}`), '3-BET ' + formatAmt(threeBet4$), 'badge-3bet', 800);
             await delay(350);
-            // Opener 4-bets
+            // Opener 4-bets — clear prior chips so only current bet shows
+            betsLayer.innerHTML = '';
             const oppCoords4 = getSeatCoords(heroPos, oppPos);
             const fourBet4$ = get4betSize$(oppPos, heroPos);
             animateChip(betsLayer, oppCoords4, fourBet4$ / getBigBlind$());
@@ -1119,7 +1123,7 @@ container.innerHTML = `<div class="grid grid-cols-3 gap-3 ${stateClass}">
 } else if (state.scenario === 'VS_4BET') {
 const fourBet$ = get4betSize$(state.oppPos, state.currentPos); // villain's 4-bet
 const fiveBet$ = get5betSize$(state.currentPos, state.oppPos);
-setSizingHint(`Villain 4-bet: ${formatAmt(fourBet$)} · 5-bet shove: ${formatAmt(fiveBet$)}`);
+setSizingHint(`Villain 4-bet: ${formatAmt(fourBet$)} · 5-bet shove: 2.2× ${formatAmt(fourBet$)} = ${formatAmt(fiveBet$)}`);
 
 container.innerHTML = `<div class="grid grid-cols-3 gap-3 ${stateClass}">
     <button onclick="handleInput('FOLD')" ${btnStyle} class="pc-btn pc-btn-fold">FOLD</button>
@@ -2622,6 +2626,16 @@ function renderSettingsStakeDisplay() {
 })();
 
 window.onload = function(){ loadProgress(); try{ updateMenuUI(); }catch(e){} try{ updateOpenSizeUI(); }catch(e){} startCloudAutosaveLoop(false); };
+
+// Forward wheel events to #menu-screen when it is the active screen,
+// so scrolling works even when the mouse is outside the narrow center column.
+document.addEventListener('wheel', function(e) {
+    const menuScreen = document.getElementById('menu-screen');
+    if (menuScreen && !menuScreen.classList.contains('hidden')) {
+        menuScreen.scrollTop += e.deltaY;
+        e.preventDefault();
+    }
+}, { passive: false });
 function showUserStats() {
     hideAllScreens();
     const screen = document.getElementById('stats-screen');

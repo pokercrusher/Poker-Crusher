@@ -3,7 +3,12 @@
     "allow": [
       "Bash(find:*)",
       "Bash(grep:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(for f:*)",
+      "Bash(do)",
+      "Bash(echo \"$f OK\")",
+      "Bash(echo \"$f FAILED\")",
+      "Bash(done)"
     ]
   }
 }

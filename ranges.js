@@ -1465,6 +1465,8 @@ function generatePostflopSpot(maxRetries, familyFilter){
         const heroHand = _dealPostflopHeroHand(fi.heroPos);
         const fc = _generateFlopNoConflict(arch, heroHand);
         const heroHandClass = classifyFlopHand(heroHand, fc);
+        const heroCards = heroHand.cards || _heroHandToCards(heroHand);
+        const heroDraws = _detectFlopDraws(heroCards, fc);
 
         const spot = {
             potType:'SRP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
@@ -1472,7 +1474,8 @@ function generatePostflopSpot(maxRetries, familyFilter){
             boardArchetype:arch, heroPos:fi.heroPos, villainPos:fi.villainPos,
             flopCards:fc, flopClassification:classifyFlop(fc),
             heroHand: heroHand,
-            heroHandClass: heroHandClass
+            heroHandClass: heroHandClass,
+            heroDraws: heroDraws
         };
         spot.spotKey = makePostflopSpotKeyV2(spot);
         spot.strategy = POSTFLOP_STRATEGY_V2[spot.spotKey] || null;
@@ -1489,13 +1492,16 @@ function generatePostflopSpot(maxRetries, familyFilter){
     const heroHand = _dealPostflopHeroHand('BTN');
     const fc = _generateFlopNoConflict(arch, heroHand);
     const heroHandClass = classifyFlopHand(heroHand, fc);
+    const heroCards = heroHand.cards || _heroHandToCards(heroHand);
+    const heroDraws = _detectFlopDraws(heroCards, fc);
     const spot = {
         potType:'SRP', preflopFamily:'BTN_vs_BB', street:'FLOP', heroRole:'PFR',
         positionState:'IP', nodeType:'CBET_DECISION',
         boardArchetype:arch, heroPos:'BTN', villainPos:'BB',
         flopCards:fc, flopClassification:classifyFlop(fc),
         heroHand: heroHand,
-        heroHandClass: heroHandClass
+        heroHandClass: heroHandClass,
+        heroDraws: heroDraws
     };
     spot.spotKey = makePostflopSpotKeyV2(spot);
     spot.strategy = POSTFLOP_STRATEGY_V2[spot.spotKey] || null;
@@ -1504,25 +1510,55 @@ function generatePostflopSpot(maxRetries, familyFilter){
 
 function scorePostflopAction(playerAction, strategy, spot) {
     if (!strategy) return {correct:false, grade:'unknown', feedback:'No strategy data.'};
-    const preferred = strategy.preferredAction;
+
+    // Apply draw bonus for one-pair-level hands that also have a draw.
+    let adjBet = strategy.actions.bet33 || 0;
+    let adjChk = strategy.actions.check || 0;
+    if (spot && spot.heroDraws && DRAW_BONUS_HAND_CLASSES.has(spot.heroHandClass)) {
+        const bonus = _calcDrawBonus(spot.heroDraws);
+        if (bonus > 0) {
+            adjBet = Math.min(0.95, parseFloat((adjBet + bonus).toFixed(2)));
+            adjChk = parseFloat((1 - adjBet).toFixed(2));
+        }
+    }
+    const adjPreferred = adjBet >= 0.50 ? 'bet33' : 'check';
+    // 50/50 warning: exact split likely indicates an unhandled fallback, not a genuine solver output.
+    if (Math.abs(adjBet - 0.50) < 0.001) {
+        console.warn(`[Postflop] Exact 50/50 C-Bet split — ${spot && spot.heroHandClass} on ${spot && spot.boardArchetype} — verify this is not a fallback default.`);
+    }
+
     const playerKey = playerAction === 'CBET' ? 'bet33' : 'check';
-    const playerFreq = strategy.actions[playerKey] || 0;
-    const isCorrect = playerKey === preferred;
+    const playerFreq = (playerKey === 'bet33' ? adjBet : adjChk);
+    const isCorrect = playerKey === adjPreferred;
     let grade;
     if (playerFreq >= 0.75) grade = 'strong';
     else if (playerFreq >= 0.50) grade = 'marginal';
     else if (playerFreq >= 0.36) grade = 'marginal_wrong';
     else grade = 'clear_wrong';
-    const preferredLabel = preferred === 'check' ? 'Check' : 'C-Bet';
-    const freqPct = Math.round((strategy.actions[preferred] || 0) * 100);
+    const preferredLabel = adjPreferred === 'check' ? 'Check' : 'C-Bet';
+    const freqPct = Math.round((adjPreferred === 'bet33' ? adjBet : adjChk) * 100);
     let feedback;
     if (isCorrect && grade === 'strong') feedback = `Correct. ${preferredLabel} (${freqPct}%).`;
     else if (isCorrect && grade === 'marginal') feedback = `Correct. Close spot — ${preferredLabel} slightly preferred (${freqPct}%).`;
     else if (!isCorrect && grade === 'marginal_wrong') feedback = `Close, but ${preferredLabel} is preferred here (${freqPct}%).`;
     else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
-    // Phase 2: add hand class label to feedback when available
+
+    // Build hand class label + draw suffix
     const handClassLabel = (spot && spot.heroHandClass) ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : null;
-    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    if (handClassLabel) {
+        let drawSuffix = '';
+        if (spot.heroDraws && DRAW_BONUS_HAND_CLASSES.has(spot.heroHandClass)) {
+            const d = spot.heroDraws;
+            const parts = [];
+            if (d.flushDraw)       parts.push('flush draw');
+            else if (d.backdoorFD) parts.push('backdoor FD');
+            if (d.oesd)            parts.push('OESD');
+            else if (d.gutshot)    parts.push('gutshot');
+            else if (d.backdoorSD) parts.push('backdoor SD');
+            if (parts.length) drawSuffix = ' + ' + parts.join(' + ');
+        }
+        feedback += ` [${handClassLabel}${drawSuffix}]`;
+    }
     return {correct:isCorrect, grade, feedback, preferredLabel, freqPct, reasoning:strategy.reasoning};
 }
 
@@ -1540,6 +1576,7 @@ const HERO_HAND_AWARE_FAMILIES = new Set([
 const HAND_CLASS_LABELS = {
     OVERPAIR:'Overpair', TOP_PAIR:'Top pair', SECOND_PAIR:'Second pair',
     THIRD_PAIR:'Third pair', UNDERPAIR:'Underpair', SET:'Set', TWO_PAIR_PLUS:'Two pair+',
+    FULL_HOUSE:'Full house', QUADS:'Quads', TRIPS:'Trips', BOARD_TRIPS:'Trips',
     OESD:'OESD', GUTSHOT:'Gutshot', NFD:'Nut flush draw',
     FD:'Flush draw', COMBO_DRAW:'Combo draw', ACE_HIGH_BACKDOOR:'Ace-high / backdoor',
     OVERCARDS:'Overcards', AIR:'Air'
@@ -1563,10 +1600,10 @@ function _rawToFlopBucket(rawResult, heroCards, boardCards) {
     if (rank === 9) return 'SET';
 
     // Rank 8: quads
-    if (rank === 8) return 'TWO_PAIR_PLUS';
+    if (rank === 8) return 'QUADS';
 
     // Rank 7: full house
-    if (rank === 7) return 'TWO_PAIR_PLUS';
+    if (rank === 7) return 'FULL_HOUSE';
 
     // Rank 6: flush
     if (rank === 6) return 'TWO_PAIR_PLUS';
@@ -1574,10 +1611,17 @@ function _rawToFlopBucket(rawResult, heroCards, boardCards) {
     // Rank 5: straight
     if (rank === 5) return 'TWO_PAIR_PLUS';
 
-    // Rank 4: trips — distinguish SET (pocket pair) vs bare trips on paired board
+    // Rank 4: trips — distinguish SET (pocket pair) / BOARD_TRIPS (all 3 board same rank, hero has none)
+    // / TRIPS (hero's one card matches a board pair).
     if (rank === 4) {
         const h1 = RANK_NUM[heroCards[0].rank], h2 = RANK_NUM[heroCards[1].rank];
-        return (h1 === h2) ? 'SET' : 'TWO_PAIR_PLUS'; // trips on flop w/ one hole card = strong value
+        if (h1 === h2) return 'SET'; // pocket pair hit the board
+        const bFreq = _boardRankFreqs(boardCards);
+        // If ALL THREE board cards share a rank and hero holds neither, hero plays board trips as kicker.
+        for (const [r, cnt] of bFreq.entries()) {
+            if (cnt >= 3 && r !== h1 && r !== h2) return 'BOARD_TRIPS';
+        }
+        return 'TRIPS'; // hero's one hole card matches a board rank that appears ≥ 2 times
     }
 
     // Rank 3: two pair
@@ -1730,6 +1774,84 @@ function _straightDrawType(sortedUniqueRanks) {
     return bestDraw;
 }
 
+/**
+ * _detectFlopDraws — detect flush draws and straight draws for ANY hero hand
+ * (including made pairs and better). Runs independently of the hand strength classifier.
+ * Returns { flushDraw, backdoorFD, oesd, gutshot, backdoorSD }
+ *
+ * Flush draw:    hero holds ≥1 card of suit X + 4 total of suit X across all 5 cards.
+ * Backdoor FD:  hero holds ≥1 card of suit X + total 2–3 of suit X (not yet 4).
+ * OESD/Gutshot: _straightDrawType on unique combined ranks (4 of 5 in a window).
+ * Backdoor SD:  3 of 5 in any window with at least 1 hero card participating.
+ */
+function _detectFlopDraws(heroCards, boardCards) {
+    const fSuits = boardCards.map(c => c.suit);
+    const h1r = RANK_NUM[heroCards[0].rank], h2r = RANK_NUM[heroCards[1].rank];
+    const fRanks = boardCards.map(c => RANK_NUM[c.rank]);
+    const allRanks = [h1r, h2r, ...fRanks].sort((a, b) => b - a);
+    const uniqueRanks = [...new Set(allRanks)].sort((a, b) => b - a);
+
+    // --- Flush draw detection ---
+    let flushDraw = false, backdoorFD = false;
+    for (const suit of ['s', 'h', 'd', 'c']) {
+        const heroCnt = (heroCards[0].suit === suit ? 1 : 0) + (heroCards[1].suit === suit ? 1 : 0);
+        if (heroCnt === 0) continue; // hero must contribute at least 1 card of this suit
+        const boardCnt = fSuits.filter(s => s === suit).length;
+        const total = heroCnt + boardCnt;
+        if (total === 4) { flushDraw = true; break; } // 4 of same suit = flush draw (1 away)
+        if (total === 3) backdoorFD = true;           // 3 total = backdoor FD (runner-runner needed)
+        if (total === 2 && heroCnt === 2) backdoorFD = true; // both hero cards suited, 0 board cards of suit
+    }
+
+    // --- Straight draw detection (4 of 5 in window) ---
+    const straightType = _straightDrawType(uniqueRanks);
+
+    // --- Backdoor straight draw (3 of 5 in a window, with hero contributing) ---
+    let backdoorSD = false;
+    if (!straightType) { // only check if no strong straight draw already found
+        const withAceLow = uniqueRanks.includes(14) ? [...uniqueRanks, 1] : [...uniqueRanks];
+        const u = [...new Set(withAceLow)];
+        outer: for (let low = 1; low <= 10; low++) {
+            const window5 = [low, low+1, low+2, low+3, low+4];
+            const inWindow = window5.filter(r => u.includes(r));
+            if (inWindow.length === 3) {
+                const h1Low = h1r === 14 ? [h1r, 1] : [h1r];
+                const h2Low = h2r === 14 ? [h2r, 1] : [h2r];
+                if (h1Low.some(r => inWindow.includes(r)) || h2Low.some(r => inWindow.includes(r))) {
+                    backdoorSD = true;
+                    break outer;
+                }
+            }
+        }
+    }
+
+    return {
+        flushDraw,
+        backdoorFD: !flushDraw && backdoorFD,
+        oesd: straightType === 'OESD',
+        gutshot: straightType === 'GUTSHOT',
+        backdoorSD: !straightType && backdoorSD,
+    };
+}
+
+/**
+ * _calcDrawBonus — frequency bonus to add for a draw on top of a made pair hand.
+ * Only meaningful for one-pair-level hands (OVERPAIR … UNDERPAIR).
+ */
+function _calcDrawBonus(draws) {
+    if (!draws) return 0;
+    let bonus = 0;
+    if (draws.flushDraw)       bonus += 0.15;
+    else if (draws.backdoorFD) bonus += 0.025;
+    if (draws.oesd)            bonus += 0.10;
+    else if (draws.gutshot)    bonus += 0.05;
+    else if (draws.backdoorSD) bonus += 0.015;
+    return bonus;
+}
+
+// Hand classes for which draw bonus and draw labels apply (one-pair level only).
+const DRAW_BONUS_HAND_CLASSES = new Set(['OVERPAIR','TOP_PAIR','SECOND_PAIR','THIRD_PAIR','UNDERPAIR']);
+
 // Convert abstract heroHand {rank1, rank2, suited} into concrete cards if needed
 function _heroHandToCards(h) {
     if (h.cards) return h.cards;
@@ -1860,6 +1982,7 @@ const POSTFLOP_STRATEGY_V2 = {};
 (function() {
     const HAND_CLASSES = [
         'OVERPAIR','TOP_PAIR','SECOND_PAIR','THIRD_PAIR','UNDERPAIR','SET','TWO_PAIR_PLUS',
+        'FULL_HOUSE','QUADS','TRIPS','BOARD_TRIPS',
         'OESD','GUTSHOT','NFD','FD','COMBO_DRAW','ACE_HIGH_BACKDOOR','OVERCARDS','AIR'
     ];
 
@@ -1869,6 +1992,10 @@ const POSTFLOP_STRATEGY_V2 = {};
     const BASE_IP = {
         SET:              { _default: 0.90, LOW_CONNECTED: 0.80, MONOTONE: 0.75, TRIPS: 0.50 },
         TWO_PAIR_PLUS:    { _default: 0.85, LOW_CONNECTED: 0.75, MONOTONE: 0.70, TRIPS: 0.50 },
+        FULL_HOUSE:       { _default: 0.90, LOW_CONNECTED: 0.85, MONOTONE: 0.80, TRIPS: 0.85, PAIRED_HIGH: 0.90, PAIRED_LOW: 0.88 },
+        QUADS:            { _default: 0.65, TRIPS: 0.60 },
+        TRIPS:            { _default: 0.85, PAIRED_HIGH: 0.85, PAIRED_LOW: 0.80, LOW_CONNECTED: 0.75, MONOTONE: 0.70 },
+        BOARD_TRIPS:      { _default: 0.85, TRIPS: 0.85 },
         OVERPAIR:         { _default: 0.85, A_HIGH_DRY: 0.90, A_HIGH_DYNAMIC: 0.75, BROADWAY_STATIC: 0.85, BROADWAY_DYNAMIC: 0.70, MID_CONNECTED: 0.65, LOW_CONNECTED: 0.55, MONOTONE: 0.50 },
         TOP_PAIR:         { _default: 0.70, A_HIGH_DRY: 0.80, A_HIGH_DYNAMIC: 0.60, BROADWAY_STATIC: 0.75, BROADWAY_DYNAMIC: 0.55, MID_DISCONNECTED: 0.65, MID_CONNECTED: 0.50, LOW_DISCONNECTED: 0.55, LOW_CONNECTED: 0.40, MONOTONE: 0.40, PAIRED_HIGH: 0.60, PAIRED_LOW: 0.55 },
         SECOND_PAIR:      { _default: 0.35, A_HIGH_DRY: 0.45, BROADWAY_STATIC: 0.40, MID_DISCONNECTED: 0.35, MID_CONNECTED: 0.25, LOW_DISCONNECTED: 0.30, LOW_CONNECTED: 0.20, MONOTONE: 0.20 },
@@ -1888,6 +2015,10 @@ const POSTFLOP_STRATEGY_V2 = {};
     const BASE_OOP = {
         SET:              { _default: 0.80, LOW_CONNECTED: 0.70, MONOTONE: 0.65, TRIPS: 0.45 },
         TWO_PAIR_PLUS:    { _default: 0.75, LOW_CONNECTED: 0.65, MONOTONE: 0.60, TRIPS: 0.40 },
+        FULL_HOUSE:       { _default: 0.80, LOW_CONNECTED: 0.75, MONOTONE: 0.70, TRIPS: 0.75, PAIRED_HIGH: 0.80, PAIRED_LOW: 0.78 },
+        QUADS:            { _default: 0.55, TRIPS: 0.50 },
+        TRIPS:            { _default: 0.75, PAIRED_HIGH: 0.75, PAIRED_LOW: 0.70, LOW_CONNECTED: 0.65, MONOTONE: 0.60 },
+        BOARD_TRIPS:      { _default: 0.75, TRIPS: 0.75 },
         OVERPAIR:         { _default: 0.70, A_HIGH_DRY: 0.80, A_HIGH_DYNAMIC: 0.60, BROADWAY_STATIC: 0.70, BROADWAY_DYNAMIC: 0.55, MID_CONNECTED: 0.50, LOW_CONNECTED: 0.40, MONOTONE: 0.35 },
         TOP_PAIR:         { _default: 0.55, A_HIGH_DRY: 0.65, A_HIGH_DYNAMIC: 0.45, BROADWAY_STATIC: 0.60, BROADWAY_DYNAMIC: 0.40, MID_DISCONNECTED: 0.50, MID_CONNECTED: 0.35, LOW_DISCONNECTED: 0.40, LOW_CONNECTED: 0.25, MONOTONE: 0.25, PAIRED_HIGH: 0.45, PAIRED_LOW: 0.40 },
         SECOND_PAIR:      { _default: 0.20, A_HIGH_DRY: 0.30, BROADWAY_STATIC: 0.25, MID_DISCONNECTED: 0.20, MID_CONNECTED: 0.15, LOW_DISCONNECTED: 0.20, LOW_CONNECTED: 0.10, MONOTONE: 0.10 },
@@ -1907,6 +2038,10 @@ const POSTFLOP_STRATEGY_V2 = {};
     const REASONING = {
         SET: 'Sets are strong; bet for value and protection.',
         TWO_PAIR_PLUS: 'Two pair+ is strong; bet for value.',
+        FULL_HOUSE: 'Full house is a monster; bet for value on almost all textures.',
+        QUADS: 'Quads is the near-nuts; bet or slow-play to maximize value.',
+        TRIPS: 'Trips is a strong made hand; bet for value frequently.',
+        BOARD_TRIPS: 'Board trips with strong kicker; bet for value — villain plays the same trips.',
         OVERPAIR: 'Overpairs are premium made hands; bet for value and protection.',
         TOP_PAIR: 'Top pair should usually bet for value, but check on dynamic boards.',
         SECOND_PAIR: 'Second pair has showdown value; check to control pot, or thin value bet on dry boards.',
@@ -1989,6 +2124,7 @@ const POSTFLOP_DEFEND_VS_CBET = {};
 (function() {
     const HAND_CLASSES = [
         'OVERPAIR','TOP_PAIR','SECOND_PAIR','THIRD_PAIR','UNDERPAIR','SET','TWO_PAIR_PLUS',
+        'FULL_HOUSE','QUADS','TRIPS','BOARD_TRIPS',
         'OESD','GUTSHOT','NFD','FD','COMBO_DRAW','ACE_HIGH_BACKDOOR','OVERCARDS','AIR'
     ];
 
@@ -2009,6 +2145,14 @@ const POSTFLOP_DEFEND_VS_CBET = {};
         TWO_PAIR_PLUS:    { _default: { fold: 0.00, call: 0.45, raise: 0.55 },
                             MONOTONE: { fold: 0.00, call: 0.35, raise: 0.65 }, TRIPS: { fold: 0.00, call: 0.60, raise: 0.40 },
                             A_HIGH_DRY: { fold: 0.00, call: 0.50, raise: 0.50 } },
+        FULL_HOUSE:       { _default: { fold: 0.00, call: 0.28, raise: 0.72 },
+                            TRIPS: { fold: 0.00, call: 0.38, raise: 0.62 },
+                            MONOTONE: { fold: 0.00, call: 0.25, raise: 0.75 } },
+        QUADS:            { _default: { fold: 0.00, call: 0.65, raise: 0.35 } },
+        TRIPS:            { _default: { fold: 0.00, call: 0.40, raise: 0.60 },
+                            MONOTONE: { fold: 0.00, call: 0.32, raise: 0.68 } },
+        BOARD_TRIPS:      { _default: { fold: 0.00, call: 0.55, raise: 0.45 },
+                            TRIPS: { fold: 0.00, call: 0.58, raise: 0.42 } },
         OVERPAIR:         { _default: { fold: 0.00, call: 0.65, raise: 0.35 },
                             A_HIGH_DRY: { fold: 0.00, call: 0.60, raise: 0.40 }, A_HIGH_DYNAMIC: { fold: 0.00, call: 0.70, raise: 0.30 },
                             BROADWAY_DYNAMIC: { fold: 0.00, call: 0.70, raise: 0.30 }, LOW_CONNECTED: { fold: 0.00, call: 0.55, raise: 0.45 },
@@ -2061,6 +2205,10 @@ const POSTFLOP_DEFEND_VS_CBET = {};
     const REASONING = {
         SET: 'Sets should raise for value and protection. Sometimes slow-play on dry boards.',
         TWO_PAIR_PLUS: 'Two pair+ is strong; raise frequently, call to trap on dry textures.',
+        FULL_HOUSE: 'Full house is a monster; raise for value, occasionally call to trap.',
+        QUADS: 'Quads is the near-nuts; slow-play by calling, or raise to build the pot.',
+        TRIPS: 'Trips is strong; raise frequently for value and protection.',
+        BOARD_TRIPS: 'Board trips — villain also has trips; raise with strong kickers, call with weak ones.',
         OVERPAIR: 'Overpairs are strong vs a c-bet range; mostly call, raise on wet boards for protection.',
         TOP_PAIR: 'Top pair is a core calling hand. Rarely fold. Raise occasionally for value on dry boards.',
         SECOND_PAIR: 'Second pair is a medium-strength call. Fold on very wet boards.',
@@ -2159,6 +2307,8 @@ function generateDefenderSpot(maxRetries, familyFilter) {
         if (!heroHand) continue;
         const fc = _generateFlopNoConflict(arch, heroHand);
         const heroHandClass = classifyFlopHand(heroHand, fc);
+        const heroCardsD = heroHand.cards || _heroHandToCards(heroHand);
+        const heroDrawsD = _detectFlopDraws(heroCardsD, fc);
 
         const spot = {
             potType:'SRP', preflopFamily:fam, street:'FLOP', heroRole:'DEFENDER',
@@ -2167,7 +2317,8 @@ function generateDefenderSpot(maxRetries, familyFilter) {
             heroPos:'BB', villainPos:villainPos,
             flopCards:fc, flopClassification:classifyFlop(fc),
             heroHand: heroHand,
-            heroHandClass: heroHandClass
+            heroHandClass: heroHandClass,
+            heroDraws: heroDrawsD
         };
         spot.spotKey = makePostflopSpotKeyV2(spot);
         spot.strategy = POSTFLOP_DEFEND_VS_CBET[spot.spotKey] || null;
@@ -2181,12 +2332,14 @@ function generateDefenderSpot(maxRetries, familyFilter) {
     const arch = 'A_HIGH_DRY';
     const fc = _generateFlopNoConflict(arch, heroHand);
     const heroHandClass = classifyFlopHand(heroHand, fc);
+    const heroCardsDF = heroHand.cards || _heroHandToCards(heroHand);
+    const heroDrawsDF = _detectFlopDraws(heroCardsDF, fc);
     const spot = {
         potType:'SRP', preflopFamily:'BTN_vs_BB', street:'FLOP', heroRole:'DEFENDER',
         positionState:'OOP', nodeType:'VS_CBET_DECISION',
         boardArchetype:arch, heroPos:'BB', villainPos:'BTN',
         flopCards:fc, flopClassification:classifyFlop(fc),
-        heroHand: heroHand, heroHandClass: heroHandClass
+        heroHand: heroHand, heroHandClass: heroHandClass, heroDraws: heroDrawsDF
     };
     spot.spotKey = makePostflopSpotKeyV2(spot);
     spot.strategy = POSTFLOP_DEFEND_VS_CBET[spot.spotKey] || null;
@@ -2241,7 +2394,20 @@ function scoreDefenderAction(playerAction, strategy, spot) {
     else feedback = `${preferredLabel} is preferred (${freqPct}%). ${strategy.reasoning}`;
 
     const handClassLabel = (spot && spot.heroHandClass) ? (HAND_CLASS_LABELS[spot.heroHandClass] || spot.heroHandClass) : null;
-    if (handClassLabel) feedback += ` [${handClassLabel}]`;
+    if (handClassLabel) {
+        let drawSuffix = '';
+        if (spot.heroDraws && DRAW_BONUS_HAND_CLASSES.has(spot.heroHandClass)) {
+            const d = spot.heroDraws;
+            const parts = [];
+            if (d.flushDraw)       parts.push('flush draw');
+            else if (d.backdoorFD) parts.push('backdoor FD');
+            if (d.oesd)            parts.push('OESD');
+            else if (d.gutshot)    parts.push('gutshot');
+            else if (d.backdoorSD) parts.push('backdoor SD');
+            if (parts.length) drawSuffix = ' + ' + parts.join(' + ');
+        }
+        feedback += ` [${handClassLabel}${drawSuffix}]`;
+    }
 
     return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
 }
