@@ -2629,12 +2629,15 @@ window.onload = function(){ loadProgress(); try{ updateMenuUI(); }catch(e){} try
 
 // Forward wheel events to #menu-screen when it is the active screen,
 // so scrolling works even when the mouse is outside the narrow center column.
+// Do not intercept when any overlay screen is open on top of the menu.
 document.addEventListener('wheel', function(e) {
     const menuScreen = document.getElementById('menu-screen');
-    if (menuScreen && !menuScreen.classList.contains('hidden')) {
-        menuScreen.scrollTop += e.deltaY;
-        e.preventDefault();
-    }
+    if (!menuScreen || menuScreen.classList.contains('hidden')) return;
+    const overlayIds = ['config-screen','challenge-screen','library-screen','settings-screen','stats-screen','daily-run-screen','drilldown-panel'];
+    const anyOverlayOpen = overlayIds.some(id => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); });
+    if (anyOverlayOpen) return;
+    menuScreen.scrollTop += e.deltaY;
+    e.preventDefault();
 }, { passive: false });
 function showUserStats() {
     hideAllScreens();
