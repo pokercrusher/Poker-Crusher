@@ -594,7 +594,7 @@ const SR = (function() {
             results.push({ spotKey, recentAcc: Math.round(recentAcc * 100), totalAttempts, leakScore, worstHands });
         }
 
-        results.sort((a, b) => b.leakScore - a.leakScore);
+        results.sort((a, b) => a.recentAcc - b.recentAcc || b.leakScore - a.leakScore);
         return results;
     }
 
