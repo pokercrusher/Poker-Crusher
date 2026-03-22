@@ -326,6 +326,51 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             animateChip(betsLayer, oppCoords, threeBetAnimBB);
             showActionBadge(document.getElementById(`seat-${oppPos}`), '3-BET ' + formatAmt(threeBetAnim$), 'badge-3bet', 800);
             await delay(400);
+        } else if (scenario === 'VS_4BET') {
+            // fold before opener (oppPos), opener raises, fold between, hero 3-bets, opener 4-bets
+            const actionOrder = ['UTG','UTG1','UTG2','LJ','HJ','CO','BTN','SB'];
+            const openerIdx = actionOrder.indexOf(oppPos);
+            const heroActionIdx = actionOrder.indexOf(heroPos);
+            // Fold before opener
+            for (let k = 0; k < openerIdx; k++) {
+                const foldPos = actionOrder[k];
+                if (foldPos === heroPos) continue;
+                const foldEl = document.getElementById(`seat-${foldPos}`);
+                const cardEl = seatCardEls[foldPos];
+                foldEl.classList.add('seat-folded-state');
+                if (cardEl) cardEl.classList.add('folding');
+                showActionBadge(foldEl, 'FOLD', 'badge-fold', 400);
+                await delay(100);
+            }
+            // Opener raises
+            const openerCoords = getSeatCoords(heroPos, oppPos);
+            animateChip(betsLayer, openerCoords, getOpenSizeBB());
+            showActionBadge(document.getElementById(`seat-${oppPos}`), 'RAISE ' + formatAmt(getOpenSize$()), 'badge-raise', 700);
+            await delay(300);
+            // Fold between opener and hero
+            for (let k = openerIdx + 1; k < 8; k++) {
+                const foldPos = actionOrder[k];
+                if (foldPos === heroPos || foldPos === oppPos) continue;
+                const foldEl = document.getElementById(`seat-${foldPos}`);
+                const cardEl = seatCardEls[foldPos];
+                foldEl.classList.add('seat-folded-state');
+                if (cardEl) cardEl.classList.add('folding');
+                showActionBadge(foldEl, 'FOLD', 'badge-fold', 400);
+                await delay(100);
+            }
+            await delay(150);
+            // Hero 3-bets
+            const heroCoords4 = getSeatCoords(heroPos, heroPos);
+            const threeBet4$ = get3betSize$(heroPos, oppPos);
+            animateChip(betsLayer, heroCoords4, threeBet4$ / getBigBlind$());
+            showActionBadge(document.getElementById(`seat-${heroPos}`), '3-BET ' + formatAmt(threeBet4$), 'badge-3bet', 800);
+            await delay(350);
+            // Opener 4-bets
+            const oppCoords4 = getSeatCoords(heroPos, oppPos);
+            const fourBet4$ = get4betSize$(oppPos, heroPos);
+            animateChip(betsLayer, oppCoords4, fourBet4$ / getBigBlind$());
+            showActionBadge(document.getElementById(`seat-${oppPos}`), '4-BET ' + formatAmt(fourBet4$), 'badge-raise', 900);
+            await delay(400);
         } else if (scenario === 'VS_LIMP') {
             // Multi-limp animation: fold to first limper, each limper limps, fold between, hero acts
             // BB must be in the action order so the hero-position stop works for all seats
@@ -714,6 +759,7 @@ if ((state.scenario === 'SQUEEZE' || state.scenario === 'SQUEEZE_1C') && action 
 if (state.scenario === 'SQUEEZE_2C' && action === 'SQUEEZE') return getSqueezeSize$(state.currentPos, state.squeezeOpener, 2);
 
 if ((state.scenario === 'RFI_VS_3BET' || state.scenario === 'RFI_VS_3') && action === '4BET') return get4betSize$(state.currentPos, state.oppPos);
+if (state.scenario === 'VS_4BET' && action === '5BET') return get5betSize$(state.currentPos, state.oppPos);
 
 // Push/fold shove
 if (state.scenario === 'PUSH_FOLD' && action === 'SHOVE') {
@@ -759,6 +805,14 @@ function getScenarioPot$(scenario) {
         // Hero open + villain 3-bet + dead SB ($1); villain is typically BB so already counted in 3-bet
         const threeBet$ = get3betSize$(state.oppPos, state.currentPos || state.heroPos || 'BTN');
         return open$ + threeBet$ + getSmallBlind$(); // dead SB
+    }
+    if (scenario === 'VS_4BET') {
+        // Hero 3-bet + villain 4-bet + dead SB
+        const hp = state.currentPos || 'BTN';
+        const op = state.oppPos || 'UTG';
+        const threeBet$ = get3betSize$(hp, op); // hero's 3-bet
+        const fourBet$ = get4betSize$(op, hp);  // villain's 4-bet
+        return threeBet$ + fourBet$ + getSmallBlind$();
     }
     if (scenario === 'VS_LIMP') {
         // Each limper called 1BB ($3) + SB ($1) + BB ($3)
@@ -954,6 +1008,11 @@ const heroIP = postflopIP(heroPos, villainPos);
 const mult = heroIP ? 2.2 : 2.5;
 return roundLiveDollars(threeBet$ * mult);
 }
+function get5betSize$(heroPos, villainPos){
+// 5-bet is typically a shove in live poker, approximated as 2.2× the 4-bet
+const fourBet$ = get4betSize$(villainPos, heroPos); // villain's 4-bet size (they are 4-betting hero)
+return roundLiveDollars(fourBet$ * 2.2);
+}
 function get3betSize$(heroPos, oppPos, openOverride) {
 const open = openOverride !== undefined ? openOverride : getOpenSize$();
 const isIP = postflopIP(heroPos, oppPos);
@@ -1055,6 +1114,17 @@ container.innerHTML = `<div class="grid grid-cols-3 gap-3 ${stateClass}">
     <button onclick="handleInput('FOLD')" ${btnStyle} class="pc-btn pc-btn-fold">FOLD</button>
     <button onclick="handleInput('CALL')" ${btnStyle} class="pc-btn pc-btn-passive">CALL</button>
     <button onclick="handleInput('4BET')" ${btnStyle} class="pc-btn pc-btn-aggressive">4-BET TO ${formatAmt(fourBet$)}</button>
+</div>`;
+
+} else if (state.scenario === 'VS_4BET') {
+const fourBet$ = get4betSize$(state.oppPos, state.currentPos); // villain's 4-bet
+const fiveBet$ = get5betSize$(state.currentPos, state.oppPos);
+setSizingHint(`Villain 4-bet: ${formatAmt(fourBet$)} · 5-bet shove: ${formatAmt(fiveBet$)}`);
+
+container.innerHTML = `<div class="grid grid-cols-3 gap-3 ${stateClass}">
+    <button onclick="handleInput('FOLD')" ${btnStyle} class="pc-btn pc-btn-fold">FOLD</button>
+    <button onclick="handleInput('CALL')" ${btnStyle} class="pc-btn pc-btn-passive">CALL</button>
+    <button onclick="handleInput('5BET')" ${btnStyle} class="pc-btn pc-btn-shove">5-BET SHOVE</button>
 </div>`;
 
 } else if (state.scenario === 'PUSH_FOLD') {
@@ -1254,6 +1324,8 @@ const why = getWhyText(target, correctAction, scenario, pos, effOpp);
         legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-orange-600 rounded"></div><span>${rLabel}</span></div><div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-cyan-700 rounded"></div><span>${pLabel}</span></div>`;
     } else if (scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C') {
         legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-red-600 rounded"></div><span>Squeeze</span></div><div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-red-600 rounded sq-bluff-stripe"></div><span>Squeeze (Bluff)</span></div><div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-emerald-600 rounded"></div><span>Call</span></div>`;
+    } else if (scenario === 'VS_4BET') {
+        legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-red-600 rounded"></div><span>5-Bet Shove</span></div><div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-emerald-600 rounded"></div><span>Call</span></div>`;
     } else {
         const label1 = scenario === 'RFI_VS_3BET' ? '4-Bet' : '3-Bet';
         legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-indigo-600 rounded"></div><span>${label1}</span></div><div class="flex items-center gap-1.5"><div class="w-3 h-3 bg-emerald-600 rounded"></div><span>Call</span></div>`;
@@ -1296,10 +1368,14 @@ const why = getWhyText(target, correctAction, scenario, pos, effOpp);
                 const d = squeezeVsRfiTwoCallers[oppPos];
                 if (d && checkRangeHelper(hKey, d["Squeeze"])) { bg = 'bg-red-600'; if (isSqueezeBluff(hKey, d)) bg = 'bg-red-600 sq-bluff-stripe'; }
                 else if (d && d["Call"] && checkRangeHelper(hKey, d["Call"])) bg = 'bg-emerald-600';
+            } else if (scenario === 'VS_4BET') {
+                const d = vs4BetRanges[`${pos}_vs_${oppPos}`];
+                if (d && checkRangeHelper(hKey, d["5-bet"])) bg = 'bg-red-600';
+                else if (d && checkRangeHelper(hKey, d["Call"])) bg = 'bg-emerald-600';
             } else {
                 const d = rfiVs3BetRanges[`${pos}_vs_${oppPos}`];
-                if (checkRangeHelper(hKey, d["4-bet"])) bg = 'bg-indigo-600';
-                else if (checkRangeHelper(hKey, d["Call"])) bg = 'bg-emerald-600';
+                if (d && checkRangeHelper(hKey, d["4-bet"])) bg = 'bg-indigo-600';
+                else if (d && checkRangeHelper(hKey, d["Call"])) bg = 'bg-emerald-600';
             }
             const ring = target ? (hKey === target ? 'ring-[3px] ring-white z-10 scale-110 shadow-xl' : 'opacity-50') : '';
             html += `<div class="aspect-square flex items-center justify-center rounded-[2px] text-[5px] sm:text-[7px] font-black ${bg} ${ring} text-white/95">${hKey}</div>`;
@@ -1474,6 +1550,8 @@ function exitToMenu() {
         resetDailyRunState({ restoreConfig: true });
     }
 
+    try { if (typeof updateTrainingStreak === 'function') updateTrainingStreak(handsPlayed); } catch(_) {}
+
     if (wasOpenTraining && handsPlayed >= 5) {
         showSessionSummary();
     } else {
@@ -1513,6 +1591,7 @@ function showReviewComplete() {
 function closeReviewComplete() {
     const el = document.getElementById('review-complete-screen');
     if (el) el.classList.add('hidden');
+    try { if (typeof updateTrainingStreak === 'function') updateTrainingStreak(state.sessionStats && state.sessionStats.total || 0); } catch(_) {}
     document.getElementById('menu-screen').classList.remove('hidden');
     updateMenuUI();
 }
@@ -1621,15 +1700,25 @@ function updateMenuUI() {
             <div class="flex items-center gap-1.5"><div class="w-2 h-2 rounded-full bg-slate-700"></div><span class="text-[11px] text-slate-400 flex-1">Unseen</span><span class="text-[11px] font-black text-slate-600">${tiers.unseen}</span></div>
         </div>
     </div>
-    <div class="mt-4 bg-slate-950/40 border border-slate-800/40 rounded-2xl px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-            <span class="text-lg">🔥</span>
-            <div>
-                <div class="text-slate-200 font-black text-sm">Daily Run Streak</div>
-                <div id="menu-daily-lock" class="text-slate-500 text-[10px] font-bold"></div>
+    <div class="mt-4 bg-slate-950/40 border border-slate-800/40 rounded-2xl px-4 py-3">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">🔥</span>
+                <div>
+                    <div class="text-slate-200 font-black text-sm">Training Streak</div>
+                    <div id="menu-streak-sub" class="text-slate-500 text-[10px] font-bold">5+ hands counts</div>
+                </div>
             </div>
+            <div id="menu-training-streak" class="text-orange-400 font-black text-2xl">0</div>
         </div>
-        <div id="menu-daily-streak" class="text-indigo-200 font-black text-2xl">0</div>
+        <div class="mt-2 pt-2 border-t border-slate-800/40 flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+                <span class="text-xs">⚡</span>
+                <span class="text-[10px] text-slate-500 font-bold">Daily Run</span>
+                <span id="menu-daily-lock" class="text-[10px] text-slate-500 font-bold"></span>
+            </div>
+            <span id="menu-daily-streak" class="text-indigo-300 font-black text-sm">0</span>
+        </div>
     </div>
 `;
 
@@ -1662,6 +1751,20 @@ function updateMenuUI() {
     </div>`;
 
     document.getElementById('menu-dashboard').innerHTML = html;
+
+    // Training streak
+    try {
+        const ts = loadTrainingStreak();
+        const tsEl = document.getElementById('menu-training-streak');
+        if (tsEl) tsEl.textContent = String(ts.current || 0);
+        const subEl = document.getElementById('menu-streak-sub');
+        if (subEl) {
+            const today = getLocalDayIndex(Date.now());
+            const trainedToday = ts.lastDayIndex === today;
+            subEl.textContent = trainedToday ? 'Trained today \u2713' : (ts.current > 0 ? 'Train today to keep it!' : '5+ hands counts');
+            subEl.className = 'text-[10px] font-bold ' + (trainedToday ? 'text-emerald-500' : ts.current > 0 ? 'text-amber-500' : 'text-slate-500');
+        }
+    } catch(_) {}
 
     // Daily Run streak/lock
     try {
@@ -1753,7 +1856,7 @@ function renderPrescriptionCard() {
 
 function launchTargetedSession(spotKey) {
     if (!spotKey) return;
-    const PREFLOP_SCENARIOS = ['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD'];
+    const PREFLOP_SCENARIOS = ['RFI','FACING_RFI','RFI_VS_3BET','VS_4BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD'];
     const parts = spotKey.split('|');
     const sc = parts[0];
 
@@ -1820,7 +1923,7 @@ function formatSpotLabel(rawSpotId) {
     return POS_LABELS[clean] || clean;
 }
 const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn D-Defend', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend', POSTFLOP_RIVER_PROBE: 'River Probe', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River TCC-Bet', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River TCC-Def', POSTFLOP_RIVER_PROBE_CALL_BET: 'River P2-Bet', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River P2-Def' };
-const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
+const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', '5BET': '5-Bet Shove', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
 
 function showSessionLog() {
     const list = document.getElementById('session-log-list');
@@ -2032,7 +2135,7 @@ function showDrilldown(title, contentFn) {
 function hideDrilldown() { document.getElementById('drilldown-panel').classList.add('hidden'); }
 
 function drilldownScenario(sc) {
-    const SCENARIO_LABELS = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet', POSTFLOP_TURN_PROBE: 'Turn Probe Defense', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet' };
+    const SCENARIO_LABELS = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_4BET: 'vs 4-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet', POSTFLOP_TURN_PROBE: 'Turn Probe Defense', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet' };
 
     // Daily Run meta (UI only)
     const drm = loadDailyRunMeta();

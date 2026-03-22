@@ -128,6 +128,61 @@ const rfiVs3BetRanges = {
     SB_vs_BB:     { "4-bet": ['AA','KK','QQ','JJ','AKs','AKo'], "Call": ['TT','99','88','77','AQs','AJs','ATs','KQs','QJs','JTs','T9s','AQo'] }
 };
 
+// ── vs 4-Bet ranges — 3-bettor (hero) facing a 4-bet from the original opener ──
+// Key: [3bettor]_vs_[4bettor]. Actions: "5-bet" (shove/re-raise), "Call"; fold = everything else.
+// Bluff 5-bets use A5s/A4s (ace blockers to AA/AK). AKo always 5-bet (great blockers + equity).
+// Value 5-bet threshold scales with villain 4-bet range tightness:
+//   vs EP (UTG/UTG1): KK+ only as value (QQ = call; JJ = fold)
+//   vs MP (UTG2/LJ):  KK+ value, QQ borderline call, JJ call
+//   vs HJ:            QQ+ value, JJ/TT/AQs call
+//   vs CO/BTN/SB:     QQ+ value, JJ/TT/AQs/KQs call
+const vs4BetRanges = {
+    // ── Hero = UTG1, 4bettor = UTG ──
+    UTG1_vs_UTG:  { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    // ── Hero = UTG2 ──
+    UTG2_vs_UTG:  { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    UTG2_vs_UTG1: { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    // ── Hero = LJ ──
+    LJ_vs_UTG:    { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    LJ_vs_UTG1:   { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    LJ_vs_UTG2:   { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    // ── Hero = HJ ──
+    HJ_vs_UTG:    { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    HJ_vs_UTG1:   { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    HJ_vs_UTG2:   { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    HJ_vs_LJ:     { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    // ── Hero = CO ──
+    CO_vs_UTG:    { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    CO_vs_UTG1:   { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    CO_vs_UTG2:   { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    CO_vs_LJ:     { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    CO_vs_HJ:     { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs'] },
+    // ── Hero = BTN ──
+    BTN_vs_UTG:   { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    BTN_vs_UTG1:  { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    BTN_vs_UTG2:  { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    BTN_vs_LJ:    { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    BTN_vs_HJ:    { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs'] },
+    BTN_vs_CO:    { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs','KQs'] },
+    // ── Hero = SB ──
+    SB_vs_UTG:    { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    SB_vs_UTG1:   { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    SB_vs_UTG2:   { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    SB_vs_LJ:     { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    SB_vs_HJ:     { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs'] },
+    SB_vs_CO:     { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs','KQs'] },
+    SB_vs_BTN:    { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs','KQs'] },
+    // ── Hero = BB ──
+    BB_vs_UTG:    { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    BB_vs_UTG1:   { "5-bet": ['KK+','AKs','AKo','A5s'],             "Call": ['QQ'] },
+    BB_vs_UTG2:   { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    BB_vs_LJ:     { "5-bet": ['KK+','AKs','AKo','A5s','A4s'],       "Call": ['QQ','JJ'] },
+    BB_vs_HJ:     { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs'] },
+    BB_vs_CO:     { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs','KQs'] },
+    BB_vs_BTN:    { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs','KQs'] },
+    BB_vs_SB:     { "5-bet": ['QQ+','AKs','AKo','A5s','A4s'],       "Call": ['JJ','TT','AQs','KQs'] },
+};
+
 const btnFacingLimps = {
     BTN_vs_UTG_Limp: {
         "Iso": ["AA","KK","QQ","JJ","TT","99","AKs","AQs","AJs","AKo","AQo","KQs"],

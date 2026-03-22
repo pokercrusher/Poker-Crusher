@@ -158,6 +158,12 @@ function computeCorrectAction(hand, scenario, heroPos, oppPos, limperBucket) {
     } else if (scenario === 'PUSH_FOLD') {
         const pfRange = PF_PUSH[state.stackBB] && PF_PUSH[state.stackBB][heroPos];
         return (pfRange && checkRangeHelper(hand, pfRange)) ? 'SHOVE' : 'FOLD';
+    } else if (scenario === 'VS_4BET') {
+        const data = vs4BetRanges[`${heroPos}_vs_${oppPos}`];
+        if (!data) return 'FOLD';
+        if (checkRangeHelper(hand, data["5-bet"])) return '5BET';
+        if (checkRangeHelper(hand, data["Call"])) return 'CALL';
+        return 'FOLD';
     } else {
         // RFI_VS_3BET and fallback
         const data = rfiVs3BetRanges[`${heroPos}_vs_${oppPos}`];
@@ -544,7 +550,7 @@ const SR = (function() {
 
     // ── Weak spot analysis for prescription card ─────────────────
     function analyzeWeakSpots() {
-        const PREFLOP_SCENARIOS = new Set(['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD']);
+        const PREFLOP_SCENARIOS = new Set(['RFI','FACING_RFI','RFI_VS_3BET','VS_4BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD']);
         const spotMap = {};
 
         for (const k of Object.keys(db)) {

@@ -1,7 +1,7 @@
 // training.js — Medals, drills, daily run, challenge mode, generateNextRound, handleInput
 // Auto-split from PokerCrusher monolith — do not reorder script tags
 
-const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)', POSTFLOP_CBET: 'Flop C-Bet (Postflop)', POSTFLOP_DEFEND: 'Defend vs C-Bet (Postflop)', POSTFLOP_TURN_CBET: 'Turn Barrel (Postflop)', POSTFLOP_TURN_DEFEND: 'Turn Defense (Postflop)', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet (Postflop)', POSTFLOP_TURN_PROBE: 'Turn Probe Defense (Postflop)', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet (Postflop)', POSTFLOP_RIVER_CBET: 'River Barrel (Postflop)', POSTFLOP_RIVER_DEFEND: 'River Defense (Postflop)', POSTFLOP_RIVER_DELAYED_CBET: 'River Barrel — Delayed Line (Postflop)', POSTFLOP_RIVER_DELAYED_DEFEND: 'River Defense — Delayed Line (Postflop)', POSTFLOP_RIVER_PROBE: 'River Probe Defense (Postflop)', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet (Postflop)', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn Delayed Defense (Postflop)', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River Barrel — Turn Check-Check (Postflop)', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River Defense — Turn Check-Check (Postflop)', POSTFLOP_RIVER_PROBE_CALL_BET: 'River 2nd Barrel — Probe Line (Postflop)', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River Defense — Probe 2nd Barrel (Postflop)' };
+const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_4BET: 'vs 4-Bet (5B/Call/Fold)', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)', POSTFLOP_CBET: 'Flop C-Bet (Postflop)', POSTFLOP_DEFEND: 'Defend vs C-Bet (Postflop)', POSTFLOP_TURN_CBET: 'Turn Barrel (Postflop)', POSTFLOP_TURN_DEFEND: 'Turn Defense (Postflop)', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet (Postflop)', POSTFLOP_TURN_PROBE: 'Turn Probe Defense (Postflop)', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet (Postflop)', POSTFLOP_RIVER_CBET: 'River Barrel (Postflop)', POSTFLOP_RIVER_DEFEND: 'River Defense (Postflop)', POSTFLOP_RIVER_DELAYED_CBET: 'River Barrel — Delayed Line (Postflop)', POSTFLOP_RIVER_DELAYED_DEFEND: 'River Defense — Delayed Line (Postflop)', POSTFLOP_RIVER_PROBE: 'River Probe Defense (Postflop)', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet (Postflop)', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn Delayed Defense (Postflop)', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River Barrel — Turn Check-Check (Postflop)', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River Defense — Turn Check-Check (Postflop)', POSTFLOP_RIVER_PROBE_CALL_BET: 'River 2nd Barrel — Probe Line (Postflop)', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River Defense — Probe 2nd Barrel (Postflop)' };
 const MEDAL_THRESHOLDS = {
     bronze: { hands: 10, accuracy: 65 },
     silver: { hands: 25, accuracy: 80 },
@@ -18,6 +18,7 @@ const FAMILY_MODEL = {
         { id: 'OPEN',     label: 'Open',      scenarios: ['RFI'] },
         { id: 'DEFEND',   label: 'Defend',     scenarios: ['FACING_RFI'] },
         { id: 'VS_3BET',  label: 'vs 3bet',    scenarios: ['RFI_VS_3BET'] },
+        { id: 'VS_4BET',  label: 'vs 4bet',    scenarios: ['VS_4BET'] },
         { id: 'LIMPERS',  label: 'Limpers',    scenarios: ['VS_LIMP'] },
         { id: 'SQUEEZE',  label: 'Squeeze',    scenarios: ['SQUEEZE', 'SQUEEZE_2C'] },
         { id: 'PUSH_FOLD',label: 'Push/Fold',  scenarios: ['PUSH_FOLD'] },
@@ -277,6 +278,7 @@ function getDailyRunSupportedScenarios() {
     if (ALL_POSITIONS.some(p => rfiRanges && rfiRanges[p])) supported.push('RFI');
     if (typeof facingRfiRanges !== 'undefined' && Object.keys(facingRfiRanges).length) supported.push('FACING_RFI');
     if (typeof rfiVs3BetRanges !== 'undefined' && Object.keys(rfiVs3BetRanges).length) supported.push('RFI_VS_3BET');
+    if (typeof vs4BetRanges !== 'undefined' && Object.keys(vs4BetRanges).length) supported.push('VS_4BET');
     if (typeof allFacingLimps !== 'undefined' && Object.keys(allFacingLimps).length) supported.push('VS_LIMP');
     if (typeof squeezeRanges !== 'undefined' && Object.keys(squeezeRanges).length) supported.push('SQUEEZE');
     if (typeof squeezeVsRfiTwoCallers !== 'undefined' && Object.keys(squeezeVsRfiTwoCallers).length) supported.push('SQUEEZE_2C');
@@ -386,6 +388,24 @@ function getLocalDayIndex(ts) {
     const d = new Date(ts);
     d.setHours(0,0,0,0);
     return Math.floor(d.getTime() / 86400000);
+}
+
+// ── Training Streak ──────────────────────────────────────────
+function loadTrainingStreak() {
+    try { const s = localStorage.getItem(profileKey('pc_training_streak_v1')); return s ? JSON.parse(s) : { current: 0, longest: 0, lastDayIndex: null }; } catch(e) { return { current: 0, longest: 0, lastDayIndex: null }; }
+}
+function saveTrainingStreak(data) {
+    try { localStorage.setItem(profileKey('pc_training_streak_v1'), JSON.stringify(data)); } catch(e) {}
+}
+function updateTrainingStreak(handsPlayed) {
+    if (!handsPlayed || handsPlayed < 5) return;
+    const today = getLocalDayIndex(Date.now());
+    const data = loadTrainingStreak();
+    if (data.lastDayIndex === today) return; // already counted today
+    data.current = (data.lastDayIndex === today - 1) ? (data.current || 0) + 1 : 1;
+    data.longest = Math.max(data.longest || 0, data.current);
+    data.lastDayIndex = today;
+    saveTrainingStreak(data);
 }
 
 function getDailyRunLockInfo() {
@@ -1389,6 +1409,10 @@ function getLibSpots() {
         return Object.keys(rfiVs3BetRanges).map(k => {
             const [p, o] = k.split('_vs_'); return { hero: p, opp: o, key: k };
         });
+    } else if (cat === 'VS_4BET') {
+        return Object.keys(vs4BetRanges).map(k => {
+            const [p, o] = k.split('_vs_'); return { hero: p, opp: o, key: k };
+        });
     } else if (cat === 'VS_LIMP') {
         return Object.keys(allFacingLimps).map(k => {
             const m = k.match(/(.+)_vs_(.+)_Limp/);
@@ -1416,7 +1440,7 @@ function renderLibrary() {
     const isPostflop = cat === 'POSTFLOP';
 
     // Update category tab styles
-    ['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','POSTFLOP'].forEach(tab => {
+    ['RFI','FACING_RFI','RFI_VS_3BET','VS_4BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','POSTFLOP'].forEach(tab => {
         const btn = document.getElementById(`lib-tab-${tab}`);
         if (btn) btn.className = `pc-chip pc-chip-sm ${cat === tab ? 'active' : ''}`;
     });
@@ -2209,6 +2233,15 @@ function generateNextRound() {
                     return true;
                 });
             }
+            if (s === 'VS_4BET') {
+                const _opp4 = state.config.oppPositions;
+                return Object.keys(vs4BetRanges).some(k => {
+                    const [hp, op] = k.split('_vs_');
+                    if (!state.config.positions.includes(hp)) return false;
+                    if (_opp4 && _opp4.length > 0 && !_opp4.includes(op)) return false;
+                    return true;
+                });
+            }
             if (s === 'VS_LIMP') { const lp = state.config.positions; return Object.keys(allFacingLimps).some(k => { const m = k.match(/(.+)_vs_(.+)_Limp/); return m && lp.includes(m[1]); }); }
             if (s === 'SQUEEZE') { return Object.keys(squeezeRanges).some(k => { const p = parseSqueezeKey(k); return p && state.config.positions.includes(p.hero); }); }
             if (s === 'SQUEEZE_2C') { return Object.keys(squeezeVsRfiTwoCallers).some(k => { const p = parseSqueeze2CKey(k); return p && state.config.positions.includes(p.hero); }); }
@@ -2344,6 +2377,14 @@ function generateNextRound() {
             const key = pairs[Math.floor(Math.random() * pairs.length)];
             [state.currentPos, state.oppPos] = key.split('_vs_');
             state.villainOpenSize = getOpenSize$(); // hero opened; villain 3-bet sizes off hero's open
+        } else if (state.scenario === 'VS_4BET') {
+            let pairs4 = Object.keys(vs4BetRanges).filter(p => state.config.positions.includes(p.split('_vs_')[0]));
+            if (state.config.oppPositions && state.config.oppPositions.length > 0) {
+                pairs4 = pairs4.filter(p => state.config.oppPositions.includes(p.split('_vs_')[1]));
+            }
+            const key4 = pairs4[Math.floor(Math.random() * pairs4.length)];
+            [state.currentPos, state.oppPos] = key4.split('_vs_');
+            state.villainOpenSize = getOpenSize$();
         } else if (state.scenario === 'VS_LIMP') {
             // Filter limp keys to enabled hero positions
             const limpKeys = Object.keys(allFacingLimps).filter(k => {
