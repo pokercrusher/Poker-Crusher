@@ -1600,7 +1600,28 @@ function closeReviewComplete() {
     updateMenuUI();
 }
 
+function saveSessionHistoryRecord() {
+    const s = state.sessionStats;
+    if ((s.total || 0) < 5) return; // skip micro-sessions
+    const record = {
+        at: Date.now(),
+        scenarios: state.config.scenarios ? [...state.config.scenarios] : [],
+        hands: s.total || 0,
+        correct: s.correct || 0,
+        acc: s.total ? Math.round(s.correct / s.total * 100) : 0,
+        bestStreak: state.global.bestStreak || 0
+    };
+    const key = profileKey('gto_train_history_v1');
+    let hist = [];
+    try { hist = JSON.parse(localStorage.getItem(key) || '[]'); } catch(_) {}
+    if (!Array.isArray(hist)) hist = [];
+    hist.unshift(record);
+    if (hist.length > 30) hist = hist.slice(0, 30);
+    try { localStorage.setItem(key, JSON.stringify(hist)); } catch(_) {}
+}
+
 function showSessionSummary() {
+    try { saveSessionHistoryRecord(); } catch(_) {}
     const s = state.sessionStats;
     const total = s.total || 0;
     const correct = s.correct || 0;

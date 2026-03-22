@@ -8,7 +8,8 @@
       "Bash(do)",
       "Bash(echo \"$f OK\")",
       "Bash(echo \"$f FAILED\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(wc:*)"
     ]
   }
 }

@@ -664,8 +664,7 @@ function renderUserStats() {
                         </div>
                     </div>
                     <div class="text-sm font-black ${col} shrink-0">${sp.acc}%</div>
-                    <div class="text-[9px] text-slate-600 shrink-0">${sp.total}h</div>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>
+                    <button onclick="event.stopPropagation();launchTargetedSession('${escapedKey}')" class="shrink-0 text-[9px] font-black text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 hover:bg-indigo-900/60 active:scale-95 rounded-lg px-2 py-1 transition-all">Drill</button>
                 </div>`;
             }).join('')}
             </div>
@@ -783,12 +782,13 @@ function renderUserStats() {
             <span class="text-[9px] text-slate-700">(min ${LEAK_MIN} attempts per entry)</span>
         </div>`;
     }
-    function leakRows(list) {
+    function leakRows(list, showDrill) {
         if (!list.length) return leakEmpty();
         return `<div class="flex flex-col">${list.map((r, i) => {
             const ret = r.retention || { label: 'New', colorClass: 'bg-slate-700/30 text-slate-500' };
             const clickAttr = r.key ? `onclick="drilldownSpot('${r.key.replace(/'/g, "\\'")}')" style="cursor:pointer"` : '';
             const hoverClass = r.key ? 'hover:bg-slate-800/40 active:bg-slate-800/70 transition-colors' : '';
+            const drillBtn = (showDrill && r.key) ? `<button onclick="event.stopPropagation();launchTargetedSession('${r.key.replace(/'/g, "\\'")}')" class="shrink-0 text-[9px] font-black text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 hover:bg-indigo-900/60 active:scale-95 rounded-lg px-2 py-1 transition-all">Drill</button>` : '';
             return `<div class="flex items-center gap-2.5 px-2 py-2.5 ${i > 0 ? 'border-t border-slate-800/25' : ''} ${hoverClass} rounded-lg" style="min-height:44px" ${clickAttr}>
                 <span class="text-[9px] font-black text-slate-700 w-3 text-center shrink-0">${i + 1}</span>
                 <div class="min-w-0 flex-1 flex flex-col gap-0.5">
@@ -803,7 +803,8 @@ function renderUserStats() {
                     </div>
                 </div>
                 ${leakPill(r.acc)}
-                ${r.key ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>` : ''}
+                ${drillBtn}
+                ${r.key && !showDrill ? `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>` : ''}
             </div>`;
         }).join('')}</div>`;
     }
@@ -868,11 +869,48 @@ function renderUserStats() {
             <p class="text-[10px] text-slate-500 mt-1 ml-7">${hasAnyLeaks ? 'Focus here to plug your biggest leaks' : 'Keep playing — leaks appear after ' + LEAK_MIN + ' reps'}</p>
         </div>
         <div class="p-3 flex flex-col gap-3">
-            ${leakSection('📍', 'Spots', leakRows(worstSpots))}
+            ${leakSection('📍', 'Spots', leakRows(worstSpots, true))}
             ${leakSection('🃏', 'Hands', leakRows(worstHands))}
             ${leakSection('💺', 'Position Groups', leakRows(worstPG))}
         </div>
     </div>`;
+
+    // === SESSION HISTORY ===
+    {
+        const histKey = profileKey('gto_train_history_v1');
+        let sessionHist = [];
+        try { sessionHist = JSON.parse(localStorage.getItem(histKey) || '[]'); } catch(_) {}
+        if (!Array.isArray(sessionHist)) sessionHist = [];
+        if (sessionHist.length > 0) {
+            const histRows = sessionHist.slice(0, 15).map(r => {
+                const d = new Date(r.at);
+                const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                const timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+                const accCol = r.acc >= 80 ? 'text-emerald-400' : r.acc >= 65 ? 'text-yellow-400' : 'text-rose-400';
+                const scLabels = (r.scenarios || []).map(sc => (typeof SCENARIO_SHORT !== 'undefined' ? SCENARIO_SHORT[sc] : null) || sc).filter(Boolean).slice(0, 4).join(' · ') || 'Mixed';
+                return `<div class="flex items-center gap-3 py-2.5 border-b border-slate-800/30 last:border-0">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[11px] text-slate-300 font-semibold truncate">${scLabels}</div>
+                        <div class="text-[9px] text-slate-600 mt-0.5">${dateStr} · ${timeStr}</div>
+                    </div>
+                    <div class="shrink-0 text-right">
+                        <div class="text-[11px] font-black ${accCol}">${r.acc}%</div>
+                        <div class="text-[9px] text-slate-600">${r.hands}h</div>
+                    </div>
+                </div>`;
+            }).join('');
+            html += `<div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                <div class="px-5 pt-4 pb-3 border-b border-slate-800/40 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm">📋</span>
+                        <p class="text-xs font-black text-slate-200">Session History</p>
+                    </div>
+                    <span class="text-[8px] text-slate-600 font-bold uppercase tracking-wider">Last ${Math.min(sessionHist.length, 15)}</span>
+                </div>
+                <div class="px-4 py-1">${histRows}</div>
+            </div>`;
+        }
+    }
 
     // === MEDAL SHOWCASE ===
     if (totalMedals > 0) {

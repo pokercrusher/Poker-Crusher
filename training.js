@@ -91,7 +91,8 @@ let sessionBuilder = {
     families: ['OPEN', 'DEFEND', 'VS_3BET', 'LIMPERS', 'SQUEEZE'],  // can span PREFLOP + POSTFLOP
     sessionLength: 'ENDLESS',  // 'ENDLESS' | 10 | 25 | 50
     stakeId: '1/3',            // key into STAKE_PRESETS
-    displayMode: 'dollars'     // 'dollars' | 'bb'
+    displayMode: 'dollars',    // 'dollars' | 'bb'
+    pfStacks: [5,8,10,13,15,20] // active push/fold stack depths
 };
 
 // Which modules currently have at least one active family?
@@ -966,6 +967,7 @@ function syncSessionToConfig() {
             state.config.scenarios = [...firstFam.scenarios];
         }
     }
+    state.pfStacks = sessionBuilder.pfStacks.length ? [...sessionBuilder.pfStacks] : [5,8,10,13,15,20];
 }
 
 // --- Limper mix (preserved behavior) ---
@@ -983,7 +985,8 @@ function saveSessionConfig() {
             families: sessionBuilder.families,
             sessionLength: sessionBuilder.sessionLength,
             stakeId: sessionBuilder.stakeId,
-            displayMode: sessionBuilder.displayMode
+            displayMode: sessionBuilder.displayMode,
+            pfStacks: sessionBuilder.pfStacks
         }));
     } catch(e) {}
 }
@@ -997,6 +1000,7 @@ function loadSessionConfig() {
             if (c.sessionLength !== undefined) sessionBuilder.sessionLength = c.sessionLength;
             if (c.stakeId && STAKE_PRESETS[c.stakeId]) sessionBuilder.stakeId = c.stakeId;
             if (c.displayMode === 'dollars' || c.displayMode === 'bb') sessionBuilder.displayMode = c.displayMode;
+            if (Array.isArray(c.pfStacks) && c.pfStacks.length) sessionBuilder.pfStacks = c.pfStacks;
         }
     } catch(e) {}
     // Sync openSize to match stake preset's defaultOpen
@@ -1096,6 +1100,34 @@ function renderDynamicFilters() {
         const btn = document.getElementById(`lmix-${p}`);
         if (btn) btn.className = `config-btn py-2.5 rounded-xl text-[11px] font-bold ${p === limperMixPreset ? 'selected' : ''}`;
     });
+    // Push/fold stack depth filter
+    const hasPushFold = sessionBuilder.families.includes('PUSH_FOLD');
+    const pfStackEl = document.getElementById('filter-pf-stacks');
+    if (pfStackEl) pfStackEl.classList.toggle('hidden', !hasPushFold);
+    if (hasPushFold) renderPFStackChips();
+}
+
+function renderPFStackChips() {
+    const el = document.getElementById('cfg-pf-stacks');
+    if (!el) return;
+    const depths = (typeof PF_STACK_DEPTHS !== 'undefined') ? PF_STACK_DEPTHS : [5,8,10,13,15,20];
+    el.innerHTML = depths.map(d => {
+        const sel = sessionBuilder.pfStacks.includes(d);
+        return `<button onclick="togglePFStack(${d})" class="config-btn py-2.5 rounded-xl text-[11px] font-bold ${sel ? 'selected' : ''}">${d}BB</button>`;
+    }).join('');
+}
+
+function togglePFStack(depth) {
+    const idx = sessionBuilder.pfStacks.indexOf(depth);
+    if (idx >= 0) {
+        if (sessionBuilder.pfStacks.length > 1) sessionBuilder.pfStacks.splice(idx, 1);
+    } else {
+        sessionBuilder.pfStacks.push(depth);
+        sessionBuilder.pfStacks.sort((a,b) => a - b);
+    }
+    syncSessionToConfig();
+    saveSessionConfig();
+    renderPFStackChips();
 }
 
 function validatePool() {
@@ -1369,7 +1401,8 @@ function hideLibrary() {
 
 // ── Library state ─────────────────────────────────────────────
 const libSel = { category: 'RFI', heroPos: null, oppPos: null, bucket: '1L',
-    pfPosState: 'IP', pfFamily: 'BTN_vs_BB', pfView: 'Overview', pfArchetype: 'A_HIGH_DRY', pfSelectedHandClass: null };
+    pfPosState: 'IP', pfFamily: 'BTN_vs_BB', pfView: 'Overview', pfArchetype: 'A_HIGH_DRY', pfSelectedHandClass: null,
+    pfStackDepth: 10 };
 
 function setLibCategory(cat) {
     state.libCategory = cat;
@@ -1430,8 +1463,18 @@ function getLibSpots() {
             return { hero: p.hero, opp: k, key: k,
                      label: `${POS_LABELS[p.opener]} opens · ${POS_LABELS[p.caller1]} & ${POS_LABELS[p.caller2]} call` };
         });
+    } else if (cat === 'PUSH_FOLD') {
+        const depth = libSel.pfStackDepth || 10;
+        const depthData = (typeof PF_PUSH !== 'undefined') ? (PF_PUSH[depth] || {}) : {};
+        return Object.keys(depthData).map(p => ({ hero: p, opp: null, key: p }));
     }
     return [];
+}
+
+function setLibPFStack(depth) {
+    libSel.pfStackDepth = depth;
+    libSel.heroPos = null; // reset hero so first valid pos is selected
+    renderLibrary();
 }
 
 // ── Render toggle rows + chart area ───────────────────────────
@@ -1440,7 +1483,7 @@ function renderLibrary() {
     const isPostflop = cat === 'POSTFLOP';
 
     // Update category tab styles
-    ['RFI','FACING_RFI','RFI_VS_3BET','VS_4BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','POSTFLOP'].forEach(tab => {
+    ['RFI','FACING_RFI','RFI_VS_3BET','VS_4BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD','POSTFLOP'].forEach(tab => {
         const btn = document.getElementById(`lib-tab-${tab}`);
         if (btn) btn.className = `pc-chip pc-chip-sm ${cat === tab ? 'active' : ''}`;
     });
@@ -1482,8 +1525,8 @@ function renderLibrary() {
         return `<button onclick="setLibHero('${h}')" class="pc-chip pc-chip-sm transition-all ${active ? 'active' : ''}">${POS_LABELS[h] || h}</button>`;
     }).join('');
 
-    // Opponent row (hidden for RFI which has no opponent)
-    if (cat === 'RFI') {
+    // Opponent row (hidden for RFI and PUSH_FOLD which have no opponent)
+    if (cat === 'RFI' || cat === 'PUSH_FOLD') {
         oppRow.classList.add('hidden');
         libSel.oppPos = null;
     } else {
@@ -1500,12 +1543,19 @@ function renderLibrary() {
         }).join('');
     }
 
-    // Bucket row (VS_LIMP only)
+    // Bucket row (VS_LIMP only) / Stack depth row (PUSH_FOLD only)
     if (cat === 'VS_LIMP') {
         bucketRow.classList.remove('hidden');
         bucketRow.innerHTML = [['1L','1 Limper'],['2L','2 Limpers'],['3P','3+ Limpers']].map(([b, lab]) => {
             const active = libSel.bucket === b;
             return `<button onclick="setLibBucket('${b}')" class="pc-chip pc-chip-sm transition-all ${active ? 'active' : ''}">${lab}</button>`;
+        }).join('');
+    } else if (cat === 'PUSH_FOLD') {
+        bucketRow.classList.remove('hidden');
+        const depths = (typeof PF_STACK_DEPTHS !== 'undefined') ? PF_STACK_DEPTHS : [5,8,10,13,15,20];
+        bucketRow.innerHTML = depths.map(d => {
+            const active = libSel.pfStackDepth === d;
+            return `<button onclick="setLibPFStack(${d})" class="pc-chip pc-chip-sm transition-all ${active ? 'active' : ''}">${d}BB</button>`;
         }).join('');
     } else {
         bucketRow.classList.add('hidden');
@@ -2013,6 +2063,10 @@ function renderLibraryChart() {
         data = getLimpDataForBucket(spot.hero, spot.opp, libSel.bucket) || allFacingLimps[spot.key];
     } else if (cat === 'SQUEEZE') data = squeezeRanges[spot.key];
     else if (cat === 'SQUEEZE_2C') data = squeezeVsRfiTwoCallers[spot.key];
+    else if (cat === 'PUSH_FOLD') {
+        const depth = libSel.pfStackDepth || 10;
+        data = (typeof PF_PUSH !== 'undefined' && PF_PUSH[depth]) ? PF_PUSH[depth][spot.key] : null;
+    }
 
     if (!data) { area.innerHTML = '<div class="text-slate-600 text-sm mt-10">No data for this selection.</div>'; return; }
 
@@ -2020,6 +2074,7 @@ function renderLibraryChart() {
     let title = '';
     if (cat === 'RFI') title = `${POS_LABELS[spot.hero]} Open Range`;
     else if (cat === 'VS_LIMP') title = `${POS_LABELS[spot.hero]} vs ${POS_LABELS[spot.opp]} Limp`;
+    else if (cat === 'PUSH_FOLD') title = `${POS_LABELS[spot.hero] || spot.hero} Push Range — ${libSel.pfStackDepth}BB`;
     else if (cat === 'SQUEEZE' || cat === 'SQUEEZE_2C') {
         const p = cat === 'SQUEEZE' ? parseSqueezeKey(spot.key) : parseSqueeze2CKey(spot.key);
         title = cat === 'SQUEEZE'
@@ -2031,7 +2086,9 @@ function renderLibraryChart() {
 
     // Legend
     let legendHtml = '';
-    if (cat === 'RFI') {
+    if (cat === 'PUSH_FOLD') {
+        legendHtml = '<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-rose-600 inline-block"></span>Shove</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>';
+    } else if (cat === 'RFI') {
         legendHtml = '<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-indigo-600 inline-block"></span>Open</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>';
     } else if (cat === 'VS_LIMP') {
         legendHtml = '<div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider"><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-orange-600 inline-block"></span>Iso</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-cyan-700 inline-block"></span>Limp</span><span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-slate-950 border border-slate-700 inline-block"></span>Fold</span></div>';
@@ -2051,7 +2108,9 @@ function renderLibraryChart() {
             const r1 = RANKS[i], r2 = RANKS[j];
             const hKey = (i === j) ? r1 + r2 : (i < j ? r1 + r2 + 's' : r2 + r1 + 'o');
             let bg = 'bg-slate-900';
-            if (cat === 'RFI') {
+            if (cat === 'PUSH_FOLD') {
+                if (checkRangeHelper(hKey, data)) bg = 'bg-rose-600';
+            } else if (cat === 'RFI') {
                 if (checkRangeHelper(hKey, data)) bg = 'bg-indigo-600';
             } else if (cat === 'VS_LIMP') {
                 if (checkRangeHelper(hKey, getLimpRaise(data))) bg = 'bg-orange-600';
@@ -2072,7 +2131,10 @@ function renderLibraryChart() {
 
     // Hand counts
     let counts = '';
-    if (cat === 'RFI') {
+    if (cat === 'PUSH_FOLD') {
+        const n = (data || []).reduce((acc, combo) => acc + countCombos(combo), 0);
+        counts = `<div class="text-[11px] text-slate-500"><span class="font-bold text-rose-400">${n}</span> shove combos</div>`;
+    } else if (cat === 'RFI') {
         const n = (data || []).reduce((acc, combo) => acc + countCombos(combo), 0);
         counts = `<div class="text-[11px] text-slate-500"><span class="font-bold text-slate-300">${n}</span> combos</div>`;
     } else if (data["3-bet"] || data["4-bet"] || data["Squeeze"]) {

@@ -640,6 +640,7 @@
                 <button id="lib-tab-VS_LIMP" onclick="setLibCategory('VS_LIMP')" class="pc-chip pc-chip-sm">vs Limpers</button>
                 <button id="lib-tab-SQUEEZE" onclick="setLibCategory('SQUEEZE')" class="pc-chip pc-chip-sm">Squeeze</button>
                 <button id="lib-tab-SQUEEZE_2C" onclick="setLibCategory('SQUEEZE_2C')" class="pc-chip pc-chip-sm">Squeeze 2C</button>
+                <button id="lib-tab-PUSH_FOLD" onclick="setLibCategory('PUSH_FOLD')" class="pc-chip pc-chip-sm">Push/Fold</button>
                 <button id="lib-tab-POSTFLOP" onclick="setLibCategory('POSTFLOP')" class="pc-chip pc-chip-sm">Postflop</button>
             </div>
             <!-- Row 2: hero position picker (always shown) -->
@@ -868,6 +869,15 @@
                         <button onclick="setLimperMix('multiway')" id="lmix-multiway" class="config-btn py-2.5 rounded-xl text-[11px] font-bold selected">Active</button>
                     </div>
                     <p class="text-[9px] text-slate-600 mt-2 leading-snug">1L / 2L / 3+ — Tight: 70/22/8 · Live: 50/32/18 · Active: 38/40/22</p>
+                </div>
+
+                <!-- Push/Fold Stack Depths (conditional) -->
+                <div id="filter-pf-stacks" class="hidden bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
+                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Stack Depths</p>
+                    <div class="grid grid-cols-3 gap-2" id="cfg-pf-stacks">
+                        <!-- Injected by renderPFStackChips() -->
+                    </div>
+                    <p class="text-[9px] text-slate-600 mt-2">Shove-or-fold scenarios at these effective stack sizes</p>
                 </div>
             </div>
 
