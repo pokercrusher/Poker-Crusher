@@ -780,7 +780,7 @@ const BET_SIZING_SCENARIOS = [
         correctSizes: ['75', 'POT'],
         bestSize: '75',
         wrongSizes: ['CHECK', '33', '50'],
-        explanation: 'You missed your draw and are bluffing the river. Go big: bluffs need to force folds, and small bets get looked up too often by live players. A 75% or pot-sized bluff is credible and forces real decisions.'
+        explanation: 'You have seven-high with no pair, no draw — total air. Villain checked to you IP. Go big: bluffs need to force folds, and small bets get looked up too often by live players with any pair. A 75% or pot-sized bluff is credible and forces real decisions. Small bluffs are the worst of both worlds.'
     },
     {
         id: 'river-check-medium-strength',
@@ -939,14 +939,14 @@ const BET_SIZING_SCENARIOS = [
         category: 'RIVER_BLUFF',
         street: 'RIVER',
         hand: ['7c','6c'],
-        board: ['Ah','Kd','Tc','3s','2h'],
+        board: ['Ac','Kd','Tc','3s','2h'],
         position: 'OOP',
         potSize: 90,
         stackBehind: 210,
         correctSizes: ['75', 'POT'],
         bestSize: '75',
         wrongSizes: ['CHECK', '33', '50'],
-        explanation: 'You missed your flush draw and have seven-high — essentially air. If you decide to bluff the river, go big: a small bet gets called too often by live players with any pair. A 75% bet puts real pressure on villain\'s ace-less hands. Small bluffs are the worst of both worlds — you risk chips but don\'t generate enough folds.'
+        explanation: 'You had a club flush draw through the turn (4 clubs: Ac Tc 7c 6c) that bricked on the river. Now you have seven-high — essentially air. If you decide to bluff, go big: small bets get called too often by live players with any pair. A 75% bet puts real pressure on villain\'s bluff-catchers. Small bluffs are the worst of both worlds — you risk chips without generating enough folds.'
     }
 ];
 

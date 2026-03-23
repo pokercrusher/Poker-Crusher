@@ -29,10 +29,10 @@ function renderDrillCardHtml(card) {
     const sym  = { h: '♥', d: '♦', c: '♣', s: '♠' }[suit] || '?';
     const red  = suit === 'h' || suit === 'd';
     const col  = red ? 'text-rose-500' : 'text-slate-800';
-    return `<div class="flex flex-col items-center justify-between w-10 h-[58px] bg-white rounded-lg shadow-lg px-1 py-1 select-none">
-        <span class="text-[13px] font-black leading-none ${col} self-start">${rank}</span>
-        <span class="text-[18px] leading-none ${col}">${sym}</span>
-        <span class="text-[13px] font-black leading-none ${col} self-end rotate-180">${rank}</span>
+    return `<div class="flex flex-col items-center justify-between w-14 h-[80px] sm:w-16 sm:h-[90px] bg-white rounded-xl shadow-lg px-1.5 py-1.5 select-none">
+        <span class="text-[15px] sm:text-[17px] font-black leading-none ${col} self-start">${rank}</span>
+        <span class="text-[22px] sm:text-[26px] leading-none ${col}">${sym}</span>
+        <span class="text-[15px] sm:text-[17px] font-black leading-none ${col} self-end rotate-180">${rank}</span>
     </div>`;
 }
 
@@ -279,10 +279,23 @@ function renderPotOddsQuestion(s) {
         </div>
 
         <!-- Prompt -->
-        <p class="text-sm text-slate-400 text-center">
-            You need <span class="text-white font-black">___% equity</span> to call profitably.
-            <br class="mb-1"><span class="text-[10px] text-slate-600">Do you have it?</span>
-        </p>
+        <div class="text-center">
+            <p class="text-sm text-slate-300">
+                You need <span class="text-white font-black">${pct}% equity</span> to call profitably.
+            </p>
+            <p class="text-xs text-slate-500 mt-1">Does your hand have it?</p>
+        </div>
+
+        <!-- Hint -->
+        <div class="w-full">
+            <button id="po-hint-btn" onclick="showPotOddsHint()"
+                class="w-full py-2.5 rounded-xl text-[12px] font-bold text-amber-400 border border-amber-800/40 bg-amber-950/20 hover:bg-amber-900/30 active:scale-[0.98] transition-all">
+                💡 How do I estimate my equity?
+            </button>
+            <div id="po-hint-panel" class="hidden mt-2 bg-slate-900 border border-amber-800/30 rounded-xl px-4 py-3">
+                <!-- populated by showPotOddsHint() -->
+            </div>
+        </div>
 
         <!-- Action buttons -->
         <div class="w-full grid grid-cols-2 gap-3">
@@ -371,7 +384,10 @@ function renderBetSizeQuestion(s) {
         </div>
 
         <!-- Prompt -->
-        <p class="text-sm text-slate-400 text-center">You bet first on the <span class="text-white font-semibold">${streetLabel.toLowerCase()}</span>.<br><span class="text-[10px] text-slate-600">How much?</span></p>
+        ${s.position === 'IP'
+            ? `<p class="text-sm text-slate-300 text-center">Villain checks to you on the <span class="text-white font-semibold">${streetLabel.toLowerCase()}</span>.</p>`
+            : `<p class="text-sm text-slate-300 text-center">Action is on you on the <span class="text-white font-semibold">${streetLabel.toLowerCase()}</span>.</p>`
+        }
 
         <!-- Size buttons -->
         <div class="w-full grid grid-cols-4 gap-2">${btns}</div>
@@ -432,6 +448,33 @@ function submitBetSizeAnswer(size) {
     try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
 
     renderMathDrillView('feedback');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HINT HANDLER (Pot Odds)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function showPotOddsHint() {
+    const item = mathDrill.queue[mathDrill.idx];
+    if (!item) return;
+    const hintPanel = document.getElementById('po-hint-panel');
+    const hintBtn   = document.getElementById('po-hint-btn');
+    if (!hintPanel) return;
+
+    const s = item.s;
+    // Rule-of-4: outs × 4 on flop, outs × 2 on turn (approximation guide)
+    const ruleNote = s.street === 'FLOP'
+        ? 'On the flop, multiply your outs × 4 for a rough equity %.'
+        : s.street === 'TURN'
+        ? 'On the turn, multiply your outs × 2 for a rough equity %.'
+        : '';
+
+    hintPanel.innerHTML = `
+        <p class="text-[11px] font-bold uppercase tracking-widest text-amber-500 mb-2">Equity Guide</p>
+        <p class="text-[12px] text-slate-300 leading-relaxed mb-2">${s.outsSummary}</p>
+        ${ruleNote ? `<p class="text-[11px] text-slate-500 italic">${ruleNote}</p>` : ''}`;
+    hintPanel.classList.remove('hidden');
+    if (hintBtn) hintBtn.classList.add('hidden');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
