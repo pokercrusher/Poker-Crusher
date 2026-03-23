@@ -2654,7 +2654,7 @@ window.onload = function(){ loadProgress(); try{ updateMenuUI(); }catch(e){} try
 document.addEventListener('wheel', function(e) {
     const menuScreen = document.getElementById('menu-screen');
     if (!menuScreen || menuScreen.classList.contains('hidden')) return;
-    const overlayIds = ['config-screen','challenge-screen','library-screen','settings-screen','stats-screen','daily-run-screen','drilldown-panel'];
+    const overlayIds = ['config-screen','challenge-screen','library-screen','settings-screen','stats-screen','daily-run-screen','drilldown-panel','math-drill-screen'];
     const anyOverlayOpen = overlayIds.some(id => { const el = document.getElementById(id); return el && !el.classList.contains('hidden'); });
     if (anyOverlayOpen) return;
     menuScreen.scrollTop += e.deltaY;

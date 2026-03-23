@@ -571,6 +571,10 @@
             </button>
             <!-- Prescription card: populated by updateMenuUI() -->
             <div id="menu-prescription-card" class="w-full bg-slate-900/60 border border-slate-700/40 rounded-2xl p-4 text-left"></div>
+            <button onclick="showMathDrillMenu()" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                MATH DRILLS
+            </button>
             <div class="grid grid-cols-2 gap-3">
                 <button onclick="showUserStats()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
@@ -1135,11 +1139,13 @@
 
     <!-- PokerCrusher JS (split into modules — order matters!) -->
     <script defer src="ranges.js"></script>
+    <script defer src="scenarios.js"></script>
     <script defer src="cloud.js"></script>
     <script defer src="engine.js"></script>
     <script defer src="training.js"></script>
     <script defer src="challenge.js"></script>
     <script defer src="ui.js"></script>
+    <script defer src="drills.js"></script>
 
 <script>
 // Firebase bootstrap — Auth + Firestore. Safe for file:// (cloud disabled locally).
@@ -1207,6 +1213,18 @@
                 <button onclick="closeCampaignCompleteToMenu()" class="w-full py-4 pc-btn-utility font-bold text-sm">Main Menu</button>
             </div>
         </div>
+    </div>
+
+    <!-- MATH DRILLS SCREEN -->
+    <div id="math-drill-screen" class="hidden fixed inset-0 bg-slate-950 z-50 flex flex-col overflow-hidden">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/60 shrink-0">
+            <button onclick="exitMathDrill()" class="text-slate-500 hover:text-slate-300 text-[11px] font-black uppercase tracking-widest px-3 py-2 rounded-xl hover:bg-slate-800/50 transition-all">EXIT</button>
+            <span id="math-drill-title" class="text-[11px] font-black text-slate-400 uppercase tracking-widest">Math Drills</span>
+            <span id="math-drill-progress" class="text-[11px] font-bold text-slate-500 min-w-[40px] text-right"></span>
+        </div>
+        <!-- Content — fully injected by drills.js -->
+        <div id="math-drill-content" class="flex-1 overflow-y-auto"></div>
     </div>
 
 </body>
