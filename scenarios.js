@@ -489,7 +489,7 @@ const POT_ODDS_SCENARIOS = [
         heroEquity: 97,
         correctAction: 'CALL',
         outsSummary: 'Top set on a safe river — ~97% equity',
-        explanation: 'This scenario teaches a mindset point: with top set on a blank board, you need 32% equity and have 97%. Call any river bet instantly. The only question is whether to raise. Always call your monsters.'
+        explanation: 'This scenario teaches a mindset point: with top set on a blank board, you need 32% equity and have 97%. Never fold here. The real question is whether to raise for value — with a set on a safe river, a raise is often correct to extract maximum value from two-pair and overpairs. At minimum, call instantly.'
     },
     {
         id: 'river-broadway-nuts',
@@ -519,6 +519,116 @@ const POT_ODDS_SCENARIOS = [
         outsSummary: 'Top pair (Queens) with J kicker on bricked river — ~55% equity',
         explanation: 'Top pair good kicker on a safe river faces a half-pot bet. You need 25% equity and have ~55%. The ten on the river didn\'t change much — villain\'s range still has many bluffs and weaker pairs. Call.'
     }
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POT ODDS MATH SCENARIOS
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure arithmetic — no cards. Given pot + bet, what % equity do you need?
+// Formula: bet / (pot + 2×bet) × 100
+// SR key: 'POT_MATH|' + scenario.id
+
+const POT_MATH_SCENARIOS = [
+
+    // ── SMALL BETS (1/3 pot → 20%) ───────────────────────────────────────────
+
+    {
+        id: 'pm-third-pot-a',
+        category: 'SMALL_BET',
+        pot: 90, bet: 30,
+        correctPct: 20,
+        choices: [15, 20, 25, 33],
+        explanation: '30 \u00f7 (90 + 60) = 30 \u00f7 150 = 20%. A 1/3-pot bet gives the caller great odds \u2014 you only need to win 1 in 5 times to break even.'
+    },
+    {
+        id: 'pm-third-pot-b',
+        category: 'SMALL_BET',
+        pot: 60, bet: 20,
+        correctPct: 20,
+        choices: [17, 20, 25, 33],
+        explanation: '20 \u00f7 (60 + 40) = 20 \u00f7 100 = 20%. Same result \u2014 pot size doesn\'t change the math when the ratio stays the same. 1/3-pot always needs exactly 20%.'
+    },
+
+    // ── MEDIUM BETS (1/2 pot → 25%, 2/3 pot → 29%, 3/4 pot → 30%) ──────────
+
+    {
+        id: 'pm-half-pot-a',
+        category: 'MEDIUM_BET',
+        pot: 100, bet: 50,
+        correctPct: 25,
+        choices: [20, 25, 29, 33],
+        explanation: '50 \u00f7 (100 + 100) = 50 \u00f7 200 = 25%. A half-pot bet is the most common sizing you\'ll face. Memorise this: half-pot always needs 25% equity.'
+    },
+    {
+        id: 'pm-half-pot-b',
+        category: 'MEDIUM_BET',
+        pot: 80, bet: 40,
+        correctPct: 25,
+        choices: [20, 25, 33, 38],
+        explanation: '40 \u00f7 (80 + 80) = 40 \u00f7 160 = 25%. The pot size changed but the answer didn\'t \u2014 because the ratio is still 1/2. Learn the bet-size ratios, not just specific dollar amounts.'
+    },
+    {
+        id: 'pm-two-thirds-pot-a',
+        category: 'MEDIUM_BET',
+        pot: 90, bet: 60,
+        correctPct: 29,
+        choices: [25, 29, 33, 38],
+        explanation: '60 \u00f7 (90 + 120) = 60 \u00f7 210 \u2248 29%. The 2/3-pot sizing is very common. A flush draw (~36%) calls comfortably; a gutshot (~16%) folds.'
+    },
+    {
+        id: 'pm-two-thirds-pot-b',
+        category: 'MEDIUM_BET',
+        pot: 100, bet: 67,
+        correctPct: 29,
+        choices: [24, 29, 33, 38],
+        explanation: '67 \u00f7 (100 + 134) = 67 \u00f7 234 \u2248 29%. The classic 2/3-pot c-bet. Needs 29% \u2014 right at the boundary for most semi-bluff draws on the turn.'
+    },
+    {
+        id: 'pm-three-quarter-pot',
+        category: 'MEDIUM_BET',
+        pot: 80, bet: 60,
+        correctPct: 30,
+        choices: [25, 30, 33, 38],
+        explanation: '60 \u00f7 (80 + 120) = 60 \u00f7 200 = 30%. A 3/4-pot bet pushes the requirement toward 30%. OESD on the turn (17% equity) is now a clear fold.'
+    },
+
+    // ── POT BETS (1x pot → 33%) ───────────────────────────────────────────────
+
+    {
+        id: 'pm-pot-bet-a',
+        category: 'POT_BET',
+        pot: 80, bet: 80,
+        correctPct: 33,
+        choices: [25, 29, 33, 40],
+        explanation: '80 \u00f7 (80 + 160) = 80 \u00f7 240 = 33%. A pot-sized bet always needs 33% equity \u2014 one of the most important numbers in poker. You\'re being offered exactly 2-to-1.'
+    },
+    {
+        id: 'pm-pot-bet-b',
+        category: 'POT_BET',
+        pot: 100, bet: 100,
+        correctPct: 33,
+        choices: [25, 33, 38, 43],
+        explanation: '100 \u00f7 (100 + 200) = 100 \u00f7 300 = 33%. Same result. Pot bets always require 33%. A flush draw (36%) calls; a bare straight draw (32%) is a close fold.'
+    },
+
+    // ── OVERBETS (1.5x pot → 38%) ─────────────────────────────────────────────
+
+    {
+        id: 'pm-overbet-a',
+        category: 'OVERBET',
+        pot: 70, bet: 105,
+        correctPct: 38,
+        choices: [33, 38, 43, 50],
+        explanation: '105 \u00f7 (70 + 210) = 105 \u00f7 280 = 37.5% \u2248 38%. A 1.5x overbet needs 38% equity \u2014 most draws don\'t qualify. Only combo draws or strong made hands can call here.'
+    },
+    {
+        id: 'pm-overbet-b',
+        category: 'OVERBET',
+        pot: 80, bet: 120,
+        correctPct: 38,
+        choices: [33, 38, 43, 50],
+        explanation: '120 \u00f7 (80 + 240) = 120 \u00f7 320 = 37.5% \u2248 38%. Overbets polarise the pressure. Only strong made hands or premium combo draws can call \u2014 everything else folds.'
+    },
 ];
 
 
@@ -970,4 +1080,11 @@ const BET_SIZING_CATEGORIES = {
     POSITION:     { label: 'Position Plays',    color: 'text-indigo-400' },
     SPR:          { label: 'Stack-to-Pot',      color: 'text-yellow-400' },
     TURN:         { label: 'Turn Decisions',    color: 'text-orange-400' }
+};
+
+const POT_MATH_CATEGORIES = {
+    SMALL_BET:   { label: 'Small Bets (1/3 pot)',    color: 'text-slate-300'  },
+    MEDIUM_BET:  { label: 'Medium Bets (1/2\u20133/4 pot)', color: 'text-indigo-400' },
+    POT_BET:     { label: 'Pot-Sized Bets',          color: 'text-yellow-400' },
+    OVERBET:     { label: 'Overbets (1.5x+)',         color: 'text-rose-400'   },
 };
