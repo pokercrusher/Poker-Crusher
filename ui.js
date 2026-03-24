@@ -1414,6 +1414,19 @@ let _toastTimer = null;
 function showToast(text, type, duration) {
     const container = document.getElementById('toast-container');
     if (!container) { console.warn('[Toast] Missing #toast-container:', text); return; }
+    // Fix 1 (mobile): Recalculate toast position fresh from the spacer's live position
+    // before each show. Layout changes between rounds (preflop ↔ postflop, community
+    // cards toggling) can leave --toast-top stale from the previous layout state.
+    if (window.innerWidth <= 768) {
+        const toastSpacer = document.getElementById('trainer-toast-spacer');
+        if (toastSpacer) {
+            const sr = toastSpacer.getBoundingClientRect();
+            const th = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toast-h')) || 28;
+            if (sr.top > 0) {
+                document.documentElement.style.setProperty('--toast-top', (sr.top + sr.height / 2 - th / 2) + 'px');
+            }
+        }
+    }
     // Clear any existing toast
     if (_toastTimer) clearTimeout(_toastTimer);
     container.innerHTML = '';
@@ -1867,16 +1880,42 @@ function renderPrescriptionCard() {
     const accColor = top.recentAcc >= 70 ? 'text-yellow-400' : 'text-rose-400';
     const escapedKey = top.spotKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-    el.innerHTML = `
-        <div class="flex items-center justify-between mb-2">
-            <p class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest">Biggest Leak</p>
-            <span class="${accColor} font-black text-sm">${top.recentAcc}%</span>
-        </div>
-        <p class="text-slate-200 font-bold text-sm leading-tight">${spotName}</p>
-        ${handStr ? `<p class="text-slate-500 text-[11px] mt-1">Leaking on: ${handStr}</p>` : ''}
-        <button onclick="launchTargetedSession('${escapedKey}')" class="mt-3 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">
-            Fix This Now — 15 hands
-        </button>`;
+    // Fix 5 (mobile): Collapse to single-line row matching other button heights.
+    // Expand/collapse detail on tap. Desktop keeps the full expanded layout.
+    if (window.innerWidth <= 768) {
+        el.innerHTML = `
+            <button onclick="toggleLeakCard(this)" style="width:100%;background:none;border:none;cursor:pointer;text-align:left;" class="flex items-center justify-between gap-2 py-0.5">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest shrink-0">Biggest Leak</span>
+                    <span class="text-slate-200 font-bold text-xs leading-tight truncate">${spotName}</span>
+                </div>
+                <span class="${accColor} font-black text-sm shrink-0">${top.recentAcc}%</span>
+            </button>
+            <div class="leak-card-detail" style="max-height:0;overflow:hidden;transition:max-height 0.25s ease-out;">
+                ${handStr ? `<p class="text-slate-500 text-[11px] mt-2">Leaking on: ${handStr}</p>` : ''}
+                <button onclick="launchTargetedSession('${escapedKey}')" class="mt-2 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">Fix This Now — 15 hands</button>
+            </div>`;
+    } else {
+        el.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest">Biggest Leak</p>
+                <span class="${accColor} font-black text-sm">${top.recentAcc}%</span>
+            </div>
+            <p class="text-slate-200 font-bold text-sm leading-tight">${spotName}</p>
+            ${handStr ? `<p class="text-slate-500 text-[11px] mt-1">Leaking on: ${handStr}</p>` : ''}
+            <button onclick="launchTargetedSession('${escapedKey}')" class="mt-3 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">
+                Fix This Now — 15 hands
+            </button>`;
+    }
+}
+
+function toggleLeakCard(btn) {
+    const card = btn.closest('#menu-prescription-card');
+    if (!card) return;
+    const detail = card.querySelector('.leak-card-detail');
+    if (!detail) return;
+    const closed = !detail.style.maxHeight || detail.style.maxHeight === '0' || detail.style.maxHeight === '0px';
+    detail.style.maxHeight = closed ? detail.scrollHeight + 'px' : '0';
 }
 
 function launchTargetedSession(spotKey) {
@@ -2554,6 +2593,16 @@ function drilldownSpot(spotKey) {
         root.setProperty('--cc-h', Math.round(ccW * 1.38) + 'px');
         root.setProperty('--cc-rank-size', Math.round(ccW * 0.4) + 'px');
         root.setProperty('--cc-suit-size', Math.round(ccW * 0.32) + 'px');
+        // Fix 3 (mobile): hero hole cards must be >= community board cards.
+        // Re-apply hero card vars if the calculated cardW fell below ccW.
+        if (isMobile && ccW >= cardW) {
+            const hcW = ccW + 4; // slightly larger than board cards
+            const hcH = Math.round(hcW * 1.5);
+            root.setProperty('--hero-card-w', hcW + 'px');
+            root.setProperty('--hero-card-h', hcH + 'px');
+            root.setProperty('--hero-rank-size', Math.round(hcW * 0.52) + 'px');
+            root.setProperty('--hero-suit-size', Math.round(hcW * 0.42) + 'px');
+        }
         // Action buttons — scale off window height on mobile portrait
         const btnPad = Math.max(14, Math.round(refH * (isMobile ? 0.047 : 0.06)));
         const btnFont = Math.max(15, Math.round((isMobile ? winW : outerW) * (isMobile ? 0.041 : 0.022)));

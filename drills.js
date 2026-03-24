@@ -712,7 +712,7 @@ function renderBetSizeFeedback(s) {
         <!-- Size rating display -->
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4">
             <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-3">Sizing Scale</p>
-            <div class="flex flex-wrap gap-2">${sizePills}</div>
+            <div class="flex gap-2" style="flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;">${sizePills}</div>
             <div class="flex gap-4 mt-3 text-[9px] text-slate-600">
                 <span><span class="text-emerald-400 font-bold">Green</span> = best</span>
                 <span><span class="text-yellow-400 font-bold">Yellow</span> = ok</span>

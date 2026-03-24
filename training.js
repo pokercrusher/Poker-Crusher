@@ -3605,7 +3605,8 @@ let postflopStats = { total:0, correct:0, streak:0, byArchetype:{}, byFamily:{},
 function loadPostflopStats(){ try { const s=localStorage.getItem(profileKey('gto_postflop_stats_v1')); if(s) postflopStats=JSON.parse(s); } catch(e){} if(!postflopStats.byArchetype) postflopStats.byArchetype={}; if(!postflopStats.byFamily) postflopStats.byFamily={}; if(!postflopStats.byPosition) postflopStats.byPosition={}; }
 function savePostflopStats(){ try { localStorage.setItem(profileKey('gto_postflop_stats_v1'),JSON.stringify(postflopStats)); } catch(e){} }
 
-function _flopCardsHtml(cards){ return cards.map(c => { const color=flopSuitColor(c.suit); return `<span style="color:${color};font-weight:900;">${c.rank}${SUIT_SYMBOLS[c.suit]}</span>`; }).join(' '); }
+// Fix 7: use _darkBgSuitColor so clubs/spades appear light on the dark trainer background
+function _flopCardsHtml(cards){ return cards.map(c => { const color=_darkBgSuitColor(c.suit); return `<span style="color:${color};font-weight:900;">${c.rank}${SUIT_SYMBOLS[c.suit]}</span>`; }).join(' '); }
 
 function renderPostflopButtons(hidden){
     const container=document.getElementById('action-buttons');
@@ -3651,6 +3652,8 @@ function renderCommunityCards(cards){
         const strip = document.getElementById('community-cards-strip'); if (!strip) return;
         strip.innerHTML = ''; strip.classList.remove('hidden');
         _renderCardRow(strip, cards);
+        // Fix 4: show board/hero card separator when community cards are present
+        const divider = document.getElementById('postflop-card-divider'); if (divider) divider.classList.remove('hidden');
         return;
     }
     // Desktop: render inside felt
@@ -3662,6 +3665,8 @@ function renderCommunityCards(cards){
 function clearCommunityCards(){
     const cc=document.getElementById('community-cards'); if(cc) cc.innerHTML='';
     const strip=document.getElementById('community-cards-strip'); if(strip){ strip.innerHTML=''; strip.classList.add('hidden'); }
+    // Fix 4: hide board/hero card separator when community cards are cleared
+    const divider=document.getElementById('postflop-card-divider'); if(divider) divider.classList.add('hidden');
     const fi=document.getElementById('flop-info-line'); if(fi) fi.classList.add('hidden');
     const tc=document.getElementById('turn-context-line'); if(tc){ tc.classList.add('hidden'); tc.innerHTML=''; }
 }
@@ -3987,7 +3992,8 @@ function handlePostflopInput(action) {
 }
 
 // Dark-background-safe suit color (for modals with bg-slate-900)
-function _darkBgSuitColor(suit){ return (suit==='h'||suit==='d')?'#dc2626':'#e2e8f0'; }
+// Fix 7: clubs/spades use white for maximum contrast on dark chip/modal backgrounds
+function _darkBgSuitColor(suit){ return (suit==='h'||suit==='d')?'#dc2626':'#ffffff'; }
 // Render hero hole cards as styled HTML for dark-bg modal
 function _heroCardsHtml(heroHand){
     if(!heroHand||!heroHand.cards||heroHand.cards.length<2) return '';

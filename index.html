@@ -518,6 +518,15 @@
 
         .scrollbar-hide { scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+        /* ── Fix 2: Mobile trainer layout — prevent dead zone below action buttons ── */
+        @media (max-width: 768px) {
+            /* Cap the table wrapper height so it doesn't consume all vertical space,
+               and the buttons are pulled closer to the bottom of the screen. */
+            #table-wrapper { max-height: 40dvh; }
+            /* Account for iOS/Android home-bar safe area at the bottom. */
+            #trainer-main { padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)); }
+        }
 </style>
 
     <!-- Cloud Sync: Firebase loaded via modular SDK at end of body -->
@@ -984,6 +993,13 @@
 
             <!-- Community cards strip — visible on mobile only; cards rendered here instead of on felt -->
             <div id="community-cards-strip" class="hidden shrink-0 w-full flex items-center justify-center" style="gap:clamp(4px,2vw,10px);padding:2px 0;"></div>
+
+            <!-- Fix 4: Board/hero card separator — shown on mobile postflop via JS when community cards strip is active -->
+            <div id="postflop-card-divider" class="hidden shrink-0 w-full flex items-center gap-3" style="padding:0 2px;">
+                <div class="flex-1 h-px bg-slate-700/50"></div>
+                <span style="font-size:9px;font-weight:900;letter-spacing:0.18em;color:#475569;text-transform:uppercase;">hole cards</span>
+                <div class="flex-1 h-px bg-slate-700/50"></div>
+            </div>
 
             <!-- Hero cards -->
             <div id="hero-area" class="shrink-0 w-full flex items-center justify-center">
