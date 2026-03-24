@@ -3745,47 +3745,12 @@ function _renderPostflopContext(spot, scenario) {
         const spotLabel = _POSTFLOP_SPOT_LABELS[scenario] || '';
         const eyebrow   = spotLabel ? `${street} · ${spotLabel}` : street;
 
-        // Action history context line
+        // Concise context line: positions + IP/OOP + decision type
         const heroLabel   = (spot.heroPos   && POS_LABELS[spot.heroPos])    || spot.heroPos    || 'Hero';
         const villainLabel= (spot.villainPos && POS_LABELS[spot.villainPos]) || spot.villainPos || 'Villain';
-        const hist = spot.actionHistory || [];
-
-        let histLine = '';
-        if (hist.includes('FLOP_CBET') && hist.includes('FLOP_CALLED')) {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: ${heroLabel} bets, ${villainLabel} calls`;
-        } else if (hist.includes('FLOP_CBET_FACED') && hist.includes('FLOP_CALLED')) {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: ${villainLabel} bets, ${heroLabel} calls`;
-        } else if (scenario === 'POSTFLOP_TURN_PROBE') {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: check-check · Turn: ${villainLabel} probes`;
-        } else if (scenario === 'POSTFLOP_TURN_PROBE_DEFEND') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: checked through`;
-        } else if (scenario === 'POSTFLOP_RIVER_CBET') {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: bet-call · Turn: bet-call`;
-        } else if (scenario === 'POSTFLOP_RIVER_DEFEND') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: bet-call · Turn: bet-call`;
-        } else if (scenario === 'POSTFLOP_RIVER_DELAYED_CBET') {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: checked through · Turn: bet-call`;
-        } else if (scenario === 'POSTFLOP_RIVER_DELAYED_DEFEND') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: checked through · Turn: bet-call`;
-        } else if (scenario === 'POSTFLOP_TURN_DELAYED_DEFEND') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: checked through · Turn: ${villainLabel} bets`;
-        } else if (scenario === 'POSTFLOP_RIVER_PROBE') {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: check-check · Turn: check-check · River: ${villainLabel} probes`;
-        } else if (scenario === 'POSTFLOP_RIVER_PROBE_BET') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: check-check · Turn: check-check`;
-        } else if (scenario === 'POSTFLOP_RIVER_TURN_CHECK_CBET') {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: bet-call · Turn: check-check`;
-        } else if (scenario === 'POSTFLOP_RIVER_TURN_CHECK_DEFEND') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: bet-call · Turn: check-check · River: ${villainLabel} bets`;
-        } else if (scenario === 'POSTFLOP_RIVER_PROBE_CALL_BET') {
-            histLine = `${villainLabel} opens, ${heroLabel} calls · Flop: check-check · Turn: ${heroLabel} probes, ${villainLabel} calls`;
-        } else if (scenario === 'POSTFLOP_RIVER_PROBE_CALL_DEFEND') {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: check-check · Turn: ${villainLabel} probes, ${heroLabel} calls · River: ${villainLabel} bets`;
-        } else if (hist.includes('FLOP_CHECK') && hist.includes('FLOP_CHECK_BACK')) {
-            histLine = `${heroLabel} opens, ${villainLabel} calls · Flop: checked through`;
-        } else if (hist.length > 0) {
-            histLine = hist.join(' · ');
-        }
+        const posLabel = spot.positionState === 'IP' ? 'IP' : 'OOP';
+        const isAggressive = /CBET|PROBE_BET|PROBE_CALL_BET/.test(scenario);
+        const histLine = `${heroLabel} vs ${villainLabel} · ${posLabel} · ${isAggressive ? 'bet or check?' : 'call, raise, or fold?'}`;
 
         _renderSpotHeader(eyebrow, histLine, streetColor);
     } catch(_) {

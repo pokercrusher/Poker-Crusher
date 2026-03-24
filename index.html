@@ -519,13 +519,15 @@
         .scrollbar-hide { scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
 
-        /* ── Fix 2: Mobile trainer layout — prevent dead zone below action buttons ── */
+        /* ── Fix 2: Mobile trainer layout — push buttons to bottom, no dead zone ── */
         @media (max-width: 768px) {
-            /* Cap the table wrapper height so it doesn't consume all vertical space,
-               and the buttons are pulled closer to the bottom of the screen. */
-            #table-wrapper { max-height: 40dvh; }
-            /* Account for iOS/Android home-bar safe area at the bottom. */
-            #trainer-main { padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)); }
+            /* Table takes its natural aspect-ratio height; space-between distributes
+               remaining room across gaps, pushing buttons flush to the bottom. */
+            #table-wrapper { flex: none; }
+            #trainer-main {
+                justify-content: space-between;
+                padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
+            }
         }
 </style>
 
