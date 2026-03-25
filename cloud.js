@@ -1128,6 +1128,48 @@ function renderUserStats() {
         html += `</div></div>`;
     }
 
+    // === MATH DRILLS STATS ===
+    const MATH_DRILL_TYPES = [
+        { prefix: 'OUT_COUNT',  label: 'Out Counting' },
+        { prefix: 'RULE_42',    label: 'Rule of 4/2' },
+        { prefix: 'POT_RATIO',  label: 'Pot Odds: Ratio' },
+        { prefix: 'RATIO_PCT',  label: 'Ratio to %' },
+        { prefix: 'EQUITY_DEC', label: 'Equity Decision' },
+        { prefix: 'BET_SIZE',   label: 'Bet Sizing' }
+    ];
+    const srDb = SR.getAll();
+    const mathRows = MATH_DRILL_TYPES.map(({ prefix, label }) => {
+        const keys = Object.keys(srDb).filter(k => k.startsWith(prefix + '|'));
+        let attempts = 0, wrong = 0;
+        keys.forEach(k => {
+            const rec = srDb[k];
+            if (rec && rec.totalAttempts) {
+                attempts += rec.totalAttempts;
+                wrong += (rec.totalWrong || 0);
+            }
+        });
+        if (!attempts) {
+            return `<div class="flex justify-between items-center bg-slate-950/50 rounded-xl px-3 py-2.5">
+                <span class="text-xs font-bold text-slate-400">${label}</span>
+                <span class="text-[11px] text-slate-600">Not started</span>
+            </div>`;
+        }
+        const correct = attempts - wrong;
+        const acc = Math.round(correct / attempts * 100);
+        const col = acc >= 80 ? 'text-emerald-400' : acc >= 60 ? 'text-yellow-400' : 'text-rose-400';
+        return `<div class="flex justify-between items-center bg-slate-950/50 rounded-xl px-3 py-2.5">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-300">${label}</span>
+                <span class="text-[9px] text-slate-600">${attempts} hands</span>
+            </div>
+            <span class="font-black text-xs ${col}">${acc}%</span>
+        </div>`;
+    }).join('');
+    html += `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">Math Drills</p>
+        <div class="flex flex-col gap-2">${mathRows}</div>
+    </div>`;
+
     // === RESET ===
     html += `<button onclick="resetStats()" class="w-full py-3 bg-slate-900 border border-rose-900/40 hover:border-rose-700 rounded-2xl font-bold text-rose-500/70 hover:text-rose-400 transition-all text-sm">Reset All Stats</button>`;
 

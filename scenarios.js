@@ -1,3 +1,98 @@
+// ── MATH DRILL SR KEY TAXONOMY ──
+// All math drill SR keys follow format: PREFIX|bucket-id
+// Buckets are stable strings from category/street/sizing — NEVER from specific cards
+// Generators produce random cards every time; SR key is always the same for a given bucket
+//
+// OUT_COUNT|flush-draw-flop
+// OUT_COUNT|flush-draw-turn
+// OUT_COUNT|backdoor-flush-draw-flop
+// OUT_COUNT|oesd-flop
+// OUT_COUNT|oesd-turn
+// OUT_COUNT|double-gutshot-flop
+// OUT_COUNT|double-gutshot-turn
+// OUT_COUNT|gutshot-flop
+// OUT_COUNT|gutshot-turn
+// OUT_COUNT|straight-flush-draw-flop
+// OUT_COUNT|straight-flush-draw-turn
+// OUT_COUNT|royal-flush-draw-flop
+// OUT_COUNT|royal-flush-draw-turn
+// OUT_COUNT|combo-flush-oesd-flop
+// OUT_COUNT|combo-flush-oesd-turn
+// OUT_COUNT|combo-flush-gutshot-flop
+// OUT_COUNT|combo-flush-gutshot-turn
+// OUT_COUNT|backdoor-straight-flop
+// OUT_COUNT|overcards-two-flop
+// OUT_COUNT|overcards-two-turn
+// OUT_COUNT|overcard-one-flop
+// OUT_COUNT|overcard-one-turn
+// OUT_COUNT|pair-plus-flush-draw-flop
+// OUT_COUNT|pair-plus-flush-draw-turn
+// OUT_COUNT|pair-plus-gutshot-flop
+// OUT_COUNT|pair-plus-gutshot-turn
+// OUT_COUNT|pair-plus-oesd-flop
+// OUT_COUNT|pair-plus-oesd-turn
+// OUT_COUNT|two-overcards-plus-gutshot-flop
+// OUT_COUNT|two-overcards-plus-gutshot-turn
+// OUT_COUNT|underpair-flop
+// OUT_COUNT|underpair-turn
+// OUT_COUNT|no-draw-flop
+// OUT_COUNT|no-draw-turn
+//
+// RULE_42|2-outs-flop  ...  RULE_42|15-outs-turn
+// (outs values: 2,3,4,5,6,7,8,9,10,12,14,15 × flop/turn)
+//
+// POT_RATIO|small-low  ...  POT_RATIO|overbet-high
+// (sizing: small/medium/large/overbet × tier: low/mid/high)
+//
+// RATIO_PCT|1_5-to-1  ...  RATIO_PCT|6-to-1
+// (ratios: 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6)
+//
+// EQUITY_DEC|flush-draw-small-bet-flop        EQUITY_DEC|flush-draw-large-bet-flop
+// EQUITY_DEC|flush-draw-small-bet-turn        EQUITY_DEC|flush-draw-large-bet-turn
+// EQUITY_DEC|oesd-small-bet-flop              EQUITY_DEC|oesd-large-bet-flop
+// EQUITY_DEC|oesd-small-bet-turn              EQUITY_DEC|oesd-large-bet-turn
+// EQUITY_DEC|gutshot-small-bet-flop           EQUITY_DEC|gutshot-large-bet-flop
+// EQUITY_DEC|gutshot-small-bet-turn           EQUITY_DEC|gutshot-large-bet-turn
+// EQUITY_DEC|double-gutshot-small-bet-flop    EQUITY_DEC|double-gutshot-large-bet-flop
+// EQUITY_DEC|double-gutshot-small-bet-turn    EQUITY_DEC|double-gutshot-large-bet-turn
+// EQUITY_DEC|combo-flush-oesd-small-bet-flop  EQUITY_DEC|combo-flush-oesd-large-bet-flop
+// EQUITY_DEC|combo-flush-oesd-small-bet-turn  EQUITY_DEC|combo-flush-oesd-large-bet-turn
+// EQUITY_DEC|combo-flush-gutshot-small-bet-flop EQUITY_DEC|combo-flush-gutshot-large-bet-flop
+// EQUITY_DEC|combo-flush-gutshot-small-bet-turn EQUITY_DEC|combo-flush-gutshot-large-bet-turn
+// EQUITY_DEC|straight-flush-draw-small-bet-flop EQUITY_DEC|straight-flush-draw-large-bet-flop
+// EQUITY_DEC|royal-flush-draw-small-bet-flop  EQUITY_DEC|royal-flush-draw-large-bet-flop
+// EQUITY_DEC|overcards-two-small-bet-flop     EQUITY_DEC|overcards-two-large-bet-flop
+// EQUITY_DEC|overcards-two-small-bet-turn     EQUITY_DEC|overcards-two-large-bet-turn
+// EQUITY_DEC|overcard-one-small-bet-flop      EQUITY_DEC|overcard-one-large-bet-flop
+// EQUITY_DEC|overcard-one-small-bet-turn      EQUITY_DEC|overcard-one-large-bet-turn
+// EQUITY_DEC|pair-plus-flush-draw-small-bet-flop EQUITY_DEC|pair-plus-flush-draw-large-bet-flop
+// EQUITY_DEC|pair-plus-flush-draw-small-bet-turn EQUITY_DEC|pair-plus-flush-draw-large-bet-turn
+// EQUITY_DEC|pair-plus-gutshot-small-bet-flop EQUITY_DEC|pair-plus-gutshot-large-bet-flop
+// EQUITY_DEC|pair-plus-oesd-small-bet-flop    EQUITY_DEC|pair-plus-oesd-large-bet-flop
+// EQUITY_DEC|two-overcards-plus-gutshot-small-bet-flop  EQUITY_DEC|two-overcards-plus-gutshot-large-bet-flop
+// EQUITY_DEC|two-overcards-plus-gutshot-small-bet-turn  EQUITY_DEC|two-overcards-plus-gutshot-large-bet-turn
+// EQUITY_DEC|underpair-small-bet-flop         EQUITY_DEC|underpair-large-bet-flop
+// EQUITY_DEC|underpair-small-bet-turn         EQUITY_DEC|underpair-large-bet-turn
+// EQUITY_DEC|backdoor-flush-small-bet-flop    EQUITY_DEC|backdoor-flush-large-bet-flop
+// EQUITY_DEC|backdoor-straight-small-bet-flop EQUITY_DEC|backdoor-straight-large-bet-flop
+// EQUITY_DEC|no-draw-any-bet
+//
+// BET_SIZE|dry-rainbow-ip-flop     BET_SIZE|dry-rainbow-oop-flop
+// BET_SIZE|dry-rainbow-ip-turn     BET_SIZE|dry-rainbow-oop-turn
+// BET_SIZE|dry-rainbow-ip-river    BET_SIZE|dry-rainbow-oop-river
+// BET_SIZE|semi-wet-ip-flop        BET_SIZE|semi-wet-oop-flop
+// BET_SIZE|semi-wet-ip-turn        BET_SIZE|semi-wet-oop-turn
+// BET_SIZE|semi-wet-ip-river       BET_SIZE|semi-wet-oop-river
+// BET_SIZE|wet-two-tone-ip-flop    BET_SIZE|wet-two-tone-oop-flop
+// BET_SIZE|wet-two-tone-ip-turn    BET_SIZE|wet-two-tone-oop-turn
+// BET_SIZE|wet-two-tone-ip-river   BET_SIZE|wet-two-tone-oop-river
+// BET_SIZE|monotone-ip-flop        BET_SIZE|monotone-oop-flop
+// BET_SIZE|monotone-ip-turn        BET_SIZE|monotone-oop-turn
+// BET_SIZE|monotone-ip-river       BET_SIZE|monotone-oop-river
+// BET_SIZE|paired-ip-flop          BET_SIZE|paired-oop-flop
+// BET_SIZE|paired-ip-turn          BET_SIZE|paired-oop-turn
+// BET_SIZE|paired-ip-river         BET_SIZE|paired-oop-river
+
 // scenarios.js — Math & Decision Drill Data
 // Loaded after ranges.js via defer script tag in index.html
 //
@@ -1088,3 +1183,848 @@ const POT_MATH_CATEGORIES = {
     POT_BET:     { label: 'Pot-Sized Bets',          color: 'text-yellow-400' },
     OVERBET:     { label: 'Overbets (1.5x+)',         color: 'text-rose-400'   },
 };
+
+// ── DECK UTILITIES ──
+// Card string format: rank + suit e.g. 'Ah', 'Tc', '2s'
+// RANKS/SUITS sourced from ranges.js (loaded before scenarios.js via defer)
+
+function buildShuffledDeck() {
+    const deck = [];
+    for (const r of RANKS) for (const s of SUITS) deck.push(r + s);
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+}
+
+function dealCards(deck, n) {
+    return deck.splice(0, n);
+}
+
+function validateNoDuplicates() {
+    const all = [];
+    for (const arr of arguments) for (const c of arr) all.push(c);
+    return all.length === new Set(all).size;
+}
+
+function dealWithConstraints(handSize, boardSize, constraintFn, maxAttempts) {
+    maxAttempts = maxAttempts || 50;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const deck = buildShuffledDeck();
+        const hand = dealCards(deck, handSize);
+        const board = dealCards(deck, boardSize);
+        if (constraintFn(hand, board) && validateNoDuplicates(hand, board)) {
+            return { hand, board };
+        }
+    }
+    return null;
+}
+
+// ── MATH DRILL GENERATORS ──
+
+const RULE42_OUTS_POOL = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15];
+
+function generateRuleOf42Scenario(outs, street) {
+    if (!outs) outs = RULE42_OUTS_POOL[Math.floor(Math.random() * RULE42_OUTS_POOL.length)];
+    if (!street) street = Math.random() < 0.5 ? 'FLOP' : 'TURN';
+
+    const mult = street === 'FLOP' ? 4 : 2;
+    const correctEquity = outs * mult;
+
+    const offsets = [3, 6, 10];
+    for (let i = offsets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [offsets[i], offsets[j]] = [offsets[j], offsets[i]];
+    }
+
+    const used = new Set([correctEquity]);
+    const wrongs = [];
+    for (const off of offsets) {
+        const sign = Math.random() < 0.5 ? 1 : -1;
+        let c = correctEquity + sign * off;
+        if (c <= 0 || c > 100 || used.has(c)) c = correctEquity - sign * off;
+        if (c <= 0 || c > 100 || used.has(c)) {
+            for (let step = 2; step <= 30; step += 2) {
+                const f = correctEquity + step;
+                if (f <= 100 && !used.has(f)) { c = f; break; }
+            }
+        }
+        if (c > 0 && c <= 100 && !used.has(c)) { used.add(c); wrongs.push(c); }
+    }
+
+    const choices = [correctEquity, ...wrongs];
+    for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
+
+    const id = 'r42-' + outs + '-' + street.toLowerCase();
+    const srKey = 'RULE_42|' + id;
+    const explanation = outs + ' outs on the ' + street.toLowerCase() + '. ' + outs + ' \xd7 ' + mult + ' = ' + correctEquity + '%. ' +
+        (street === 'FLOP' ? 'Two cards to come \u2014 use Rule of 4.' : 'One card to come \u2014 use Rule of 2.');
+
+    return { id, srKey, type: 'RULE_42', street, outs, correctEquity, choices, explanation };
+}
+
+const POT_POOL = [20, 25, 30, 40, 50, 60, 75, 80, 90, 100, 120, 150, 180, 200, 240, 300];
+const SIZING_MULTIPLIERS = {
+    small:   [0.25, 0.33],
+    medium:  [0.50, 0.67],
+    large:   [0.75, 1.00],
+    overbet: [1.50, 2.00]
+};
+
+function generatePotOddsRatioScenario(sizingCategory, potTier) {
+    const sizings = Object.keys(SIZING_MULTIPLIERS);
+    if (!sizingCategory || !SIZING_MULTIPLIERS[sizingCategory]) {
+        sizingCategory = sizings[Math.floor(Math.random() * sizings.length)];
+    }
+    const tiers = ['low', 'mid', 'high'];
+    if (!potTier || !tiers.includes(potTier)) {
+        potTier = tiers[Math.floor(Math.random() * tiers.length)];
+    }
+
+    let potPool = POT_POOL.slice();
+    if (potTier === 'low')  potPool = POT_POOL.filter(p => p <= 50);
+    if (potTier === 'mid')  potPool = POT_POOL.filter(p => p > 50 && p <= 120);
+    if (potTier === 'high') potPool = POT_POOL.filter(p => p > 120);
+    if (!potPool.length) potPool = POT_POOL;
+
+    const pot = potPool[Math.floor(Math.random() * potPool.length)];
+    const mults = SIZING_MULTIPLIERS[sizingCategory];
+    const multiplier = mults[Math.floor(Math.random() * mults.length)];
+    const bet = Math.max(5, Math.round(pot * multiplier / 5) * 5);
+
+    const correctRatioNum = Math.round((pot + bet) / bet * 10) / 10;
+    const correctRatio = correctRatioNum.toFixed(1) + ':1';
+
+    const offsets = [0.5, 1.0, 1.5];
+    for (let i = offsets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [offsets[i], offsets[j]] = [offsets[j], offsets[i]];
+    }
+
+    const usedNums = new Set([correctRatioNum]);
+    const wrongs = [];
+    for (const off of offsets) {
+        const tryUp = Math.random() < 0.5;
+        const c1 = Math.round((correctRatioNum + (tryUp ? off : -off)) * 10) / 10;
+        const c2 = Math.round((correctRatioNum + (tryUp ? -off : off)) * 10) / 10;
+        let candidate = null;
+        if (c1 >= 1.0 && !usedNums.has(c1)) candidate = c1;
+        else if (c2 >= 1.0 && !usedNums.has(c2)) candidate = c2;
+        else {
+            for (let step = 1; step <= 20; step++) {
+                const f = Math.round((correctRatioNum + step * 0.5) * 10) / 10;
+                if (f >= 1.0 && !usedNums.has(f)) { candidate = f; break; }
+            }
+        }
+        if (candidate !== null) { usedNums.add(candidate); wrongs.push(candidate.toFixed(1) + ':1'); }
+    }
+
+    const choices = [correctRatio, ...wrongs];
+    for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
+
+    const id = 'por-' + sizingCategory + '-' + potTier;
+    const srKey = 'POT_RATIO|' + id;
+    const explanation = 'Pot $' + pot + ' + bet $' + bet + ' = $' + (pot + bet) + ' total. You call $' + bet + ' to win $' + (pot + bet) + '. That\'s ' + correctRatio + '.';
+
+    return { id, srKey, type: 'POT_RATIO', sizingCategory, potTier, pot, bet, correctRatio, choices, explanation };
+}
+
+const RATIO_POOL = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6];
+
+function generateRatioToPercentScenario(ratio) {
+    if (!ratio) ratio = RATIO_POOL[Math.floor(Math.random() * RATIO_POOL.length)];
+
+    const correctPct = Math.round(1 / (ratio + 1) * 100);
+    const ratioDisplay = ratio + ':1';
+
+    const offsets = [4, 8, 13];
+    for (let i = offsets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [offsets[i], offsets[j]] = [offsets[j], offsets[i]];
+    }
+
+    const used = new Set([correctPct]);
+    const wrongs = [];
+    for (const off of offsets) {
+        const sign = Math.random() < 0.5 ? 1 : -1;
+        let c = correctPct + sign * off;
+        if (c <= 0 || c > 100 || used.has(c)) c = correctPct - sign * off;
+        if (c <= 0 || c > 100 || used.has(c)) {
+            for (let step = 1; step <= 30; step++) {
+                const f = correctPct + step * 2;
+                if (f <= 100 && !used.has(f)) { c = f; break; }
+            }
+        }
+        if (c > 0 && c <= 100 && !used.has(c)) { used.add(c); wrongs.push(c); }
+    }
+
+    const choices = [correctPct, ...wrongs];
+    for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
+
+    const id = 'r2p-' + String(ratio).replace('.', '_') + '-to-1';
+    const srKey = 'RATIO_PCT|' + id;
+    const explanation = ratioDisplay + ' means 1 part yours, ' + ratio + ' parts theirs. You need to win 1 in ' + (ratio + 1) + ' times = ' + correctPct + '%. Shortcut: 1 \xf7 (ratio + 1).';
+
+    return { id, srKey, type: 'RATIO_PCT', ratio, ratioDisplay, correctPct, choices, explanation };
+}
+
+// ── OUT COUNTING CONSTANTS ──
+
+const OC_CATEGORIES = [
+    'flush-draw', 'backdoor-flush-draw', 'oesd', 'double-gutshot',
+    'gutshot', 'straight-flush-draw', 'royal-flush-draw',
+    'combo-flush-oesd', 'combo-flush-gutshot', 'backdoor-straight',
+    'overcards-two', 'overcard-one', 'pair-plus-flush-draw',
+    'pair-plus-gutshot', 'pair-plus-oesd', 'two-overcards-plus-gutshot',
+    'underpair', 'no-draw'
+];
+
+const OC_STREETS = ['FLOP', 'TURN'];
+
+// Categories only valid on flop (no turn variant)
+const OC_FLOP_ONLY = [
+    'backdoor-flush-draw', 'backdoor-straight',
+    'royal-flush-draw', 'straight-flush-draw'
+];
+
+const OUTS_BY_CATEGORY = {
+    'flush-draw':                  9,
+    'backdoor-flush-draw':         2,
+    'oesd':                        8,
+    'double-gutshot':              8,
+    'gutshot':                     4,
+    'straight-flush-draw':        15,
+    'royal-flush-draw':           15,
+    'combo-flush-oesd':           15,
+    'combo-flush-gutshot':        12,
+    'backdoor-straight':           2,
+    'overcards-two':               6,
+    'overcard-one':                3,
+    'pair-plus-flush-draw':       14,
+    'pair-plus-gutshot':          10,
+    'pair-plus-oesd':             10,
+    'two-overcards-plus-gutshot': 10,
+    'underpair':                   2,
+    'no-draw':                     1
+};
+
+// Wrong answer offsets per category — plausible but never correct
+const OC_WRONG_OFFSETS = {
+    'flush-draw':                  [2, 4, 6],
+    'backdoor-flush-draw':         [1, 3, 5],
+    'oesd':                        [2, 4, 6],
+    'double-gutshot':              [2, 4, 6],
+    'gutshot':                     [2, 4, 6],
+    'straight-flush-draw':         [2, 4, 7],
+    'royal-flush-draw':            [2, 4, 7],
+    'combo-flush-oesd':            [2, 4, 7],
+    'combo-flush-gutshot':         [2, 4, 6],
+    'backdoor-straight':           [1, 3, 5],
+    'overcards-two':               [2, 3, 5],
+    'overcard-one':                [1, 2, 4],
+    'pair-plus-flush-draw':        [2, 4, 6],
+    'pair-plus-gutshot':           [2, 4, 6],
+    'pair-plus-oesd':              [2, 4, 6],
+    'two-overcards-plus-gutshot':  [2, 4, 6],
+    'underpair':                   [1, 3, 5],
+    'no-draw':                     [1, 2, 3]
+};
+
+// ── OUT COUNTING HELPERS ──
+
+// Extract rank character from card string: 'Ah' -> 'A'
+function cardRank(c) { return c.slice(0, -1); }
+
+// Extract suit character from card string: 'Ah' -> 'h'
+function cardSuit(c) { return c[c.length - 1]; }
+
+// Convert rank char to number — delegates to RANK_NUM from ranges.js
+function rankNum(r) { return RANK_NUM[r] || 0; }
+
+// Get all rank numbers from a card array, sorted descending
+function rankNums(cards) {
+    return cards.map(c => rankNum(cardRank(c))).sort((a, b) => b - a);
+}
+
+// Count cards of a given suit in a card array
+function suitCount(cards, suit) {
+    return cards.filter(c => cardSuit(c) === suit).length;
+}
+
+// Get the suit with the most cards across a card array
+function dominantSuit(cards) {
+    const counts = {};
+    cards.forEach(c => { const s = cardSuit(c); counts[s] = (counts[s] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+// Check if ranks contain an open-ended straight draw
+function hasOESD(allRanks) {
+    const ranks = [...new Set(allRanks)].sort((a, b) => a - b);
+    const withLow = ranks.includes(14) ? [1, ...ranks] : ranks;
+    const unique = [...new Set(withLow)].sort((a, b) => a - b);
+    for (let i = 0; i <= unique.length - 4; i++) {
+        const window = unique.slice(i, i + 4);
+        if (window[3] - window[0] === 3 && window.length === 4) {
+            const low = window[0], high = window[3];
+            if (low > 1 && high < 14) return true;
+        }
+    }
+    return false;
+}
+
+// Check if ranks contain exactly a gutshot (not OESD)
+function hasGutshot(allRanks) {
+    const ranks = [...new Set(allRanks)].sort((a, b) => a - b);
+    const withLow = ranks.includes(14) ? [1, ...ranks] : ranks;
+    const unique = [...new Set(withLow)].sort((a, b) => a - b);
+    for (let i = 0; i <= unique.length - 4; i++) {
+        const window = unique.slice(i, i + 4);
+        if (window[3] - window[0] === 4 && window.length === 4) return true;
+    }
+    return false;
+}
+
+// Check if ranks contain a double gutshot (two different cards each independently complete a different straight)
+function hasDoubleGutshot(allRanks) {
+    const ranks = [...new Set(allRanks)].sort((a, b) => a - b);
+    const withLow = ranks.includes(14) ? [1, ...ranks] : ranks;
+    const unique = [...new Set(withLow)].sort((a, b) => a - b);
+    const completingCards = new Set();
+    for (let low = 1; low <= 10; low++) {
+        const straight = [low, low + 1, low + 2, low + 3, low + 4];
+        const missing = straight.filter(r => !unique.includes(r));
+        if (missing.length === 1 && straight.filter(r => unique.includes(r)).length === 4) {
+            completingCards.add(missing[0]);
+        }
+    }
+    if (completingCards.size === 2) {
+        const cards = [...completingCards].sort((a, b) => a - b);
+        if (cards[1] - cards[0] > 1) return true;
+    }
+    return false;
+}
+
+// ── OUT COUNTING CONSTRAINTS ──
+
+function constraintFlushDraw(hand, board) {
+    for (const suit of ['s', 'h', 'd', 'c']) {
+        if (suitCount(hand, suit) === 2 && suitCount(board, suit) === 2) return true;
+    }
+    return false;
+}
+
+function constraintBackdoorFlushDraw(hand, board) {
+    if (board.length !== 3) return false;
+    for (const suit of ['s', 'h', 'd', 'c']) {
+        if (suitCount(hand, suit) === 2 && suitCount(board, suit) === 1) return true;
+    }
+    return false;
+}
+
+function constraintOESD(hand, board) {
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasOESD(allRanks) && !constraintFlushDraw(hand, board);
+}
+
+function constraintDoubleGutshot(hand, board) {
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasDoubleGutshot(allRanks) && !hasOESD(allRanks) && !constraintFlushDraw(hand, board);
+}
+
+function constraintGutshot(hand, board) {
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasGutshot(allRanks) && !hasOESD(allRanks) && !hasDoubleGutshot(allRanks) && !constraintFlushDraw(hand, board);
+}
+
+function constraintStraightFlushDraw(hand, board) {
+    if (board.length !== 3) return false;
+    for (const suit of ['s', 'h', 'd', 'c']) {
+        const heroSuited = hand.filter(c => cardSuit(c) === suit);
+        const boardSuited = board.filter(c => cardSuit(c) === suit);
+        if (heroSuited.length === 2 && boardSuited.length === 2) {
+            const allRanks = [...heroSuited, ...boardSuited].map(c => rankNum(cardRank(c)));
+            if (hasOESD(allRanks)) return true;
+        }
+    }
+    return false;
+}
+
+function constraintRoyalFlushDraw(hand, board) {
+    if (board.length !== 3) return false;
+    const broadway = new Set([10, 11, 12, 13, 14]);
+    for (const suit of ['s', 'h', 'd', 'c']) {
+        const heroSuited = hand.filter(c => cardSuit(c) === suit && broadway.has(rankNum(cardRank(c))));
+        const boardSuited = board.filter(c => cardSuit(c) === suit && broadway.has(rankNum(cardRank(c))));
+        if (heroSuited.length === 2 && boardSuited.length === 2) return true;
+    }
+    return false;
+}
+
+function constraintComboFlushOESD(hand, board) {
+    if (!constraintFlushDraw(hand, board)) return false;
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasOESD(allRanks);
+}
+
+function constraintComboFlushGutshot(hand, board) {
+    if (!constraintFlushDraw(hand, board)) return false;
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasGutshot(allRanks) && !hasOESD(allRanks);
+}
+
+function constraintBackdoorStraight(hand, board) {
+    if (board.length !== 3) return false;
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    const unique = [...new Set(allRanks)].sort((a, b) => a - b);
+    for (let i = 0; i <= unique.length - 3; i++) {
+        if (unique[i + 2] - unique[i] <= 4) return true;
+    }
+    return false;
+}
+
+function constraintOvercardsTwo(hand, board) {
+    const boardRanks = board.map(c => rankNum(cardRank(c)));
+    const maxBoard = Math.max(...boardRanks);
+    const heroRanks = hand.map(c => rankNum(cardRank(c)));
+    if (heroRanks.every(r => r > maxBoard)) {
+        const allRanks = [...heroRanks, ...boardRanks];
+        return !hasOESD(allRanks) && !hasGutshot(allRanks) && !constraintFlushDraw(hand, board);
+    }
+    return false;
+}
+
+function constraintOvercardOne(hand, board) {
+    const boardRanks = board.map(c => rankNum(cardRank(c)));
+    const maxBoard = Math.max(...boardRanks);
+    const heroRanks = hand.map(c => rankNum(cardRank(c)));
+    const overcards = heroRanks.filter(r => r > maxBoard);
+    if (overcards.length === 1) {
+        const allRanks = [...heroRanks, ...boardRanks];
+        return !hasOESD(allRanks) && !hasGutshot(allRanks) && !constraintFlushDraw(hand, board);
+    }
+    return false;
+}
+
+function constraintPairPlusFlushDraw(hand, board) {
+    const boardRankSet = new Set(board.map(c => cardRank(c)));
+    const hasPair = hand.some(c => boardRankSet.has(cardRank(c)));
+    return hasPair && constraintFlushDraw(hand, board);
+}
+
+function constraintPairPlusGutshot(hand, board) {
+    const boardRankSet = new Set(board.map(c => cardRank(c)));
+    const hasPair = hand.some(c => boardRankSet.has(cardRank(c)));
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasPair && hasGutshot(allRanks) && !hasOESD(allRanks) && !constraintFlushDraw(hand, board);
+}
+
+function constraintPairPlusOESD(hand, board) {
+    const boardRankSet = new Set(board.map(c => cardRank(c)));
+    const hasPair = hand.some(c => boardRankSet.has(cardRank(c)));
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasPair && hasOESD(allRanks) && !constraintFlushDraw(hand, board);
+}
+
+function constraintTwoOvercardsGutshot(hand, board) {
+    const boardRanks = board.map(c => rankNum(cardRank(c)));
+    const maxBoard = Math.max(...boardRanks);
+    const heroRanks = hand.map(c => rankNum(cardRank(c)));
+    const bothOvercards = heroRanks.every(r => r > maxBoard);
+    const allRanks = [...heroRanks, ...boardRanks];
+    return bothOvercards && hasGutshot(allRanks) && !hasOESD(allRanks) && !constraintFlushDraw(hand, board);
+}
+
+function constraintUnderpair(hand, board) {
+    if (cardRank(hand[0]) !== cardRank(hand[1])) return false;
+    const pairRank = rankNum(cardRank(hand[0]));
+    const boardRanks = board.map(c => rankNum(cardRank(c)));
+    return boardRanks.every(r => r > pairRank);
+}
+
+function constraintNoDraw(hand, board) {
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    const boardRankSet = new Set(board.map(c => cardRank(c)));
+    const hasPair = hand.some(c => boardRankSet.has(cardRank(c)));
+    const isPocketPair = cardRank(hand[0]) === cardRank(hand[1]);
+    return !hasPair && !isPocketPair &&
+        !hasOESD(allRanks) && !hasGutshot(allRanks) &&
+        !constraintFlushDraw(hand, board) && !constraintBackdoorFlushDraw(hand, board);
+}
+
+// Dispatch map — must be defined after all constraint functions
+const OC_CONSTRAINT_FNS = {
+    'flush-draw':                  constraintFlushDraw,
+    'backdoor-flush-draw':         constraintBackdoorFlushDraw,
+    'oesd':                        constraintOESD,
+    'double-gutshot':              constraintDoubleGutshot,
+    'gutshot':                     constraintGutshot,
+    'straight-flush-draw':         constraintStraightFlushDraw,
+    'royal-flush-draw':            constraintRoyalFlushDraw,
+    'combo-flush-oesd':            constraintComboFlushOESD,
+    'combo-flush-gutshot':         constraintComboFlushGutshot,
+    'backdoor-straight':           constraintBackdoorStraight,
+    'overcards-two':               constraintOvercardsTwo,
+    'overcard-one':                constraintOvercardOne,
+    'pair-plus-flush-draw':        constraintPairPlusFlushDraw,
+    'pair-plus-gutshot':           constraintPairPlusGutshot,
+    'pair-plus-oesd':              constraintPairPlusOESD,
+    'two-overcards-plus-gutshot':  constraintTwoOvercardsGutshot,
+    'underpair':                   constraintUnderpair,
+    'no-draw':                     constraintNoDraw
+};
+
+// ── OUT COUNTING EXPLANATIONS ──
+
+const OC_EXPLANATIONS = {
+    'flush-draw':                  function(h, b) { return 'You have two suited cards and there are two more of your suit on board. Any of the remaining ' + OUTS_BY_CATEGORY['flush-draw'] + ' cards of that suit complete your flush. 9 outs.'; },
+    'backdoor-flush-draw':         function(h, b) { return 'You have two suited cards but only one matching suit on the flop. You need running cards \u2014 two more of your suit to hit. 2 outs equivalent (backdoor).'; },
+    'oesd':                        function(h, b) { return 'You have an open-ended straight draw \u2014 both the low and high end complete your straight. 8 outs.'; },
+    'double-gutshot':              function(h, b) { return 'You have a double gutshot \u2014 two different single cards each independently complete a different straight. 8 outs total.'; },
+    'gutshot':                     function(h, b) { return 'You have a gutshot straight draw \u2014 only one specific rank completes your straight. 4 outs.'; },
+    'straight-flush-draw':         function(h, b) { return 'You have a straight flush draw \u2014 suited connectors with two board cards of the same suit in sequence. Up to 15 outs (9 flush + 6 straight, some overlap).'; },
+    'royal-flush-draw':            function(h, b) { return 'You have a royal flush draw \u2014 two broadway suited cards with two more broadway cards of the same suit on board. 15 outs to the nuts.'; },
+    'combo-flush-oesd':            function(h, b) { return 'You have a combination flush draw and open-ended straight draw. Up to 15 outs (9 flush + 8 straight minus overlap).'; },
+    'combo-flush-gutshot':         function(h, b) { return 'You have a combination flush draw and gutshot straight draw. 12 outs total (9 flush + 4 straight minus overlap).'; },
+    'backdoor-straight':           function(h, b) { return 'You have three to a straight \u2014 you need running cards on turn and river to complete it. 2 outs equivalent (backdoor).'; },
+    'overcards-two':               function(h, b) { return 'Both your hole cards are higher than anything on the board. If you pair either card you likely take the lead. 6 outs.'; },
+    'overcard-one':                function(h, b) { return 'One of your hole cards is higher than all board cards. Pairing it likely gives you the best hand. 3 outs.'; },
+    'pair-plus-flush-draw':        function(h, b) { return 'You have a pair on the board plus a flush draw. You\u2019re not drawing dead \u2014 5 outs to improve your pair to trips plus 9 flush outs. 14 outs total.'; },
+    'pair-plus-gutshot':           function(h, b) { return 'You have a pair on the board plus a gutshot straight draw. 6 outs to trips plus 4 straight outs. 10 outs total.'; },
+    'pair-plus-oesd':              function(h, b) { return 'You have a pair on the board plus an open-ended straight draw. 6 outs to trips plus 8 straight outs (with some overlap). ~10 outs.'; },
+    'two-overcards-plus-gutshot':  function(h, b) { return 'You have two overcards plus a gutshot. 6 overcard outs plus 4 straight outs. 10 outs total.'; },
+    'underpair':                   function(h, b) { return 'You have a pocket pair lower than all board cards. Your only outs are the 2 remaining cards of your rank to make a set. 2 outs.'; },
+    'no-draw':                     function(h, b) { return 'You have complete air \u2014 no pair, no draw, no overcard. You have at most 1\u20132 runner-runner outs. Generally a fold to any significant bet.'; }
+};
+
+// ── GENERATORS (continued) ──
+
+function generateOutCountingScenario(category, street) {
+    if (!category) category = OC_CATEGORIES[Math.floor(Math.random() * OC_CATEGORIES.length)];
+
+    if (OC_FLOP_ONLY.includes(category)) {
+        street = 'FLOP';
+    } else if (!street) {
+        street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+    }
+
+    const boardSize = street === 'FLOP' ? 3 : 4;
+    const constraintFn = OC_CONSTRAINT_FNS[category];
+
+    const result = dealWithConstraints(2, boardSize, constraintFn, 50);
+
+    const hand  = result ? result.hand  : ['Ah', 'Jh'];
+    const board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
+    const usedCategory = result ? category : 'flush-draw';
+
+    if (!result) {
+        console.warn('generateOutCountingScenario: dealWithConstraints failed for ' + category + '/' + street + ', using fallback');
+    }
+
+    const correctOuts = OUTS_BY_CATEGORY[usedCategory];
+
+    const offsets = (OC_WRONG_OFFSETS[usedCategory] || [2, 4, 6]).slice();
+    for (let i = offsets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [offsets[i], offsets[j]] = [offsets[j], offsets[i]];
+    }
+
+    const used = new Set([correctOuts]);
+    const wrongs = [];
+    for (const off of offsets) {
+        const sign = Math.random() < 0.5 ? 1 : -1;
+        let val = correctOuts + sign * off;
+        if (val <= 0) val = correctOuts + off;
+        if (val > 20) val = correctOuts - off;
+        if (!used.has(val) && val > 0 && val <= 20) { used.add(val); wrongs.push(val); }
+    }
+    while (wrongs.length < 3) {
+        const v = correctOuts + wrongs.length + 1;
+        if (!used.has(v) && v <= 20) { used.add(v); wrongs.push(v); }
+    }
+
+    const choices = [correctOuts, ...wrongs.slice(0, 3)];
+    for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+    }
+
+    const id = 'oc-' + usedCategory + '-' + street.toLowerCase();
+    const srKey = 'OUT_COUNT|' + id;
+    const explanationFn = OC_EXPLANATIONS[usedCategory];
+
+    return {
+        id, srKey,
+        type: 'OUT_COUNTING',
+        category: usedCategory,
+        street,
+        hand, board,
+        correctOuts,
+        choices,
+        outsSummary: correctOuts + ' outs \u2014 ' + usedCategory.replace(/-/g, ' '),
+        explanation: explanationFn ? explanationFn(hand, board) : correctOuts + ' outs.'
+    };
+}
+
+const ED_BET_SIZES = {
+    small:   [0.25, 0.33],
+    medium:  [0.50, 0.67],
+    large:   [0.75, 1.00],
+    overbet: [1.50, 2.00]
+};
+
+function generateEquityDecisionScenario(category, street, betSizeCategory) {
+    if (!category) category = OC_CATEGORIES[Math.floor(Math.random() * OC_CATEGORIES.length)];
+
+    if (OC_FLOP_ONLY.includes(category)) {
+        street = 'FLOP';
+    } else if (!street) {
+        street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+    }
+
+    if (!betSizeCategory) {
+        const sizes = Object.keys(ED_BET_SIZES);
+        betSizeCategory = sizes[Math.floor(Math.random() * sizes.length)];
+    }
+
+    const boardSize = street === 'FLOP' ? 3 : 4;
+    const constraintFn = OC_CONSTRAINT_FNS[category];
+
+    const result = dealWithConstraints(2, boardSize, constraintFn, 50);
+
+    const hand  = result ? result.hand  : ['Ah', 'Jh'];
+    const board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
+    const usedCategory = result ? category : 'flush-draw';
+
+    if (!result) {
+        console.warn('generateEquityDecisionScenario: dealWithConstraints failed for ' + category + '/' + street);
+    }
+
+    const pot = POT_POOL[Math.floor(Math.random() * POT_POOL.length)];
+    const multipliers = ED_BET_SIZES[betSizeCategory] || ED_BET_SIZES.medium;
+    const multiplier = multipliers[Math.floor(Math.random() * multipliers.length)];
+    const bet = Math.max(5, Math.round(pot * multiplier / 5) * 5);
+
+    const potOddsRatioNum = (pot + bet) / bet;
+    const potOddsRatio = potOddsRatioNum.toFixed(1) + ':1';
+    const equityNeededPct = Math.round(bet / (pot + 2 * bet) * 100);
+
+    const outs = OUTS_BY_CATEGORY[usedCategory];
+    const heroEquityPct = street === 'FLOP' ? outs * 4 : outs * 2;
+    const correctAction = heroEquityPct >= equityNeededPct ? 'CALL' : 'FOLD';
+
+    const betBucket = (betSizeCategory === 'small' || betSizeCategory === 'medium') ? 'small-bet' : 'large-bet';
+
+    let bucketId;
+    if (usedCategory === 'no-draw') {
+        bucketId = 'no-draw-any-bet';
+    } else if (usedCategory === 'backdoor-flush-draw') {
+        bucketId = 'backdoor-flush-' + betBucket + '-flop';
+    } else if (usedCategory === 'backdoor-straight') {
+        bucketId = 'backdoor-straight-' + betBucket + '-flop';
+    } else {
+        bucketId = usedCategory + '-' + betBucket + '-' + street.toLowerCase();
+    }
+
+    const id = 'ed-' + bucketId;
+    const srKey = 'EQUITY_DEC|' + bucketId;
+
+    const explanation = 'You have ' + outs + ' outs = ~' + heroEquityPct + '% equity on the ' + street.toLowerCase() + '. ' +
+        'You\u2019re getting ' + potOddsRatio + ' (need ' + equityNeededPct + '% to call). ' +
+        (heroEquityPct >= equityNeededPct ? 'You have enough equity \u2014 CALL.' : 'You don\u2019t have enough equity \u2014 FOLD.');
+
+    return {
+        id, srKey,
+        type: 'EQUITY_DEC',
+        category: usedCategory,
+        street,
+        betSizeCategory,
+        hand, board,
+        pot, bet,
+        potOddsRatio,
+        equityNeededPct,
+        heroEquityPct,
+        correctAction,
+        outsSummary: outs + ' outs \u2014 ' + usedCategory.replace(/-/g, ' '),
+        explanation
+    };
+}
+
+/* CONSTRAINT TESTS — remove before production
+   constraintFlushDraw(['Ah','Jh'], ['Kh','9h','3c'])          // should be true
+   constraintOESD(['8s','7d'], ['9h','6c','2d'])                // should be true
+   constraintDoubleGutshot(['Tc','Qs'], ['Ah','Jd','8h'])       // should be true (needs 9 or K)
+   constraintGutshot(['Js','9d'], ['Kh','Tc','3c'])             // should be true
+   constraintUnderpair(['5s','5d'], ['Ah','Kc','9d'])           // should be true
+   constraintNoDraw(['2s','7d'], ['Ah','Kc','9d'])              // should be true
+*/
+
+// ── BET SIZING CONSTRAINTS ──
+
+function bsConstraintDryRainbow(hand, board) {
+    const boardSuits = board.map(cardSuit);
+    if (new Set(boardSuits).size < 3) return false;
+    for (const suit of ['s', 'h', 'd', 'c']) {
+        if (suitCount(hand, suit) === 2 && suitCount(board, suit) >= 1) return false;
+    }
+    const boardRanks = board.map(c => cardRank(c));
+    if (new Set(boardRanks).size < boardRanks.length) return false;
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    if (hasOESD(allRanks) || hasGutshot(allRanks)) return false;
+    return true;
+}
+
+function bsConstraintSemiWet(hand, board) {
+    const boardSuits = board.map(cardSuit);
+    const suitCounts = {};
+    boardSuits.forEach(s => { suitCounts[s] = (suitCounts[s] || 0) + 1; });
+    const maxSuit = Math.max(...Object.values(suitCounts));
+    if (maxSuit !== 2) return false;
+    const boardRanks = board.map(c => cardRank(c));
+    if (new Set(boardRanks).size < boardRanks.length) return false;
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    return hasOESD(allRanks) || hasGutshot(allRanks) || constraintFlushDraw(hand, board);
+}
+
+function bsConstraintWetTwoTone(hand, board) {
+    const boardSuits = board.map(cardSuit);
+    const suitCounts = {};
+    boardSuits.forEach(s => { suitCounts[s] = (suitCounts[s] || 0) + 1; });
+    const maxSuit = Math.max(...Object.values(suitCounts));
+    if (maxSuit < 2 || maxSuit === 3) return false;
+    if (!constraintFlushDraw(hand, board)) return false;
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    if (!hasOESD(allRanks) && !hasGutshot(allRanks)) return false;
+    const boardRanks = board.map(c => cardRank(c));
+    if (new Set(boardRanks).size < boardRanks.length) return false;
+    return true;
+}
+
+function bsConstraintMonotone(hand, board) {
+    const boardSuits = board.map(cardSuit);
+    return boardSuits.every(s => s === boardSuits[0]);
+}
+
+function bsConstraintPaired(hand, board) {
+    const boardRanks = board.map(c => cardRank(c));
+    return new Set(boardRanks).size < boardRanks.length;
+}
+
+const BS_CONSTRAINT_FNS = {
+    'dry-rainbow':  bsConstraintDryRainbow,
+    'semi-wet':     bsConstraintSemiWet,
+    'wet-two-tone': bsConstraintWetTwoTone,
+    'monotone':     bsConstraintMonotone,
+    'paired':       bsConstraintPaired
+};
+
+const BS_CATEGORIES = ['dry-rainbow', 'semi-wet', 'wet-two-tone', 'monotone', 'paired'];
+const BS_POSITIONS  = ['IP', 'OOP'];
+const BS_STREETS    = ['FLOP', 'TURN', 'RIVER'];
+
+const BET_SIZE_ANSWERS = {
+    'dry-rainbow-IP-FLOP':    { correctSizes: ['25', '33'], bestSize: '33',  wrongSizes: ['75', 'POT', 'OVERBET'] },
+    'dry-rainbow-OOP-FLOP':   { correctSizes: ['25', '33'], bestSize: '33',  wrongSizes: ['75', 'POT', 'OVERBET'] },
+    'dry-rainbow-IP-TURN':    { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['POT', 'OVERBET'] },
+    'dry-rainbow-OOP-TURN':   { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['POT', 'OVERBET'] },
+    'dry-rainbow-IP-RIVER':   { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'dry-rainbow-OOP-RIVER':  { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['POT', 'OVERBET'] },
+    'semi-wet-IP-FLOP':       { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['25', 'OVERBET'] },
+    'semi-wet-OOP-FLOP':      { correctSizes: ['33', '50'], bestSize: '33',  wrongSizes: ['POT', 'OVERBET'] },
+    'semi-wet-IP-TURN':       { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'semi-wet-OOP-TURN':      { correctSizes: ['50', '75'], bestSize: '50',  wrongSizes: ['25', 'OVERBET'] },
+    'semi-wet-IP-RIVER':      { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'POT'] },
+    'semi-wet-OOP-RIVER':     { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['POT', 'OVERBET'] },
+    'wet-two-tone-IP-FLOP':   { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'wet-two-tone-OOP-FLOP':  { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['25', 'OVERBET'] },
+    'wet-two-tone-IP-TURN':   { correctSizes: ['75', 'POT'], bestSize: 'POT', wrongSizes: ['25', '33'] },
+    'wet-two-tone-OOP-TURN':  { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'wet-two-tone-IP-RIVER':  { correctSizes: ['75', 'POT'], bestSize: 'POT', wrongSizes: ['25', '33'] },
+    'wet-two-tone-OOP-RIVER': { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'monotone-IP-FLOP':       { correctSizes: ['33', '50'], bestSize: '33',  wrongSizes: ['POT', 'OVERBET'] },
+    'monotone-OOP-FLOP':      { correctSizes: ['25', '33'], bestSize: '33',  wrongSizes: ['POT', 'OVERBET'] },
+    'monotone-IP-TURN':       { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['POT', 'OVERBET'] },
+    'monotone-OOP-TURN':      { correctSizes: ['33', '50'], bestSize: '33',  wrongSizes: ['POT', 'OVERBET'] },
+    'monotone-IP-RIVER':      { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'monotone-OOP-RIVER':     { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['25', 'OVERBET'] },
+    'paired-IP-FLOP':         { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'paired-OOP-FLOP':        { correctSizes: ['33', '50'], bestSize: '50',  wrongSizes: ['25', 'OVERBET'] },
+    'paired-IP-TURN':         { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] },
+    'paired-OOP-TURN':        { correctSizes: ['50', '75'], bestSize: '50',  wrongSizes: ['25', 'OVERBET'] },
+    'paired-IP-RIVER':        { correctSizes: ['75', 'POT'], bestSize: 'POT', wrongSizes: ['25', '33'] },
+    'paired-OOP-RIVER':       { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] }
+};
+
+function generateBetSizingScenario(textureCategory, position, street) {
+    if (!textureCategory || !BS_CATEGORIES.includes(textureCategory)) {
+        textureCategory = BS_CATEGORIES[Math.floor(Math.random() * BS_CATEGORIES.length)];
+    }
+    if (!position || !BS_POSITIONS.includes(position)) {
+        position = BS_POSITIONS[Math.floor(Math.random() * BS_POSITIONS.length)];
+    }
+    if (!street || !BS_STREETS.includes(street)) {
+        street = BS_STREETS[Math.floor(Math.random() * BS_STREETS.length)];
+    }
+
+    const constraintFn = BS_CONSTRAINT_FNS[textureCategory];
+    const result = dealWithConstraints(2, 3, constraintFn, 60);
+
+    const hand  = result ? result.hand  : ['Ah', 'Kd'];
+    const board = result ? result.board : ['Jc', '7d', '2s'];
+
+    if (!result) {
+        console.warn('generateBetSizingScenario: dealWithConstraints failed for ' + textureCategory + ', using fallback');
+    }
+
+    const pot = POT_POOL[Math.floor(Math.random() * POT_POOL.length)];
+    const stackBehind = Math.round(pot * (2 + Math.random() * 4) / 5) * 5;
+    const sprValue = (stackBehind / pot).toFixed(1);
+
+    const answerKey = textureCategory + '-' + position + '-' + street;
+    const answers = BET_SIZE_ANSWERS[answerKey] || { correctSizes: ['33', '50'], bestSize: '50', wrongSizes: ['25', 'OVERBET'] };
+
+    const bucketId = textureCategory.toLowerCase() + '-' + position.toLowerCase() + '-' + street.toLowerCase();
+    const id    = 'bs-' + bucketId;
+    const srKey = 'BET_SIZE|' + bucketId;
+
+    const textureDescriptions = {
+        'dry-rainbow':  'dry, rainbow (no flush draws)',
+        'semi-wet':     'semi-wet (some draw potential)',
+        'wet-two-tone': 'wet, two-tone (flush + straight draws)',
+        'monotone':     'monotone (three of a suit)',
+        'paired':       'paired board'
+    };
+    const textureDesc = textureDescriptions[textureCategory] || textureCategory;
+    const streetLow = street.toLowerCase();
+    const posDesc = position === 'IP' ? 'in position' : 'out of position';
+
+    const explanation = 'On a ' + textureDesc + ' ' + streetLow + ' ' + posDesc + ', the optimal sizing is ' +
+        (answers.bestSize === 'POT' ? 'pot' : answers.bestSize === 'OVERBET' ? 'overbet' : answers.bestSize + '%') +
+        '. Correct range: ' + answers.correctSizes.map(sz => sz === 'POT' ? 'pot' : sz === 'OVERBET' ? 'overbet' : sz + '%').join(' or ') + '.';
+
+    return {
+        id, srKey,
+        type: 'BET_SIZE',
+        textureCategory,
+        position,
+        street,
+        hand, board,
+        potSize: pot,
+        stackBehind,
+        sprValue,
+        correctSizes: answers.correctSizes,
+        bestSize:     answers.bestSize,
+        wrongSizes:   answers.wrongSizes,
+        explanation
+    };
+}

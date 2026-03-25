@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const mathDrill = {
-    type: null,         // 'POT_ODDS' | 'BET_SIZE' | 'MIXED'
+    type: null,         // 'POT_ODDS' | 'BET_SIZE' | 'RULE_42' | 'POT_RATIO' | 'RATIO_PCT' | 'MIXED'
     queue: [],          // Array of { s, srKey, drillType }
     idx: 0,
     answered: false,
@@ -68,8 +68,61 @@ function buildMathQueue(type) {
             items.push({ s, srKey: 'POT_ODDS|' + s.id, drillType: 'POT_ODDS' }));
     }
     if (type === 'BET_SIZE' || type === 'MIXED') {
-        (BET_SIZING_SCENARIOS || []).forEach(s =>
-            items.push({ s, srKey: 'BET_SIZE|' + s.id, drillType: 'BET_SIZE' }));
+        BS_CATEGORIES.forEach(textureCategory => {
+            BS_POSITIONS.forEach(position => {
+                BS_STREETS.forEach(street => {
+                    const s = generateBetSizingScenario(textureCategory, position, street);
+                    items.push({ s, srKey: s.srKey, drillType: 'BET_SIZE' });
+                });
+            });
+        });
+    }
+    if (type === 'RULE_42' || type === 'MIXED') {
+        const outsBuckets = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15];
+        const streets = ['FLOP', 'TURN'];
+        outsBuckets.forEach(outs => streets.forEach(street => {
+            const s = generateRuleOf42Scenario(outs, street);
+            items.push({ s, srKey: s.srKey, drillType: 'RULE_42' });
+        }));
+    }
+    if (type === 'POT_RATIO' || type === 'MIXED') {
+        const sizings = ['small', 'medium', 'large', 'overbet'];
+        const tiers = ['low', 'mid', 'high'];
+        sizings.forEach(sz => tiers.forEach(tier => {
+            const s = generatePotOddsRatioScenario(sz, tier);
+            items.push({ s, srKey: s.srKey, drillType: 'POT_RATIO' });
+        }));
+    }
+    if (type === 'RATIO_PCT' || type === 'MIXED') {
+        const ratios = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6];
+        ratios.forEach(ratio => {
+            const s = generateRatioToPercentScenario(ratio);
+            items.push({ s, srKey: s.srKey, drillType: 'RATIO_PCT' });
+        });
+    }
+    if (type === 'OUT_COUNTING' || type === 'MIXED') {
+        OC_CATEGORIES.forEach(category => {
+            const streets = OC_FLOP_ONLY.includes(category) ? ['FLOP'] : ['FLOP', 'TURN'];
+            streets.forEach(street => {
+                const s = generateOutCountingScenario(category, street);
+                items.push({ s, srKey: s.srKey, drillType: 'OUT_COUNTING' });
+            });
+        });
+    }
+    if (type === 'EQUITY_DEC' || type === 'MIXED') {
+        const edCategories = OC_CATEGORIES.filter(c => c !== 'no-draw');
+        const betSizes = ['small', 'large'];
+        edCategories.forEach(category => {
+            const streets = OC_FLOP_ONLY.includes(category) ? ['FLOP'] : ['FLOP', 'TURN'];
+            streets.forEach(street => {
+                betSizes.forEach(betSizeCategory => {
+                    const s = generateEquityDecisionScenario(category, street, betSizeCategory);
+                    items.push({ s, srKey: s.srKey, drillType: 'EQUITY_DEC' });
+                });
+            });
+        });
+        const noDraw = generateEquityDecisionScenario('no-draw', 'FLOP', 'large');
+        items.push({ s: noDraw, srKey: noDraw.srKey, drillType: 'EQUITY_DEC' });
     }
 
     const now = Date.now();
@@ -96,15 +149,47 @@ function buildMathQueue(type) {
         return a.recentAcc - b.recentAcc;               // weakest first otherwise
     });
 
-    // Light shuffle within same priority so sessions don't always start identically
+    // Bucket into priority tiers
     const tiers = [[], [], [], []];
     scored.forEach(x => tiers[x.priority].push(x));
-    tiers.forEach(t => {
-        for (let i = t.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [t[i], t[j]] = [t[j], t[i]];
-        }
-    });
+
+    if (type === 'MIXED') {
+        // Round-robin interleave by drill type within each tier
+        tiers.forEach((tier, idx) => {
+            if (!tier.length) return;
+            const byType = {};
+            tier.forEach(item => {
+                if (!byType[item.drillType]) byType[item.drillType] = [];
+                byType[item.drillType].push(item);
+            });
+            // Shuffle within each type bucket
+            Object.values(byType).forEach(typeItems => {
+                for (let i = typeItems.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [typeItems[i], typeItems[j]] = [typeItems[j], typeItems[i]];
+                }
+            });
+            // Interleave across types
+            const interleaved = [];
+            const typeQueues = Object.values(byType);
+            let i = 0;
+            while (typeQueues.some(q => q.length > 0)) {
+                const q = typeQueues[i % typeQueues.length];
+                if (q.length > 0) interleaved.push(q.shift());
+                i++;
+            }
+            tiers[idx] = interleaved;
+        });
+    } else {
+        // Simple shuffle within each tier
+        tiers.forEach(t => {
+            for (let i = t.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [t[i], t[j]] = [t[j], t[i]];
+            }
+        });
+    }
+
     return [...tiers[0], ...tiers[1], ...tiers[2], ...tiers[3]].slice(0, 10);
 }
 
@@ -140,22 +225,37 @@ function renderMathDrillView(view) {
     } else if (view === 'question') {
         const item = mathDrill.queue[mathDrill.idx];
         if (!item) { renderMathDrillView('summary'); return; }
-        const typeLabel = item.drillType === 'POT_MATH'  ? 'Pot Odds Math'
-                        : item.drillType === 'POT_ODDS'  ? 'Equity Recognition'
-                        :                                  'Bet Sizing';
+        const typeLabel = item.drillType === 'POT_MATH'     ? 'Pot Odds Math'
+                        : item.drillType === 'POT_ODDS'     ? 'Equity Recognition'
+                        : item.drillType === 'RULE_42'      ? 'Rule of 4/2'
+                        : item.drillType === 'POT_RATIO'    ? 'Pot Odds: Ratio'
+                        : item.drillType === 'RATIO_PCT'    ? 'Ratio to %'
+                        : item.drillType === 'OUT_COUNTING' ? 'Out Counting'
+                        : item.drillType === 'EQUITY_DEC'   ? 'Equity Decision'
+                        :                                     'Bet Sizing';
         if (titleEl) titleEl.textContent = typeLabel;
         if (progEl)  progEl.textContent  = `${mathDrill.idx + 1} / ${mathDrill.queue.length}`;
-        content.innerHTML = item.drillType === 'POT_MATH'  ? renderPotMathQuestion(item.s)
-                          : item.drillType === 'POT_ODDS'  ? renderPotOddsQuestion(item.s)
-                          :                                  renderBetSizeQuestion(item.s);
+        content.innerHTML = item.drillType === 'POT_MATH'     ? renderPotMathQuestion(item.s)
+                          : item.drillType === 'POT_ODDS'     ? renderPotOddsQuestion(item.s)
+                          : item.drillType === 'RULE_42'      ? renderRule42Question(item.s)
+                          : item.drillType === 'POT_RATIO'    ? renderPotRatioQuestion(item.s)
+                          : item.drillType === 'RATIO_PCT'    ? renderRatioPctQuestion(item.s)
+                          : item.drillType === 'OUT_COUNTING' ? renderOutCountingQuestion(item.s)
+                          : item.drillType === 'EQUITY_DEC'   ? renderEquityDecQuestion(item.s)
+                          :                                     renderBetSizeQuestion(item.s);
     } else if (view === 'feedback') {
         const item = mathDrill.queue[mathDrill.idx];
         if (!item) return;
         if (titleEl) titleEl.textContent = mathDrill.lastCorrect ? '✓ Correct' : '✗ Review';
         if (progEl)  progEl.textContent  = `${mathDrill.idx + 1} / ${mathDrill.queue.length}`;
-        content.innerHTML = item.drillType === 'POT_MATH'  ? renderPotMathFeedback(item.s)
-                          : item.drillType === 'POT_ODDS'  ? renderPotOddsFeedback(item.s)
-                          :                                  renderBetSizeFeedback(item.s);
+        content.innerHTML = item.drillType === 'POT_MATH'     ? renderPotMathFeedback(item.s)
+                          : item.drillType === 'POT_ODDS'     ? renderPotOddsFeedback(item.s)
+                          : item.drillType === 'RULE_42'      ? renderRule42Feedback(item.s)
+                          : item.drillType === 'POT_RATIO'    ? renderPotRatioFeedback(item.s)
+                          : item.drillType === 'RATIO_PCT'    ? renderRatioPctFeedback(item.s)
+                          : item.drillType === 'OUT_COUNTING' ? renderOutCountingFeedback(item.s)
+                          : item.drillType === 'EQUITY_DEC'   ? renderEquityDecFeedback(item.s)
+                          :                                     renderBetSizeFeedback(item.s);
     } else if (view === 'summary') {
         if (titleEl) titleEl.textContent = 'Session Complete';
         if (progEl)  progEl.textContent  = '';
@@ -168,41 +268,89 @@ function renderMathDrillView(view) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function renderMenuView() {
-    const now = Date.now();
-    function dueCount(prefix, scenarios) {
-        return (scenarios || []).filter(s => {
+    // Compute accuracy for a prefix by summing SR records across all scenarios in that array.
+    // Returns { attempts, correct } or null if no attempts recorded yet.
+    function prefixAccuracy(prefix, scenarios) {
+        if (!scenarios || !scenarios.length) return null;
+        let attempts = 0, wrong = 0;
+        scenarios.forEach(s => {
             const rec = SR.get(prefix + '|' + s.id);
-            return !rec || !rec.totalAttempts || rec.dueAt <= now;
-        }).length;
-    }
-    const pmDue  = dueCount('POT_MATH', POT_MATH_SCENARIOS);
-    const poDue  = dueCount('POT_ODDS', POT_ODDS_SCENARIOS);
-    const bsDue  = dueCount('BET_SIZE', BET_SIZING_SCENARIOS);
-    const mixDue = pmDue + poDue + bsDue;
-
-    function dueTag(n, total) {
-        if (n === 0) return `<span class="text-[9px] text-emerald-400 font-bold">All caught up</span>`;
-        if (n >= total) return `<span class="text-[9px] text-rose-400 font-bold">${n} due</span>`;
-        return `<span class="text-[9px] text-yellow-400 font-bold">${n} due</span>`;
+            if (rec && rec.totalAttempts) {
+                attempts += rec.totalAttempts;
+                wrong    += (rec.totalWrong || 0);
+            }
+        });
+        return attempts > 0 ? { attempts, correct: attempts - wrong } : null;
     }
 
-    function drillCard(type, step, title, desc, detail, due, total) {
+    function accTag(acc) {
+        if (!acc) return `<span class="text-[11px] text-slate-600">Not started</span>`;
+        const pct = Math.round(acc.correct / acc.attempts * 100);
+        return `<span class="text-[11px] text-indigo-400 font-bold">${pct}% accuracy</span>`;
+    }
+
+    function node(onclick, step, title, desc, acc) {
         return `
-        <button onclick="startMathDrill('${type}')"
+        <button onclick="${onclick}"
             class="w-full bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl p-5 text-left transition-all">
             <div class="flex items-start justify-between mb-2">
                 <div class="flex items-center gap-2">
                     <span class="text-[9px] font-black text-slate-600 bg-slate-800 rounded-full w-5 h-5 flex items-center justify-center shrink-0">${step}</span>
                     <span class="text-base font-black text-slate-100">${title}</span>
                 </div>
-                ${dueTag(due, total)}
+                ${accTag(acc)}
             </div>
             <p class="text-[11px] text-slate-500 leading-snug pl-7">${desc}</p>
-            <p class="text-[10px] text-indigo-400 font-bold mt-2 pl-7">${detail}</p>
         </button>`;
     }
 
-    const totalAll = (POT_MATH_SCENARIOS||[]).length + (POT_ODDS_SCENARIOS||[]).length + (BET_SIZING_SCENARIOS||[]).length;
+    // Compute accuracy for generator-based drills from known bucket SR keys
+    function generatorAccuracy(prefix, ids) {
+        let attempts = 0, wrong = 0;
+        ids.forEach(id => {
+            const rec = SR.get(prefix + '|' + id);
+            if (rec && rec.totalAttempts) {
+                attempts += rec.totalAttempts;
+                wrong    += (rec.totalWrong || 0);
+            }
+        });
+        return attempts > 0 ? { attempts, correct: attempts - wrong } : null;
+    }
+
+    const r42Ids = [];
+    [2,3,4,5,6,7,8,9,10,12,14,15].forEach(o => ['flop','turn'].forEach(st => r42Ids.push('r42-'+o+'-'+st)));
+    const porIds = [];
+    ['small','medium','large','overbet'].forEach(sz => ['low','mid','high'].forEach(t => porIds.push('por-'+sz+'-'+t)));
+    const rpIds = [1.5,2,2.5,3,3.5,4,4.5,5,6].map(r => 'r2p-'+String(r).replace('.','_')+'-to-1');
+
+    // OUT_COUNTING bucket IDs
+    const ocIds = [];
+    OC_CATEGORIES.forEach(cat => {
+        const streets = OC_FLOP_ONLY.includes(cat) ? ['FLOP'] : ['FLOP', 'TURN'];
+        streets.forEach(st => ocIds.push('oc-' + cat + '-' + st.toLowerCase()));
+    });
+
+    // EQUITY_DEC bucket IDs (mirrors buildMathQueue logic)
+    const edIds = [];
+    OC_CATEGORIES.filter(c => c !== 'no-draw').forEach(cat => {
+        const streets = OC_FLOP_ONLY.includes(cat) ? ['FLOP'] : ['FLOP', 'TURN'];
+        streets.forEach(st => {
+            ['small', 'large'].forEach(bsc => {
+                const bb = bsc === 'small' ? 'small-bet' : 'large-bet';
+                if (cat === 'backdoor-flush-draw') edIds.push('backdoor-flush-' + bb + '-flop');
+                else if (cat === 'backdoor-straight') edIds.push('backdoor-straight-' + bb + '-flop');
+                else edIds.push(cat + '-' + bb + '-' + st.toLowerCase());
+            });
+        });
+    });
+    edIds.push('no-draw-any-bet');
+
+    const ocAcc  = generatorAccuracy('OUT_COUNT', ocIds);
+    const r42Acc = generatorAccuracy('RULE_42', r42Ids);
+    const porAcc = generatorAccuracy('POT_RATIO', porIds);
+    const rpAcc  = generatorAccuracy('RATIO_PCT', rpIds);
+    const edAcc  = generatorAccuracy('EQUITY_DEC', edIds);
+    const bsAcc  = prefixAccuracy('BET_SIZE', BET_SIZING_SCENARIOS);
 
     return `
     <div class="flex flex-col items-center gap-4 px-4 py-8 max-w-md mx-auto w-full">
@@ -213,32 +361,44 @@ function renderMenuView() {
 
         <div class="w-full flex flex-col gap-3">
 
-            ${drillCard('POT_MATH', 1,
-                'Pot Odds Math',
-                'Given the pot and bet size, calculate the exact % equity you need to call. Pure arithmetic — no cards.',
-                `${(POT_MATH_SCENARIOS||[]).length} scenarios \xb7 4 bet-size categories`,
-                pmDue, (POT_MATH_SCENARIOS||[]).length)}
+            ${node("startMathDrill('OUT_COUNTING')", 1,
+                'Out Counting',
+                'Identify your outs on the board',
+                ocAcc)}
 
-            ${drillCard('POT_ODDS', 2,
-                'Equity Recognition',
-                'You\u2019re shown a hand and board with the pot odds already calculated. Decide: does your hand have enough equity?',
-                `${(POT_ODDS_SCENARIOS||[]).length} scenarios \xb7 6 hand categories`,
-                poDue, (POT_ODDS_SCENARIOS||[]).length)}
+            ${node("startMathDrill('RULE_42')", 2,
+                'Rule of 4/2',
+                'Convert outs to equity %',
+                r42Acc)}
 
-            ${drillCard('BET_SIZE', 3,
+            ${node("startMathDrill('POT_RATIO')", 3,
+                'Pot Odds: Ratio',
+                'What odds are you getting?',
+                porAcc)}
+
+            ${node("startMathDrill('RATIO_PCT')", 4,
+                'Ratio to %',
+                'Convert pot odds ratio to equity needed',
+                rpAcc)}
+
+            ${node("startMathDrill('EQUITY_DEC')", 5,
+                'Equity Decision',
+                'Do your odds beat your equity?',
+                edAcc)}
+
+            ${node("startMathDrill('BET_SIZE')", 6,
                 'Bet Sizing',
-                'You have a hand \u2014 pick the right size. Dry vs. wet boards, river value, bluffs, SPR, position.',
-                `${(BET_SIZING_SCENARIOS||[]).length} scenarios \xb7 7 categories`,
-                bsDue, (BET_SIZING_SCENARIOS||[]).length)}
+                'Pick the right size for the situation',
+                bsAcc)}
 
             <button onclick="startMathDrill('MIXED')"
                 class="w-full bg-indigo-900/40 border border-indigo-700/50 hover:border-indigo-400 active:scale-[0.98] rounded-2xl p-4 text-left transition-all">
-                <div class="flex items-start justify-between mb-1">
+                <div class="mb-1">
                     <span class="text-sm font-black text-indigo-200">Mixed Session</span>
-                    ${dueTag(mixDue, totalAll)}
                 </div>
-                <p class="text-[11px] text-slate-400 pl-0">All three drill types in one session \u2014 recommended for daily practice.</p>
+                <p class="text-[11px] text-slate-400">All three drill types in one session \u2014 recommended for daily practice.</p>
             </button>
+
         </div>
 
         <p class="text-[9px] text-slate-700 font-bold uppercase tracking-widest text-center">
@@ -401,8 +561,8 @@ function renderPotOddsQuestion(s) {
 
 function renderBetSizeQuestion(s) {
     const streetLabel = { FLOP: 'Flop', TURN: 'Turn', RIVER: 'River' }[s.street] || s.street;
-    const catLabel    = (BET_SIZING_CATEGORIES && BET_SIZING_CATEGORIES[s.category])
-        ? BET_SIZING_CATEGORIES[s.category].label : s.category;
+    const catLabel    = (BET_SIZING_CATEGORIES && BET_SIZING_CATEGORIES[s.textureCategory || s.category])
+        ? BET_SIZING_CATEGORIES[s.textureCategory || s.category].label : (s.textureCategory || s.category);
     const posLabel    = s.position === 'IP' ? 'In position' : 'Out of position';
     const spr         = s.stackBehind ? (s.stackBehind / s.potSize).toFixed(1) : null;
 
@@ -524,7 +684,7 @@ function submitBetSizeAnswer(size) {
     if (correct) mathDrill.sessionCorrect++;
     mathDrill.sessionLog.push({
         id: s.id, drillType: 'BET_SIZE',
-        category: s.category, correct,
+        category: s.textureCategory || s.category, correct,
         answer: size, bestSize: s.bestSize
     });
 
@@ -794,6 +954,557 @@ function renderPotMathFeedback(s) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OUT COUNTING QUESTION, SUBMIT, FEEDBACK
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderOutCountingQuestion(s) {
+    const streetLabel = s.street === 'FLOP' ? 'Flop' : 'Turn';
+    const btns = (s.choices || []).map(outs =>
+        `<button onclick="submitOutCountingAnswer(${outs})"
+            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            ${outs}
+        </button>`
+    ).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md mx-auto w-full">
+
+        <!-- Street pill -->
+        <div class="flex gap-2 items-center">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-indigo-400">Out Counting</span>
+            <span class="text-slate-700">\u00b7</span>
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">${streetLabel}</span>
+        </div>
+
+        <!-- Hole cards -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
+            ${renderDrillCardsHtml(s.hand)}
+        </div>
+
+        <!-- Board -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Board</span>
+            ${renderDrillCardsHtml(s.board)}
+        </div>
+
+        <!-- Question -->
+        <p class="text-base text-slate-200 text-center font-semibold">
+            How many outs do you have?
+        </p>
+
+        <!-- Multiple choice -->
+        <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
+
+        <p class="text-[10px] text-slate-700 text-center italic">Count cards that improve your hand to likely best</p>
+    </div>`;
+}
+
+function submitOutCountingAnswer(outs) {
+    if (mathDrill.answered) return;
+    mathDrill.answered = true;
+    const item    = mathDrill.queue[mathDrill.idx];
+    const correct = outs === item.s.correctOuts;
+    mathDrill.lastCorrect = correct;
+    mathDrill.lastGrade   = correct ? 'good' : 'wrong';
+    mathDrill.sessionTotal++;
+    if (correct) mathDrill.sessionCorrect++;
+    mathDrill.sessionLog.push({
+        id: item.s.id, drillType: 'OUT_COUNTING',
+        category: item.s.category, correct,
+        answer: outs, correctOuts: item.s.correctOuts
+    });
+    try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
+    renderMathDrillView('feedback');
+}
+
+function renderOutCountingFeedback(s) {
+    const correct = mathDrill.lastCorrect;
+    const last    = mathDrill.sessionLog[mathDrill.sessionLog.length - 1];
+    const chosen  = last ? last.answer : null;
+    const streetLabel = s.street === 'FLOP' ? 'Flop' : 'Turn';
+
+    const resultBg  = correct ? 'bg-emerald-950/50 border-emerald-700/50' : 'bg-rose-950/50 border-rose-700/50';
+    const resultCol = correct ? 'text-emerald-400' : 'text-rose-400';
+    const icon      = correct ? '\u2713' : '\u2717';
+    const verdict   = correct ? `${s.correctOuts} outs \u2014 correct!` : `${s.correctOuts} outs was the answer`;
+
+    const pills = (s.choices || []).map(outs => {
+        const isBest   = outs === s.correctOuts;
+        const isChosen = outs === chosen;
+        let bg = 'bg-slate-800 text-slate-600 border-slate-700';
+        if (isBest)             bg = 'bg-emerald-900/60 text-emerald-300 border-emerald-600';
+        else if (isChosen)      bg = 'bg-rose-950/50 text-rose-400 border-rose-700';
+        const ring = isChosen ? ' ring-2 ring-white/30' : '';
+        return `<span class="px-4 py-2.5 rounded-xl text-base font-black border ${bg}${ring}">${outs}</span>`;
+    }).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+
+        <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
+            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+        </div>
+
+        <!-- Cards reminder -->
+        <div class="flex items-center gap-4">
+            <div class="flex flex-col items-center gap-1">
+                <span class="text-[8px] text-slate-600 font-bold uppercase tracking-widest">Hand</span>
+                ${renderDrillCardsHtml(s.hand)}
+            </div>
+            <div class="text-slate-700 text-lg font-bold">on</div>
+            <div class="flex flex-col items-center gap-1">
+                <span class="text-[8px] text-slate-600 font-bold uppercase tracking-widest">Board</span>
+                ${renderDrillCardsHtml(s.board)}
+            </div>
+        </div>
+
+        <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
+
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Draw Type</p>
+            <p class="text-sm text-slate-300">${s.outsSummary}</p>
+        </div>
+
+        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
+            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+        </div>
+
+        <button onclick="advanceMathDrill()"
+            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
+        </button>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EQUITY DECISION QUESTION, SUBMIT, FEEDBACK
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderEquityDecQuestion(s) {
+    const streetLabel = s.street === 'FLOP' ? 'Flop' : 'Turn';
+    const totalIfCall = s.pot + s.bet * 2;
+
+    return `
+    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md mx-auto w-full">
+
+        <!-- Street pill -->
+        <div class="flex gap-2 items-center">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-indigo-400">Equity Decision</span>
+            <span class="text-slate-700">\u00b7</span>
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">${streetLabel}</span>
+        </div>
+
+        <!-- Hole cards -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
+            ${renderDrillCardsHtml(s.hand)}
+        </div>
+
+        <!-- Board -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Board</span>
+            ${renderDrillCardsHtml(s.board)}
+        </div>
+
+        <!-- Pot info -->
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
+            <div class="flex justify-between text-sm">
+                <span class="text-slate-400">Pot</span>
+                <span class="font-black text-slate-200">$${s.pot}</span>
+            </div>
+            <div class="flex justify-between text-sm">
+                <span class="text-slate-400">Villain bets</span>
+                <span class="font-black text-slate-200">$${s.bet}</span>
+            </div>
+            <div class="border-t border-slate-800 pt-2 flex justify-between text-[11px]">
+                <span class="text-slate-600">Pot if you call</span>
+                <span class="text-slate-500">$${totalIfCall}</span>
+            </div>
+        </div>
+
+        <!-- Synthesis prompt -->
+        <div class="text-center">
+            <p class="text-sm font-black text-white">You're getting ${s.potOddsRatio}</p>
+            <p class="text-xs text-slate-400 mt-1">(need ${s.equityNeededPct}% equity to call)</p>
+            <p class="text-xs text-slate-500 mt-2">Do your outs give you enough equity?</p>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="w-full grid grid-cols-2 gap-3">
+            <button onclick="submitEquityDecAnswer('FOLD')"
+                class="py-5 rounded-2xl font-black text-base bg-rose-900/50 border border-rose-700/60 text-rose-200 hover:bg-rose-800/60 active:scale-[0.97] transition-all">
+                FOLD
+            </button>
+            <button onclick="submitEquityDecAnswer('CALL')"
+                class="py-5 rounded-2xl font-black text-base bg-emerald-900/50 border border-emerald-700/60 text-emerald-200 hover:bg-emerald-800/60 active:scale-[0.97] transition-all">
+                CALL
+            </button>
+        </div>
+
+    </div>`;
+}
+
+function submitEquityDecAnswer(action) {
+    if (mathDrill.answered) return;
+    mathDrill.answered = true;
+    const item    = mathDrill.queue[mathDrill.idx];
+    const correct = action === item.s.correctAction;
+    mathDrill.lastCorrect = correct;
+    mathDrill.lastGrade   = correct ? 'good' : 'wrong';
+    mathDrill.sessionTotal++;
+    if (correct) mathDrill.sessionCorrect++;
+    mathDrill.sessionLog.push({
+        id: item.s.id, drillType: 'EQUITY_DEC',
+        category: item.s.category, correct
+    });
+    try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
+    renderMathDrillView('feedback');
+}
+
+function renderEquityDecFeedback(s) {
+    const correct     = mathDrill.lastCorrect;
+    const resultBg    = correct ? 'bg-emerald-950/50 border-emerald-700/50' : 'bg-rose-950/50 border-rose-700/50';
+    const resultCol   = correct ? 'text-emerald-400' : 'text-rose-400';
+    const resultIcon  = correct ? '\u2713' : '\u2717';
+    const verdict     = correct ? `${s.correctAction} is correct` : `Correct answer: ${s.correctAction}`;
+
+    const equityComp = s.heroEquityPct >= s.equityNeededPct
+        ? `<span class="text-emerald-400">${s.heroEquityPct}%</span> &gt; <span class="text-slate-400">${s.equityNeededPct}%</span> needed \u2014 profitable`
+        : `<span class="text-rose-400">${s.heroEquityPct}%</span> &lt; <span class="text-slate-400">${s.equityNeededPct}%</span> needed \u2014 unprofitable`;
+
+    return `
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+
+        <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
+            <span class="text-lg font-black ${resultCol}">${resultIcon} ${verdict}</span>
+        </div>
+
+        <!-- Cards reminder -->
+        <div class="flex items-center gap-4">
+            <div class="flex flex-col items-center gap-1">
+                <span class="text-[8px] text-slate-600 font-bold uppercase tracking-widest">Hand</span>
+                ${renderDrillCardsHtml(s.hand)}
+            </div>
+            <div class="text-slate-700 text-lg font-bold">on</div>
+            <div class="flex flex-col items-center gap-1">
+                <span class="text-[8px] text-slate-600 font-bold uppercase tracking-widest">Board</span>
+                ${renderDrillCardsHtml(s.board)}
+            </div>
+        </div>
+
+        <!-- Math breakdown -->
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+            <div>
+                <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1.5">Pot Odds</p>
+                <div class="flex justify-between text-[12px]">
+                    <span class="text-slate-500">Ratio</span>
+                    <span class="text-slate-300 font-semibold">${s.potOddsRatio}</span>
+                </div>
+                <div class="flex justify-between text-[12px]">
+                    <span class="text-slate-500">Equity needed</span>
+                    <span class="text-slate-300 font-semibold">${s.equityNeededPct}%</span>
+                </div>
+            </div>
+            <div class="border-t border-slate-800 pt-3">
+                <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1.5">Your Equity</p>
+                <p class="text-[12px] text-slate-400">${s.outsSummary}</p>
+                <p class="text-[12px] font-black text-slate-200 mt-0.5">~${s.heroEquityPct}% (${s.street === 'FLOP' ? 'outs \u00d7 4' : 'outs \u00d7 2'})</p>
+                <p class="text-[13px] font-bold mt-1.5">${equityComp}</p>
+            </div>
+        </div>
+
+        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
+            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+        </div>
+
+        <button onclick="advanceMathDrill()"
+            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
+        </button>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RULE OF 4/2 QUESTION, SUBMIT, FEEDBACK
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderRule42Question(s) {
+    const streetLabel = s.street === 'FLOP' ? 'Flop' : 'Turn';
+    const rule = s.street === 'FLOP' ? 'Rule of 4' : 'Rule of 2';
+    const mult = s.street === 'FLOP' ? 4 : 2;
+    const btns = (s.choices || []).map(pct =>
+        `<button onclick="submitRule42Answer(${pct})"
+            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            ${pct}%
+        </button>`
+    ).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-slate-400 text-base">Outs</span>
+                <span class="font-black text-slate-100 text-3xl">${s.outs}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-slate-400 text-base">Street</span>
+                <span class="font-black text-indigo-300 text-3xl">${streetLabel}</span>
+            </div>
+        </div>
+        <p class="text-base text-slate-200 text-center font-semibold">
+            What is your approximate equity?
+        </p>
+        <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
+        <p class="text-[10px] text-slate-700 text-center italic">${rule}: outs \u00d7 ${mult}</p>
+    </div>`;
+}
+
+function submitRule42Answer(pct) {
+    if (mathDrill.answered) return;
+    mathDrill.answered = true;
+    const item    = mathDrill.queue[mathDrill.idx];
+    const correct = pct === item.s.correctEquity;
+    mathDrill.lastCorrect = correct;
+    mathDrill.lastGrade   = correct ? 'good' : 'wrong';
+    mathDrill.sessionTotal++;
+    if (correct) mathDrill.sessionCorrect++;
+    mathDrill.sessionLog.push({
+        id: item.s.id, drillType: 'RULE_42',
+        category: item.s.street, correct,
+        answer: pct, correctEquity: item.s.correctEquity
+    });
+    try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
+    renderMathDrillView('feedback');
+}
+
+function renderRule42Feedback(s) {
+    const correct = mathDrill.lastCorrect;
+    const last    = mathDrill.sessionLog[mathDrill.sessionLog.length - 1];
+    const chosen  = last ? last.answer : null;
+    const streetLabel = s.street === 'FLOP' ? 'Flop' : 'Turn';
+    const mult        = s.street === 'FLOP' ? 4 : 2;
+
+    const resultBg  = correct ? 'bg-emerald-950/50 border-emerald-700/50' : 'bg-rose-950/50 border-rose-700/50';
+    const resultCol = correct ? 'text-emerald-400' : 'text-rose-400';
+    const icon      = correct ? '\u2713' : '\u2717';
+    const verdict   = correct ? `${s.correctEquity}% \u2014 correct!` : `${s.correctEquity}% was the answer`;
+
+    const pills = (s.choices || []).map(pct => {
+        const isBest   = pct === s.correctEquity;
+        const isChosen = pct === chosen;
+        let bg = 'bg-slate-800 text-slate-600 border-slate-700';
+        if (isBest)             bg = 'bg-emerald-900/60 text-emerald-300 border-emerald-600';
+        else if (isChosen)      bg = 'bg-rose-950/50 text-rose-400 border-rose-700';
+        const ring = isChosen ? ' ring-2 ring-white/30' : '';
+        return `<span class="px-4 py-2.5 rounded-xl text-base font-black border ${bg}${ring}">${pct}%</span>`;
+    }).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+        <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
+            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+        </div>
+        <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Rule of 4/2 worked out</p>
+            <div class="flex flex-col gap-1.5 text-center">
+                <p class="text-slate-500 text-sm">${s.outs} outs \u00d7 ${mult} (${streetLabel})</p>
+                <p class="text-white font-black text-3xl mt-1">${s.correctEquity}%</p>
+            </div>
+        </div>
+        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
+            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+        </div>
+        <button onclick="advanceMathDrill()"
+            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
+        </button>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POT ODDS RATIO QUESTION, SUBMIT, FEEDBACK
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderPotRatioQuestion(s) {
+    const btns = (s.choices || []).map(ratio =>
+        `<button onclick="submitPotRatioAnswer('${ratio}')"
+            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            ${ratio}
+        </button>`
+    ).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-slate-400 text-base">Pot</span>
+                <span class="font-black text-slate-100 text-3xl">$${s.pot}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-slate-400 text-base">Villain bets</span>
+                <span class="font-black text-indigo-300 text-3xl">$${s.bet}</span>
+            </div>
+        </div>
+        <p class="text-base text-slate-200 text-center font-semibold">
+            What pot odds are you getting?
+        </p>
+        <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
+        <p class="text-[10px] text-slate-700 text-center italic">Formula: (pot + bet) \u00f7 bet</p>
+    </div>`;
+}
+
+function submitPotRatioAnswer(ratio) {
+    if (mathDrill.answered) return;
+    mathDrill.answered = true;
+    const item    = mathDrill.queue[mathDrill.idx];
+    const correct = ratio === item.s.correctRatio;
+    mathDrill.lastCorrect = correct;
+    mathDrill.lastGrade   = correct ? 'good' : 'wrong';
+    mathDrill.sessionTotal++;
+    if (correct) mathDrill.sessionCorrect++;
+    mathDrill.sessionLog.push({
+        id: item.s.id, drillType: 'POT_RATIO',
+        category: item.s.sizingCategory, correct,
+        answer: ratio, correctRatio: item.s.correctRatio
+    });
+    try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
+    renderMathDrillView('feedback');
+}
+
+function renderPotRatioFeedback(s) {
+    const correct = mathDrill.lastCorrect;
+    const last    = mathDrill.sessionLog[mathDrill.sessionLog.length - 1];
+    const chosen  = last ? last.answer : null;
+
+    const resultBg  = correct ? 'bg-emerald-950/50 border-emerald-700/50' : 'bg-rose-950/50 border-rose-700/50';
+    const resultCol = correct ? 'text-emerald-400' : 'text-rose-400';
+    const icon      = correct ? '\u2713' : '\u2717';
+    const verdict   = correct ? `${s.correctRatio} \u2014 correct!` : `${s.correctRatio} was the answer`;
+
+    const pills = (s.choices || []).map(ratio => {
+        const isBest   = ratio === s.correctRatio;
+        const isChosen = ratio === chosen;
+        let bg = 'bg-slate-800 text-slate-600 border-slate-700';
+        if (isBest)             bg = 'bg-emerald-900/60 text-emerald-300 border-emerald-600';
+        else if (isChosen)      bg = 'bg-rose-950/50 text-rose-400 border-rose-700';
+        const ring = isChosen ? ' ring-2 ring-white/30' : '';
+        return `<span class="px-4 py-2.5 rounded-xl text-base font-black border ${bg}${ring}">${ratio}</span>`;
+    }).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+        <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
+            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+        </div>
+        <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Formula worked out</p>
+            <div class="flex flex-col gap-1.5 text-center">
+                <p class="text-slate-500 text-sm">($${s.pot} + $${s.bet}) \u00f7 $${s.bet}</p>
+                <p class="text-slate-400 text-base">$${s.pot + s.bet} \u00f7 $${s.bet}</p>
+                <p class="text-white font-black text-3xl mt-1">${s.correctRatio}</p>
+            </div>
+        </div>
+        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
+            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+        </div>
+        <button onclick="advanceMathDrill()"
+            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
+        </button>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RATIO TO % QUESTION, SUBMIT, FEEDBACK
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderRatioPctQuestion(s) {
+    const btns = (s.choices || []).map(pct =>
+        `<button onclick="submitRatioPctAnswer(${pct})"
+            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            ${pct}%
+        </button>`
+    ).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center">
+            <p class="text-slate-400 text-base mb-3">Pot odds you're getting</p>
+            <p class="font-black text-slate-100 text-5xl">${s.ratioDisplay}</p>
+        </div>
+        <p class="text-base text-slate-200 text-center font-semibold">
+            What % equity do you need to call?
+        </p>
+        <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
+        <p class="text-[10px] text-slate-700 text-center italic">Shortcut: 1 \u00f7 (ratio + 1)</p>
+    </div>`;
+}
+
+function submitRatioPctAnswer(pct) {
+    if (mathDrill.answered) return;
+    mathDrill.answered = true;
+    const item    = mathDrill.queue[mathDrill.idx];
+    const correct = pct === item.s.correctPct;
+    mathDrill.lastCorrect = correct;
+    mathDrill.lastGrade   = correct ? 'good' : 'wrong';
+    mathDrill.sessionTotal++;
+    if (correct) mathDrill.sessionCorrect++;
+    mathDrill.sessionLog.push({
+        id: item.s.id, drillType: 'RATIO_PCT',
+        category: 'RATIOS', correct,
+        answer: pct, correctPct: item.s.correctPct
+    });
+    try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
+    renderMathDrillView('feedback');
+}
+
+function renderRatioPctFeedback(s) {
+    const correct = mathDrill.lastCorrect;
+    const last    = mathDrill.sessionLog[mathDrill.sessionLog.length - 1];
+    const chosen  = last ? last.answer : null;
+
+    const resultBg  = correct ? 'bg-emerald-950/50 border-emerald-700/50' : 'bg-rose-950/50 border-rose-700/50';
+    const resultCol = correct ? 'text-emerald-400' : 'text-rose-400';
+    const icon      = correct ? '\u2713' : '\u2717';
+    const verdict   = correct ? `${s.correctPct}% \u2014 correct!` : `${s.correctPct}% was the answer`;
+
+    const pills = (s.choices || []).map(pct => {
+        const isBest   = pct === s.correctPct;
+        const isChosen = pct === chosen;
+        let bg = 'bg-slate-800 text-slate-600 border-slate-700';
+        if (isBest)             bg = 'bg-emerald-900/60 text-emerald-300 border-emerald-600';
+        else if (isChosen)      bg = 'bg-rose-950/50 text-rose-400 border-rose-700';
+        const ring = isChosen ? ' ring-2 ring-white/30' : '';
+        return `<span class="px-4 py-2.5 rounded-xl text-base font-black border ${bg}${ring}">${pct}%</span>`;
+    }).join('');
+
+    return `
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+        <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
+            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+        </div>
+        <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Conversion worked out</p>
+            <div class="flex flex-col gap-1.5 text-center">
+                <p class="text-slate-500 text-sm">1 \u00f7 (${s.ratio} + 1) = 1 \u00f7 ${s.ratio + 1}</p>
+                <p class="text-white font-black text-3xl mt-1">${s.correctPct}%</p>
+            </div>
+        </div>
+        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
+            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+        </div>
+        <button onclick="advanceMathDrill()"
+            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
+        </button>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ADVANCE (next question or summary)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -831,12 +1542,22 @@ function renderSummaryView() {
     const catRows = Object.values(cats).map(c => {
         const cAcc = Math.round(c.correct / c.total * 100);
         const col  = cAcc >= 80 ? 'text-emerald-400' : cAcc >= 50 ? 'text-yellow-400' : 'text-rose-400';
-        const catMeta = c.drillType === 'POT_MATH'
-            ? (POT_MATH_CATEGORIES    && POT_MATH_CATEGORIES[c.category]    ? POT_MATH_CATEGORIES[c.category].label    : c.category)
-            : c.drillType === 'POT_ODDS'
-            ? (POT_ODDS_CATEGORIES    && POT_ODDS_CATEGORIES[c.category]    ? POT_ODDS_CATEGORIES[c.category].label    : c.category)
-            : (BET_SIZING_CATEGORIES  && BET_SIZING_CATEGORIES[c.category]  ? BET_SIZING_CATEGORIES[c.category].label  : c.category);
-        const typeTag = c.drillType === 'POT_MATH' ? 'PM' : c.drillType === 'POT_ODDS' ? 'PO' : 'BS';
+        const catMeta = c.drillType === 'POT_MATH'     ? (POT_MATH_CATEGORIES?.[c.category]?.label    || c.category)
+                      : c.drillType === 'POT_ODDS'     ? (POT_ODDS_CATEGORIES?.[c.category]?.label    || c.category)
+                      : c.drillType === 'RULE_42'      ? (c.category === 'FLOP' ? 'Flop' : 'Turn')
+                      : c.drillType === 'POT_RATIO'    ? (c.category.charAt(0).toUpperCase() + c.category.slice(1) + ' Bets')
+                      : c.drillType === 'RATIO_PCT'    ? 'Ratio Conversion'
+                      : c.drillType === 'OUT_COUNTING' ? (c.category.replace(/-/g, ' '))
+                      : c.drillType === 'EQUITY_DEC'   ? (c.category.replace(/-/g, ' '))
+                      : (BET_SIZING_CATEGORIES?.[c.category]?.label || c.category);
+        const typeTag = c.drillType === 'POT_MATH'     ? 'PM'
+                      : c.drillType === 'POT_ODDS'     ? 'PO'
+                      : c.drillType === 'RULE_42'      ? 'R4'
+                      : c.drillType === 'POT_RATIO'    ? 'PR'
+                      : c.drillType === 'RATIO_PCT'    ? 'RP'
+                      : c.drillType === 'OUT_COUNTING' ? 'OC'
+                      : c.drillType === 'EQUITY_DEC'   ? 'ED'
+                      : 'BS';
         return `<div class="flex items-center gap-2 py-2 border-b border-slate-800/30 last:border-0">
             <span class="text-[8px] font-bold text-slate-700 w-5 shrink-0">${typeTag}</span>
             <span class="text-[11px] text-slate-400 flex-1">${catMeta}</span>
@@ -846,11 +1567,20 @@ function renderSummaryView() {
 
     // Weakest category for recommendation
     const weakest = Object.values(cats).sort((a,b) => (a.correct/a.total) - (b.correct/b.total))[0];
-    const weakLabel = weakest && weakest.correct < weakest.total
-        ? ((weakest.drillType === 'POT_MATH' ? POT_MATH_CATEGORIES
-            : weakest.drillType === 'POT_ODDS' ? POT_ODDS_CATEGORIES
-            : BET_SIZING_CATEGORIES)?.[weakest.category]?.label || weakest.category)
+    const _weakCatMap = weakest && (
+        weakest.drillType === 'POT_MATH'  ? POT_MATH_CATEGORIES
+      : weakest.drillType === 'POT_ODDS'  ? POT_ODDS_CATEGORIES
+      : weakest.drillType === 'BET_SIZE'  ? BET_SIZING_CATEGORIES
+      : null);
+    const _weakCatLabel = weakest
+        ? (weakest.drillType === 'RULE_42'      ? (weakest.category === 'FLOP' ? 'Flop (Rule of 4/2)' : 'Turn (Rule of 4/2)')
+         : weakest.drillType === 'POT_RATIO'    ? (weakest.category.charAt(0).toUpperCase() + weakest.category.slice(1) + ' Bet Sizes')
+         : weakest.drillType === 'RATIO_PCT'    ? 'Ratio Conversion'
+         : weakest.drillType === 'OUT_COUNTING' ? (weakest.category.replace(/-/g, ' '))
+         : weakest.drillType === 'EQUITY_DEC'   ? (weakest.category.replace(/-/g, ' ') + ' (equity decision)')
+         : (_weakCatMap?.[weakest.category]?.label || weakest.category))
         : null;
+    const weakLabel = weakest && weakest.correct < weakest.total ? _weakCatLabel : null;
 
     const againType = mathDrill.type;
 
