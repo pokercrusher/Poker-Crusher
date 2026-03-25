@@ -353,7 +353,7 @@ function renderMenuView() {
     const bsAcc  = prefixAccuracy('BET_SIZE', BET_SIZING_SCENARIOS);
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full h-full overflow-y-auto">
         <div class="text-center">
             <p class="text-2xl font-black text-slate-100">Poker Math</p>
             <p class="text-xs text-slate-500 mt-1">Build the instincts that cost you money at the table</p>
@@ -421,7 +421,7 @@ function renderPotMathQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Pot / bet display -->
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
@@ -484,7 +484,7 @@ function renderPotOddsQuestion(s) {
     const pct         = Math.round(s.bet / totalIfCall * 100);
 
     return `
-    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Category + street pill -->
         <div class="flex gap-2 items-center">
@@ -626,7 +626,7 @@ function renderBetSizeQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Category + street pill -->
         <div class="flex gap-2 items-center">
@@ -789,7 +789,7 @@ function renderPotOddsFeedback(s) {
         : `<span class="text-rose-400">${s.heroEquity}%</span> &lt; <span class="text-slate-400">${s.potOddsNeeded}%</span> needed — unprofitable`;
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -887,7 +887,7 @@ function renderBetSizeFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -965,7 +965,7 @@ function renderPotMathFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -1026,7 +1026,7 @@ function renderOutCountingQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Street pill -->
         <div class="flex gap-2 items-center">
@@ -1108,7 +1108,7 @@ function renderOutCountingFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
@@ -1154,7 +1154,7 @@ function renderEquityDecQuestion(s) {
     const totalIfCall = s.pot + s.bet * 2;
 
     return `
-    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Street pill -->
         <div class="flex gap-2 items-center">
@@ -1283,7 +1283,7 @@ function renderEquityDecFeedback(s) {
         : `<span class="text-rose-400">${s.heroEquityPct}%</span> &lt; <span class="text-slate-400">${s.equityNeededPct}%</span> needed \u2014 unprofitable`;
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
 
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg md:text-2xl font-black ${resultCol}">${resultIcon} ${verdict}</span>
@@ -1350,7 +1350,7 @@ function renderRule42Question(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
             <div class="flex justify-between items-center mb-4 md:mb-6">
                 <span class="text-slate-400 text-base md:text-xl">Outs</span>
@@ -1410,7 +1410,7 @@ function renderRule42Feedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
@@ -1445,7 +1445,7 @@ function renderPotRatioQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
             <div class="flex justify-between items-center mb-4 md:mb-6">
                 <span class="text-slate-400 text-base md:text-xl">Pot</span>
@@ -1503,7 +1503,7 @@ function renderPotRatioFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
@@ -1539,7 +1539,7 @@ function renderRatioPctQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 text-center">
             <p class="text-slate-400 text-base md:text-xl mb-3">Pot odds you're getting</p>
             <p class="font-black text-slate-100 text-5xl md:text-7xl">${s.ratioDisplay}</p>
@@ -1604,7 +1604,7 @@ function renderRatioPctFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
@@ -1707,7 +1707,7 @@ function renderSummaryView() {
     const againType = mathDrill.type;
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full h-full overflow-y-auto">
 
         <!-- Score -->
         <div class="text-center">
