@@ -18,12 +18,12 @@ function placeCardBacks(cardsLayer, coords, animated, folded) {
     const isMob = SEAT_COORDS === SEAT_COORDS_MOBILE;
     // Separate H/V offsets because the felt is ~2.5x wider than tall:
     // a uniform % offset clears seat edges horizontally but not vertically.
-    const cbOffH = isMob ? 7 : 4;
-    const cbOffV = isMob ? 12 : 4;
+    const cbOffH = isMob ? 7 : 7;
+    const cbOffV = isMob ? 12 : 9;
     // Bottom-center seat (hero) needs a bigger upward offset so cards sit above the box
     const isBottomCenter = Math.abs(cL - 50) < 10 && cT > 75;
     if (isBottomCenter) {
-        offT = isMob ? -8 : -7;
+        offT = isMob ? -8 : -11;
     } else {
         if (cL < 35) offL = cbOffH; else if (cL > 65) offL = -cbOffH;
         if (cT < 35) offT = cbOffV; else if (cT > 65) offT = -cbOffV;
@@ -2587,7 +2587,7 @@ function drilldownSpot(spotKey) {
         root.setProperty('--hint-size', Math.max(13, Math.round(winW * (isMobile ? 0.050 : 0.017))) + 'px');
         // Community cards (postflop) — on mobile cards live in the strip below the felt,
         // so they have more horizontal room and can be sized a bit larger.
-        const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.13 : 0.065)));
+        const ccW = Math.max(28, Math.round(feltW * (isMobile ? 0.13 : 0.08)));
         root.setProperty('--cc-w', ccW + 'px');
         root.setProperty('--cc-h', Math.round(ccW * 1.38) + 'px');
         root.setProperty('--cc-rank-size', Math.round(ccW * 0.4) + 'px');
