@@ -29,10 +29,10 @@ function renderDrillCardHtml(card) {
     const sym  = { h: '♥', d: '♦', c: '♣', s: '♠' }[suit] || '?';
     const red  = suit === 'h' || suit === 'd';
     const col  = red ? 'text-rose-500' : 'text-slate-800';
-    return `<div class="flex flex-col items-center justify-between w-14 h-[80px] sm:w-16 sm:h-[90px] bg-white rounded-xl shadow-lg px-1.5 py-1.5 select-none">
-        <span class="text-[15px] sm:text-[17px] font-black leading-none ${col} self-start">${rank}</span>
-        <span class="text-[22px] sm:text-[26px] leading-none ${col}">${sym}</span>
-        <span class="text-[15px] sm:text-[17px] font-black leading-none ${col} self-end rotate-180">${rank}</span>
+    return `<div class="flex flex-col items-center justify-between w-14 h-[80px] sm:w-16 sm:h-[90px] md:w-[96px] md:h-[132px] bg-white rounded-xl shadow-lg px-1.5 py-1.5 select-none">
+        <span class="text-[15px] sm:text-[17px] md:text-[25px] font-black leading-none ${col} self-start">${rank}</span>
+        <span class="text-[22px] sm:text-[26px] md:text-[40px] leading-none ${col}">${sym}</span>
+        <span class="text-[15px] sm:text-[17px] md:text-[25px] font-black leading-none ${col} self-end rotate-180">${rank}</span>
     </div>`;
 }
 
@@ -415,23 +415,23 @@ function renderPotMathQuestion(s) {
     const totalIfCall = s.pot + s.bet * 2;
     const btns = (s.choices || []).map(pct =>
         `<button onclick="submitPotMathAnswer(${pct})"
-            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            class="py-5 md:py-8 rounded-2xl font-black text-2xl md:text-4xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
             ${pct}%
         </button>`
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Pot / bet display -->
-        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
-            <div class="flex justify-between items-center mb-4">
-                <span class="text-slate-400 text-base">Pot</span>
-                <span class="font-black text-slate-100 text-3xl">$${s.pot}</span>
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
+            <div class="flex justify-between items-center mb-4 md:mb-6">
+                <span class="text-slate-400 text-base md:text-xl">Pot</span>
+                <span class="font-black text-slate-100 text-3xl md:text-5xl">$${s.pot}</span>
             </div>
             <div class="flex justify-between items-center">
-                <span class="text-slate-400 text-base">Villain bets</span>
-                <span class="font-black text-indigo-300 text-3xl">$${s.bet}</span>
+                <span class="text-slate-400 text-base md:text-xl">Villain bets</span>
+                <span class="font-black text-indigo-300 text-3xl md:text-5xl">$${s.bet}</span>
             </div>
             <div class="border-t border-slate-800 mt-4 pt-3 flex justify-between text-sm text-slate-600">
                 <span>Pot if you call</span>
@@ -440,14 +440,14 @@ function renderPotMathQuestion(s) {
         </div>
 
         <!-- Question -->
-        <p class="text-base text-slate-200 text-center font-semibold">
+        <p class="text-base md:text-xl text-slate-200 text-center font-semibold">
             What % equity do you need to call?
         </p>
 
         <!-- Multiple choice -->
         <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
 
-        <p class="text-[10px] text-slate-700 text-center italic">Formula: bet \u00f7 (pot + 2\u00d7bet)</p>
+        <p class="text-[10px] md:text-sm text-slate-700 text-center italic">Formula: bet \u00f7 (pot + 2\u00d7bet)</p>
     </div>`;
 }
 
@@ -484,7 +484,7 @@ function renderPotOddsQuestion(s) {
     const pct         = Math.round(s.bet / totalIfCall * 100);
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Category + street pill -->
         <div class="flex gap-2 items-center">
@@ -506,12 +506,12 @@ function renderPotOddsQuestion(s) {
         </div>
 
         <!-- Pot info -->
-        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
-            <div class="flex justify-between text-sm">
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col gap-2 md:gap-3">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Pot</span>
                 <span class="font-black text-slate-200">$${s.pot}</span>
             </div>
-            <div class="flex justify-between text-sm">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Villain bets</span>
                 <span class="font-black text-slate-200">$${s.bet}</span>
             </div>
@@ -543,11 +543,11 @@ function renderPotOddsQuestion(s) {
         <!-- Action buttons -->
         <div class="w-full grid grid-cols-2 gap-3">
             <button onclick="submitPotOddsAnswer('FOLD')"
-                class="py-5 rounded-2xl font-black text-base bg-rose-900/50 border border-rose-700/60 text-rose-200 hover:bg-rose-800/60 active:scale-[0.97] transition-all">
+                class="py-5 md:py-8 rounded-2xl font-black text-base md:text-xl bg-rose-900/50 border border-rose-700/60 text-rose-200 hover:bg-rose-800/60 active:scale-[0.97] transition-all">
                 FOLD
             </button>
             <button onclick="submitPotOddsAnswer('CALL')"
-                class="py-5 rounded-2xl font-black text-base bg-emerald-900/50 border border-emerald-700/60 text-emerald-200 hover:bg-emerald-800/60 active:scale-[0.97] transition-all">
+                class="py-5 md:py-8 rounded-2xl font-black text-base md:text-xl bg-emerald-900/50 border border-emerald-700/60 text-emerald-200 hover:bg-emerald-800/60 active:scale-[0.97] transition-all">
                 CALL
             </button>
         </div>
@@ -620,13 +620,13 @@ function renderBetSizeQuestion(s) {
 
     const btns = sizeButtons.map(b =>
         `<button onclick="submitBetSizeAnswer('${b.val}')"
-            class="py-3 rounded-xl font-black text-sm bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            class="py-3 md:py-5 rounded-xl font-black text-sm md:text-base bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
             ${b.label}
         </button>`
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Category + street pill -->
         <div class="flex gap-2 items-center">
@@ -652,17 +652,17 @@ function renderBetSizeQuestion(s) {
         </div>
 
         <!-- Situation info -->
-        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
-            <div class="flex justify-between text-sm">
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col gap-2 md:gap-3">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Pot</span>
                 <span class="font-black text-slate-200">$${s.potSize}</span>
             </div>
-            <div class="flex justify-between text-sm">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Position</span>
                 <span class="font-black text-slate-200">${posLabel}</span>
             </div>
             ${s.stackBehind ? `
-            <div class="flex justify-between text-sm">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Stack behind</span>
                 <span class="font-black text-slate-200">$${s.stackBehind}</span>
             </div>
@@ -789,11 +789,11 @@ function renderPotOddsFeedback(s) {
         : `<span class="text-rose-400">${s.heroEquity}%</span> &lt; <span class="text-slate-400">${s.potOddsNeeded}%</span> needed — unprofitable`;
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${resultIcon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${resultIcon} ${verdict}</span>
         </div>
 
         <!-- Cards (compact reminder) -->
@@ -839,12 +839,12 @@ function renderPotOddsFeedback(s) {
 
         <!-- Explanation -->
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
 
         <!-- Next button -->
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT →' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -887,7 +887,7 @@ function renderBetSizeFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -928,12 +928,12 @@ function renderBetSizeFeedback(s) {
 
         <!-- Explanation -->
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
 
         <!-- Next button -->
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT →' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -965,11 +965,11 @@ function renderPotMathFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
 
         <!-- Choice review -->
@@ -980,20 +980,20 @@ function renderPotMathFeedback(s) {
             <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Formula worked out</p>
             <div class="flex flex-col gap-1.5 text-center">
                 <p class="text-slate-500 text-sm">bet \u00f7 (pot + 2 \u00d7 bet)</p>
-                <p class="text-slate-400 text-base">$${s.bet} \u00f7 ($${s.pot} + $${s.bet * 2})</p>
+                <p class="text-slate-400 text-base md:text-xl">$${s.bet} \u00f7 ($${s.pot} + $${s.bet * 2})</p>
                 <p class="text-slate-300 text-base">$${s.bet} \u00f7 $${totalIfCall}</p>
-                <p class="text-white font-black text-3xl mt-1">${s.correctPct}%</p>
+                <p class="text-white font-black text-3xl md:text-5xl mt-1">${s.correctPct}%</p>
             </div>
         </div>
 
         <!-- Explanation -->
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
 
         <!-- Next -->
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -1020,13 +1020,13 @@ function renderOutCountingQuestion(s) {
 
     const btns = (s.choices || []).map(outs =>
         `<button onclick="submitOutCountingAnswer(${outs})"
-            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            class="py-5 md:py-8 rounded-2xl font-black text-2xl md:text-4xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
             ${outs}
         </button>`
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Street pill -->
         <div class="flex gap-2 items-center">
@@ -1057,14 +1057,14 @@ function renderOutCountingQuestion(s) {
         </div>
 
         <!-- Question -->
-        <p class="text-base text-slate-200 text-center font-semibold">
+        <p class="text-base md:text-xl text-slate-200 text-center font-semibold">
             How many outs do you have?
         </p>
 
         <!-- Multiple choice -->
         <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
 
-        <p class="text-[10px] text-slate-700 text-center italic">Count cards that improve your hand to likely best</p>
+        <p class="text-[10px] md:text-sm text-slate-700 text-center italic">Count cards that improve your hand to likely best</p>
     </div>`;
 }
 
@@ -1108,10 +1108,10 @@ function renderOutCountingFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
 
         <!-- Cards reminder -->
@@ -1135,11 +1135,11 @@ function renderOutCountingFeedback(s) {
         </div>
 
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
 
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -1154,7 +1154,7 @@ function renderEquityDecQuestion(s) {
     const totalIfCall = s.pot + s.bet * 2;
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 md:gap-8 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Street pill -->
         <div class="flex gap-2 items-center">
@@ -1179,12 +1179,12 @@ function renderEquityDecQuestion(s) {
         </div>
 
         <!-- Pot info -->
-        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
-            <div class="flex justify-between text-sm">
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col gap-2 md:gap-3">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Pot</span>
                 <span class="font-black text-slate-200">$${s.pot}</span>
             </div>
-            <div class="flex justify-between text-sm">
+            <div class="flex justify-between text-sm md:text-base">
                 <span class="text-slate-400">Villain bets</span>
                 <span class="font-black text-slate-200">$${s.bet}</span>
             </div>
@@ -1214,11 +1214,11 @@ function renderEquityDecQuestion(s) {
         <!-- Action buttons -->
         <div class="w-full grid grid-cols-2 gap-3">
             <button onclick="submitEquityDecAnswer('FOLD')"
-                class="py-5 rounded-2xl font-black text-base bg-rose-900/50 border border-rose-700/60 text-rose-200 hover:bg-rose-800/60 active:scale-[0.97] transition-all">
+                class="py-5 md:py-8 rounded-2xl font-black text-base md:text-xl bg-rose-900/50 border border-rose-700/60 text-rose-200 hover:bg-rose-800/60 active:scale-[0.97] transition-all">
                 FOLD
             </button>
             <button onclick="submitEquityDecAnswer('CALL')"
-                class="py-5 rounded-2xl font-black text-base bg-emerald-900/50 border border-emerald-700/60 text-emerald-200 hover:bg-emerald-800/60 active:scale-[0.97] transition-all">
+                class="py-5 md:py-8 rounded-2xl font-black text-base md:text-xl bg-emerald-900/50 border border-emerald-700/60 text-emerald-200 hover:bg-emerald-800/60 active:scale-[0.97] transition-all">
                 CALL
             </button>
         </div>
@@ -1283,10 +1283,10 @@ function renderEquityDecFeedback(s) {
         : `<span class="text-rose-400">${s.heroEquityPct}%</span> &lt; <span class="text-slate-400">${s.equityNeededPct}%</span> needed \u2014 unprofitable`;
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
 
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${resultIcon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${resultIcon} ${verdict}</span>
         </div>
 
         <!-- Cards reminder -->
@@ -1306,11 +1306,11 @@ function renderEquityDecFeedback(s) {
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
             <div>
                 <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1.5">Pot Odds</p>
-                <div class="flex justify-between text-[12px]">
+                <div class="flex justify-between text-[12px] md:text-sm">
                     <span class="text-slate-500">Ratio</span>
                     <span class="text-slate-300 font-semibold">${s.potOddsRatio}</span>
                 </div>
-                <div class="flex justify-between text-[12px]">
+                <div class="flex justify-between text-[12px] md:text-sm">
                     <span class="text-slate-500">Equity needed</span>
                     <span class="text-slate-300 font-semibold">${s.equityNeededPct}%</span>
                 </div>
@@ -1324,11 +1324,11 @@ function renderEquityDecFeedback(s) {
         </div>
 
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
 
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -1344,28 +1344,28 @@ function renderRule42Question(s) {
     const mult = s.street === 'FLOP' ? 4 : 2;
     const btns = (s.choices || []).map(pct =>
         `<button onclick="submitRule42Answer(${pct})"
-            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            class="py-5 md:py-8 rounded-2xl font-black text-2xl md:text-4xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
             ${pct}%
         </button>`
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
-        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
-            <div class="flex justify-between items-center mb-4">
-                <span class="text-slate-400 text-base">Outs</span>
-                <span class="font-black text-slate-100 text-3xl">${s.outs}</span>
+    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
+            <div class="flex justify-between items-center mb-4 md:mb-6">
+                <span class="text-slate-400 text-base md:text-xl">Outs</span>
+                <span class="font-black text-slate-100 text-3xl md:text-5xl">${s.outs}</span>
             </div>
             <div class="flex justify-between items-center">
-                <span class="text-slate-400 text-base">Street</span>
-                <span class="font-black text-indigo-300 text-3xl">${streetLabel}</span>
+                <span class="text-slate-400 text-base md:text-xl">Street</span>
+                <span class="font-black text-indigo-300 text-3xl md:text-5xl">${streetLabel}</span>
             </div>
         </div>
-        <p class="text-base text-slate-200 text-center font-semibold">
+        <p class="text-base md:text-xl text-slate-200 text-center font-semibold">
             What is your approximate equity?
         </p>
         <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
-        <p class="text-[10px] text-slate-700 text-center italic">${rule}: outs \u00d7 ${mult}</p>
+        <p class="text-[10px] md:text-sm text-slate-700 text-center italic">${rule}: outs \u00d7 ${mult}</p>
     </div>`;
 }
 
@@ -1410,23 +1410,23 @@ function renderRule42Feedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
         <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Rule of 4/2 worked out</p>
             <div class="flex flex-col gap-1.5 text-center">
                 <p class="text-slate-500 text-sm">${s.outs} outs \u00d7 ${mult} (${streetLabel})</p>
-                <p class="text-white font-black text-3xl mt-1">${s.correctEquity}%</p>
+                <p class="text-white font-black text-3xl md:text-5xl mt-1">${s.correctEquity}%</p>
             </div>
         </div>
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -1439,28 +1439,28 @@ function renderRule42Feedback(s) {
 function renderPotRatioQuestion(s) {
     const btns = (s.choices || []).map(ratio =>
         `<button onclick="submitPotRatioAnswer('${ratio}')"
-            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            class="py-5 md:py-8 rounded-2xl font-black text-2xl md:text-4xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
             ${ratio}
         </button>`
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
-        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
-            <div class="flex justify-between items-center mb-4">
-                <span class="text-slate-400 text-base">Pot</span>
-                <span class="font-black text-slate-100 text-3xl">$${s.pot}</span>
+    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
+            <div class="flex justify-between items-center mb-4 md:mb-6">
+                <span class="text-slate-400 text-base md:text-xl">Pot</span>
+                <span class="font-black text-slate-100 text-3xl md:text-5xl">$${s.pot}</span>
             </div>
             <div class="flex justify-between items-center">
-                <span class="text-slate-400 text-base">Villain bets</span>
-                <span class="font-black text-indigo-300 text-3xl">$${s.bet}</span>
+                <span class="text-slate-400 text-base md:text-xl">Villain bets</span>
+                <span class="font-black text-indigo-300 text-3xl md:text-5xl">$${s.bet}</span>
             </div>
         </div>
-        <p class="text-base text-slate-200 text-center font-semibold">
+        <p class="text-base md:text-xl text-slate-200 text-center font-semibold">
             What pot odds are you getting?
         </p>
         <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
-        <p class="text-[10px] text-slate-700 text-center italic">Formula: (pot + bet) \u00f7 bet</p>
+        <p class="text-[10px] md:text-sm text-slate-700 text-center italic">Formula: (pot + bet) \u00f7 bet</p>
     </div>`;
 }
 
@@ -1503,24 +1503,24 @@ function renderPotRatioFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
         <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Formula worked out</p>
             <div class="flex flex-col gap-1.5 text-center">
                 <p class="text-slate-500 text-sm">($${s.pot} + $${s.bet}) \u00f7 $${s.bet}</p>
-                <p class="text-slate-400 text-base">$${s.pot + s.bet} \u00f7 $${s.bet}</p>
-                <p class="text-white font-black text-3xl mt-1">${s.correctRatio}</p>
+                <p class="text-slate-400 text-base md:text-xl">$${s.pot + s.bet} \u00f7 $${s.bet}</p>
+                <p class="text-white font-black text-3xl md:text-5xl mt-1">${s.correctRatio}</p>
             </div>
         </div>
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -1533,16 +1533,16 @@ function renderPotRatioFeedback(s) {
 function renderRatioPctQuestion(s) {
     const btns = (s.choices || []).map(pct =>
         `<button onclick="submitRatioPctAnswer(${pct})"
-            class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
+            class="py-5 md:py-8 rounded-2xl font-black text-2xl md:text-4xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
             ${pct}%
         </button>`
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
-        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center">
-            <p class="text-slate-400 text-base mb-3">Pot odds you're getting</p>
-            <p class="font-black text-slate-100 text-5xl">${s.ratioDisplay}</p>
+    <div class="flex flex-col items-center gap-6 md:gap-10 px-4 md:px-8 py-8 md:py-12 max-w-md md:max-w-2xl mx-auto w-full">
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 text-center">
+            <p class="text-slate-400 text-base md:text-xl mb-3">Pot odds you're getting</p>
+            <p class="font-black text-slate-100 text-5xl md:text-7xl">${s.ratioDisplay}</p>
         </div>
         <!-- Reference table -->
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-3">
@@ -1557,11 +1557,11 @@ function renderRatioPctQuestion(s) {
                 <div class="text-slate-300 font-bold">17%</div>
             </div>
         </div>
-        <p class="text-base text-slate-200 text-center font-semibold">
+        <p class="text-base md:text-xl text-slate-200 text-center font-semibold">
             What % equity do you need to call?
         </p>
         <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
-        <p class="text-[10px] text-slate-700 text-center italic">Shortcut: 1 \u00f7 (ratio + 1)</p>
+        <p class="text-[10px] md:text-sm text-slate-700 text-center italic">Shortcut: 1 \u00f7 (ratio + 1)</p>
     </div>`;
 }
 
@@ -1604,23 +1604,23 @@ function renderRatioPctFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 md:gap-7 px-4 md:px-8 py-6 md:py-10 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
-            <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
+            <span class="text-lg md:text-2xl font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
         <div class="flex gap-2 justify-center flex-wrap">${pills}</div>
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-4">Conversion worked out</p>
             <div class="flex flex-col gap-1.5 text-center">
                 <p class="text-slate-500 text-sm">1 \u00f7 (${s.ratio} + 1) = 1 \u00f7 ${s.ratio + 1}</p>
-                <p class="text-white font-black text-3xl mt-1">${s.correctPct}%</p>
+                <p class="text-white font-black text-3xl md:text-5xl mt-1">${s.correctPct}%</p>
             </div>
         </div>
         <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-4 py-3">
-            <p class="text-[12px] text-slate-400 leading-relaxed">${s.explanation}</p>
+            <p class="text-[12px] md:text-sm text-slate-400 leading-relaxed">${s.explanation}</p>
         </div>
         <button onclick="advanceMathDrill()"
-            class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+            class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
             ${mathDrill.idx + 1 < mathDrill.queue.length ? 'NEXT \u2192' : 'SEE RESULTS'}
         </button>
     </div>`;
@@ -1735,7 +1735,7 @@ function renderSummaryView() {
         <!-- Navigation -->
         <div class="w-full flex flex-col gap-3">
             <button onclick="startMathDrill('${againType}')"
-                class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all">
+                class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
                 DRILL AGAIN
             </button>
             <button onclick="exitMathDrill()"
