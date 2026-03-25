@@ -1254,6 +1254,26 @@ function showEquityDecHint() {
     if (hintBtn) hintBtn.classList.add('hidden');
 }
 
+function showRatioPctHint() {
+    const hintPanel = document.getElementById('rp-hint-panel');
+    const hintBtn   = document.getElementById('rp-hint-btn');
+    if (!hintPanel) return;
+    hintPanel.innerHTML = `
+        <p class="text-[11px] font-bold uppercase tracking-widest text-amber-500 mb-3">How to Convert</p>
+        <div class="flex flex-col gap-2.5 text-[11px]">
+            <div>
+                <p class="font-bold text-slate-300">Formula</p>
+                <p class="text-slate-500 mt-0.5">1 &divide; (ratio + 1) = equity needed</p>
+            </div>
+            <div>
+                <p class="font-bold text-slate-300">Common ratios</p>
+                <p class="text-slate-500 mt-0.5">2:1 = 33% &nbsp;&middot;&nbsp; 3:1 = 25% &nbsp;&middot;&nbsp; 4:1 = 20% &nbsp;&middot;&nbsp; 5:1 = 17%</p>
+            </div>
+        </div>`;
+    hintPanel.classList.remove('hidden');
+    if (hintBtn) hintBtn.classList.add('hidden');
+}
+
 function submitEquityDecAnswer(action) {
     if (mathDrill.answered) return;
     mathDrill.answered = true;
@@ -1544,24 +1564,18 @@ function renderRatioPctQuestion(s) {
             <p class="text-slate-400 text-base md:text-xl mb-3">Pot odds you're getting</p>
             <p class="font-black text-slate-100 text-5xl md:text-7xl">${s.ratioDisplay}</p>
         </div>
-        <!-- Reference table -->
-        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-3">
-            <div class="grid grid-cols-4 gap-1 text-center text-[10px]">
-                <div class="text-slate-500">2:1</div>
-                <div class="text-slate-500">3:1</div>
-                <div class="text-slate-500">4:1</div>
-                <div class="text-slate-500">5:1</div>
-                <div class="text-slate-300 font-bold">33%</div>
-                <div class="text-slate-300 font-bold">25%</div>
-                <div class="text-slate-300 font-bold">20%</div>
-                <div class="text-slate-300 font-bold">17%</div>
-            </div>
-        </div>
         <p class="text-base md:text-xl text-slate-200 text-center font-semibold">
             What % equity do you need to call?
         </p>
         <div class="w-full grid grid-cols-2 gap-3">${btns}</div>
-        <p class="text-[10px] md:text-sm text-slate-700 text-center italic">Shortcut: 1 \u00f7 (ratio + 1)</p>
+        <div class="w-full">
+            <button id="rp-hint-btn" onclick="showRatioPctHint()"
+                class="w-full py-2.5 rounded-xl text-[12px] font-bold text-amber-400 border border-amber-800/40 bg-amber-950/20 hover:bg-amber-900/30 active:scale-[0.98] transition-all">
+                \ud83d\udca1 How do I convert this?
+            </button>
+            <div id="rp-hint-panel" class="hidden mt-2 bg-slate-900 border border-amber-800/30 rounded-xl px-4 py-3">
+            </div>
+        </div>
     </div>`;
 }
 
