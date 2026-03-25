@@ -1879,33 +1879,18 @@ function renderPrescriptionCard() {
     const accColor = top.recentAcc >= 70 ? 'text-yellow-400' : 'text-rose-400';
     const escapedKey = top.spotKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-    // Fix 5 (mobile): Collapse to single-line row matching other button heights.
-    // Expand/collapse detail on tap. Desktop keeps the full expanded layout.
-    if (window.innerWidth <= 768) {
-        el.innerHTML = `
-            <button onclick="toggleLeakCard(this)" style="width:100%;background:none;border:none;cursor:pointer;text-align:left;" class="flex items-center justify-between gap-2 py-0.5">
-                <div class="flex items-center gap-2 min-w-0">
-                    <span class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest shrink-0">Biggest Leak</span>
-                    <span class="text-slate-200 font-bold text-xs leading-tight truncate">${spotName}</span>
-                </div>
-                <span class="${accColor} font-black text-sm shrink-0">${top.recentAcc}%</span>
-            </button>
-            <div class="leak-card-detail" style="max-height:0;overflow:hidden;transition:max-height 0.25s ease-out;">
-                ${handStr ? `<p class="text-slate-500 text-[11px] mt-2">Leaking on: ${handStr}</p>` : ''}
-                <button onclick="launchTargetedSession('${escapedKey}')" class="mt-2 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">Fix This Now — 15 hands</button>
-            </div>`;
-    } else {
-        el.innerHTML = `
-            <div class="flex items-center justify-between mb-2">
-                <p class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest">Biggest Leak</p>
-                <span class="${accColor} font-black text-sm">${top.recentAcc}%</span>
+    el.innerHTML = `
+        <button onclick="toggleLeakCard(this)" style="width:100%;background:none;border:none;cursor:pointer;text-align:left;" class="flex items-center justify-between gap-2 py-0.5">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest shrink-0">Biggest Leak</span>
+                <span class="text-slate-200 font-bold text-xs leading-tight truncate">${spotName}</span>
             </div>
-            <p class="text-slate-200 font-bold text-sm leading-tight">${spotName}</p>
-            ${handStr ? `<p class="text-slate-500 text-[11px] mt-1">Leaking on: ${handStr}</p>` : ''}
-            <button onclick="launchTargetedSession('${escapedKey}')" class="mt-3 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">
-                Fix This Now — 15 hands
-            </button>`;
-    }
+            <span class="${accColor} font-black text-sm shrink-0">${top.recentAcc}%</span>
+        </button>
+        <div class="leak-card-detail" style="max-height:0;overflow:hidden;transition:max-height 0.25s ease-out;">
+            ${handStr ? `<p class="text-slate-500 text-[11px] mt-2">Leaking on: ${handStr}</p>` : ''}
+            <button onclick="launchTargetedSession('${escapedKey}')" class="mt-2 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">Fix This Now — 15 hands</button>
+        </div>`;
 }
 
 function toggleLeakCard(btn) {
