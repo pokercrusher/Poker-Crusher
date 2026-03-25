@@ -1326,9 +1326,13 @@ function generatePotOddsRatioScenario(sizingCategory, potTier) {
 
     const id = 'por-' + sizingCategory + '-' + potTier;
     const srKey = 'POT_RATIO|' + id;
+    const betVsPot = bet < pot
+        ? 'Bet ($' + bet + ') is smaller than pot ($' + pot + ') \u2014 getting better than 2:1 confirms this.'
+        : bet > pot
+        ? 'Bet ($' + bet + ') is larger than pot ($' + pot + ') \u2014 getting worse than 2:1 confirms this.'
+        : 'Bet equals pot \u2014 exactly 2:1 confirms this.';
     const explanation = 'Pot $' + pot + ' + bet $' + bet + ' = $' + (pot + bet) + ' total. You call $' + bet + ' to win $' + (pot + bet) + '. That\u2019s ' + correctRatio + '. ' +
-        'Quick check: if bet equals pot you always get 2:1. ' +
-        (bet < pot ? 'Bet is smaller than pot \u2014 so you\u2019re getting better than 2:1.' : bet > pot ? 'Bet is larger than pot \u2014 so you\u2019re getting worse than 2:1.' : 'Bet equals pot \u2014 exactly 2:1.');
+        'Quick check: if bet equals pot you always get 2:1. ' + betVsPot;
 
     return { id, srKey, type: 'POT_RATIO', sizingCategory, potTier, pot, bet, correctRatio, choices, explanation };
 }
@@ -1720,7 +1724,7 @@ const OC_EXPLANATIONS = {
     'gutshot':                     function(h, b) { return 'You have a gutshot straight draw \u2014 only one specific rank completes your straight. 4 outs.'; },
     'straight-flush-draw':         function(h, b) { return 'You have a straight flush draw \u2014 suited connectors with two board cards of the same suit in sequence. Up to 15 outs (9 flush + 6 straight, some overlap).'; },
     'royal-flush-draw':            function(h, b) { return 'You have a royal flush draw \u2014 two broadway suited cards with two more broadway cards of the same suit on board. 15 outs to the nuts.'; },
-    'combo-flush-oesd':            function(h, b) { return 'You have a combination flush draw and open-ended straight draw. Up to 15 outs (9 flush + 8 straight minus overlap).'; },
+    'combo-flush-oesd':            () => 'You have a combination flush draw and open-ended straight draw. 9 flush outs + 8 straight outs = 17, minus ~2 cards that complete both draws = approximately 15 outs total.',
     'combo-flush-gutshot':         function(h, b) { return 'You have a combination flush draw and gutshot straight draw. 12 outs total (9 flush + 4 straight minus overlap).'; },
     'backdoor-straight':           function(h, b) { return 'Backdoor straight draws need two running cards to complete. Roughly 2\u20133% equity total. Expressed as \u201c2 outs equivalent\u201d as a shorthand only \u2014 not a real out count.'; },
     'pair-plus-flush-draw':        function(h, b) { return 'You have a pair on the board plus a flush draw. You\u2019re not drawing dead \u2014 5 outs to improve your pair to trips plus 9 flush outs. 14 outs total.'; },
@@ -1732,6 +1736,11 @@ const OC_EXPLANATIONS = {
 };
 
 // ── GENERATORS (continued) ──
+
+// Module-level trackers: prevent the same draw category from appearing in consecutive
+// random (no-category) deals. Not used in explicit-category / SR-bucket paths.
+const _recentOutCountingCategories = [];
+const _recentEquityCategories = [];
 
 function generateOutCountingScenario(category, street) {
     const providedCategory = !!category;
@@ -1784,6 +1793,21 @@ function generateOutCountingScenario(category, street) {
             street = 'FLOP';
             usedCategory = classifyDrawCategory(hand, board);
         }
+
+        // Prevent the same category from appearing in consecutive random deals
+        for (let retry = 0; retry < 5 && _recentOutCountingCategories.includes(usedCategory); retry++) {
+            const retryStreet = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+            const retryBoardSize = retryStreet === 'FLOP' ? 3 : 4;
+            const retryDeck = buildShuffledDeck();
+            const h3 = dealCards(retryDeck, 2);
+            const b3 = dealCards(retryDeck, retryBoardSize);
+            const cat3 = classifyDrawCategory(h3, b3);
+            if (!OC_FLOP_ONLY.includes(cat3) || retryStreet === 'FLOP') {
+                hand = h3; board = b3; street = retryStreet; usedCategory = cat3;
+            }
+        }
+        _recentOutCountingCategories.push(usedCategory);
+        if (_recentOutCountingCategories.length > 2) _recentOutCountingCategories.shift();
     }
 
     const correctOuts = OUTS_BY_CATEGORY[usedCategory];
@@ -1894,6 +1918,21 @@ function generateEquityDecisionScenario(category, street, betSizeCategory) {
             street = 'FLOP';
             usedCategory = classifyDrawCategory(hand, board);
         }
+
+        // Prevent the same category from appearing in consecutive random deals
+        for (let retry = 0; retry < 5 && _recentEquityCategories.includes(usedCategory); retry++) {
+            const retryStreet = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+            const retryBoardSize = retryStreet === 'FLOP' ? 3 : 4;
+            const retryDeck = buildShuffledDeck();
+            const h3 = dealCards(retryDeck, 2);
+            const b3 = dealCards(retryDeck, retryBoardSize);
+            const cat3 = classifyDrawCategory(h3, b3);
+            if (!OC_FLOP_ONLY.includes(cat3) || retryStreet === 'FLOP') {
+                hand = h3; board = b3; street = retryStreet; usedCategory = cat3;
+            }
+        }
+        _recentEquityCategories.push(usedCategory);
+        if (_recentEquityCategories.length > 2) _recentEquityCategories.shift();
     }
 
     const pot = POT_POOL[Math.floor(Math.random() * POT_POOL.length)];

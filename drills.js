@@ -1195,13 +1195,6 @@ function renderEquityDecQuestion(s) {
             </div>
         </div>
 
-        <!-- Synthesis prompt -->
-        <div class="text-center">
-            <p class="text-sm font-black text-white">You're getting ${s.potOddsRatio}</p>
-            <p class="text-xs text-slate-400 mt-1">(need ${s.equityNeededPct}% equity to call)</p>
-            <p class="text-xs text-slate-500 mt-2">Do your outs give you enough equity?</p>
-        </div>
-
         <!-- Hint -->
         <div class="w-full">
             <button id="ed-hint-btn" onclick="showEquityDecHint()"
@@ -1231,7 +1224,19 @@ function showEquityDecHint() {
     const hintPanel = document.getElementById('ed-hint-panel');
     const hintBtn   = document.getElementById('ed-hint-btn');
     if (!hintPanel) return;
+    const s = mathDrill.queue[mathDrill.idx] && mathDrill.queue[mathDrill.idx].s;
     hintPanel.innerHTML = `
+        ${s ? `<div class="mb-3 pb-3 border-b border-amber-800/30">
+            <p class="text-[11px] font-bold uppercase tracking-widest text-amber-500 mb-2">Pot Odds</p>
+            <div class="flex justify-between text-[11px]">
+                <span class="text-slate-500">Ratio</span>
+                <span class="text-slate-300 font-semibold">${s.potOddsRatio}</span>
+            </div>
+            <div class="flex justify-between text-[11px] mt-1">
+                <span class="text-slate-500">Equity needed</span>
+                <span class="text-slate-300 font-semibold">${s.equityNeededPct}%</span>
+            </div>
+        </div>` : ''}
         <p class="text-[11px] font-bold uppercase tracking-widest text-amber-500 mb-3">How to Solve</p>
         <div class="flex flex-col gap-2.5 text-[11px]">
             <div>
@@ -1298,6 +1303,7 @@ function renderEquityDecFeedback(s) {
     const resultCol   = correct ? 'text-emerald-400' : 'text-rose-400';
     const resultIcon  = correct ? '\u2713' : '\u2717';
     const verdict     = correct ? `${s.correctAction} is correct` : `Correct answer: ${s.correctAction}`;
+    const totalIfCall = s.pot + s.bet * 2;
 
     const equityComp = s.heroEquityPct >= s.equityNeededPct
         ? `<span class="text-emerald-400">${s.heroEquityPct}%</span> &gt; <span class="text-slate-400">${s.equityNeededPct}%</span> needed \u2014 profitable`
@@ -1320,6 +1326,22 @@ function renderEquityDecFeedback(s) {
             <div class="flex flex-col items-center gap-1">
                 <span class="text-[8px] text-slate-600 font-bold uppercase tracking-widest">Board</span>
                 ${renderDrillCardsHtml(s.board)}
+            </div>
+        </div>
+
+        <!-- Pot / bet sizing (same layout as question screen) -->
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
+            <div class="flex justify-between text-sm">
+                <span class="text-slate-400">Pot</span>
+                <span class="font-black text-slate-200">$${s.pot}</span>
+            </div>
+            <div class="flex justify-between text-sm">
+                <span class="text-slate-400">Villain bets</span>
+                <span class="font-black text-slate-200">$${s.bet}</span>
+            </div>
+            <div class="border-t border-slate-800 pt-2 flex justify-between text-[11px]">
+                <span class="text-slate-600">Pot if you call</span>
+                <span class="text-slate-500">$${totalIfCall}</span>
             </div>
         </div>
 
@@ -1751,11 +1773,11 @@ function renderSummaryView() {
         <div class="w-full flex flex-col gap-3">
             <button onclick="startMathDrill('${againType}')"
                 class="w-full py-4 md:py-6 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-base md:text-xl transition-all">
-                DRILL AGAIN
+                Play Again
             </button>
-            <button onclick="exitMathDrill()"
+            <button onclick="renderMathDrillView('menu')"
                 class="w-full py-3 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-400 transition-all">
-                HOME
+                Math Drills Menu
             </button>
         </div>
 
