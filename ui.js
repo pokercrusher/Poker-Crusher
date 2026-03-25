@@ -18,7 +18,7 @@ function placeCardBacks(cardsLayer, coords, animated, folded) {
     const isMob = SEAT_COORDS === SEAT_COORDS_MOBILE;
     // Separate H/V offsets because the felt is ~2.5x wider than tall:
     // a uniform % offset clears seat edges horizontally but not vertically.
-    const cbOffH = isMob ? 7 : 7;
+    const cbOffH = isMob ? 7 : 5;
     const cbOffV = isMob ? 12 : 9;
     // Bottom-center seat (hero) needs a bigger upward offset so cards sit above the box
     const isBottomCenter = Math.abs(cL - 50) < 10 && cT > 75;
