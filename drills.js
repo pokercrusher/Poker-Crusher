@@ -50,6 +50,14 @@ function showMathDrillMenu() {
 }
 
 function exitMathDrill() {
+    // During an active drill (question / feedback / summary), EXIT goes back to the
+    // Math Drills menu rather than closing the whole screen.
+    if (mathDrill.queue.length > 0) {
+        mathDrill.queue = [];
+        mathDrill.idx   = 0;
+        renderMathDrillView('menu');
+        return;
+    }
     document.getElementById('math-drill-screen').classList.add('hidden');
 }
 
