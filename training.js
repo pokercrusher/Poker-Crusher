@@ -153,7 +153,8 @@ let dailyRunState = {
     bySpot: {},             // per-spot attempts in this run (for leak)
     allowedScenarios: [],   // scenario pool for this run
     _savedConfig: null,
-    _rerollGuard: 0
+    _rerollGuard: 0,
+    _committed: false   // true once result has been written to meta (prevents loss on early navigation)
 };
 
 // Daily Run difficulty registry.
@@ -271,6 +272,7 @@ function resetDailyRunState(opts) {
     dailyRunState.bySpot = {};
     dailyRunState.allowedScenarios = [];
     dailyRunState._rerollGuard = 0;
+    dailyRunState._committed = false;
     applyDailyRunHUDState(false);
 }
 
@@ -434,6 +436,77 @@ function getDailyRunLockInfo() {
         msLeft = Math.max(0, d.getTime() - now);
     }
     return { meta, locked: allDone, msLeft, completedToday: meta.completedToday };
+}
+
+// Commits the current run's result to localStorage meta immediately.
+// Called right after a miss is recorded (not delayed like the modal), so navigation
+// away during the 600 ms feedback window can't cause data loss.
+// Idempotent: subsequent calls (e.g. from showDailyRunComplete) are no-ops.
+// Returns the updated meta object, or null if already committed or no active run.
+function _commitDailyRunToMeta() {
+    if (!dailyRunState.option) return null;
+    if (dailyRunState._committed) return null;
+    dailyRunState._committed = true;
+
+    const now = Date.now();
+    const meta = loadDailyRunMeta();
+    const today = getLocalDayIndex(now);
+    const lastDay = (meta.lastDayIndex === null || meta.lastDayIndex === undefined) ? null : meta.lastDayIndex;
+
+    // Reset daily counters if day has rolled over (also resets completedToday for consistency)
+    if (meta.runsDayIndex === null || meta.runsDayIndex === undefined || meta.runsDayIndex !== today) {
+        meta.runsDayIndex = today;
+        meta.runsToday = 0;
+        meta.completedToday = {};
+    }
+    if (!meta.completedToday || typeof meta.completedToday !== 'object') meta.completedToday = {};
+
+    // Day-streak: only advances on the first completed run of a new calendar day
+    const prevCompleted = Object.keys(meta.completedToday).length;
+    if (prevCompleted === 0) {
+        let streak = Number(meta.streak || 0);
+        if (lastDay === null) streak = 1;
+        else if (today === lastDay) streak = Math.max(1, streak);
+        else if (today === lastDay + 1) streak = streak + 1;
+        else streak = 1;
+        meta.lastDayIndex = today;
+        meta.streak = streak;
+        meta.bestStreak = Math.max(Number(meta.bestStreak || 0), streak);
+    }
+
+    meta.runsToday = Number(meta.runsToday || 0) + 1;
+    meta.completedToday[dailyRunState.option] = true;
+    meta.lastCompletedAt = now;
+    meta.lastOption = dailyRunState.option;
+    meta.totalRuns = Number(meta.totalRuns || 0) + 1;
+
+    const runScore = dailyRunState.runStreak || 0;
+    const total = dailyRunState.total || 0;
+    const correct = dailyRunState.correct || 0;
+    meta.lastRun = runScore;
+    meta.lastTotal = total;
+    meta.lastCorrect = correct;
+    meta.bestRun = Math.max(Number(meta.bestRun || 0), runScore);
+    if (dailyRunState.option === 'easy')   meta.bestRunEasy   = Math.max(Number(meta.bestRunEasy   || 0), runScore);
+    if (dailyRunState.option === 'medium') meta.bestRunMedium = Math.max(Number(meta.bestRunMedium || 0), runScore);
+    if (dailyRunState.option === 'hard')   meta.bestRunHard   = Math.max(Number(meta.bestRunHard   || 0), runScore);
+
+    // Biggest leak = lowest-accuracy spot (≥2 attempts), else most-missed spot
+    let leakKey = null, leakScore = Infinity, leakMisses = -1;
+    Object.entries(dailyRunState.bySpot || {}).forEach(([k, v]) => {
+        const t = v.total || 0, c = v.correct || 0, miss = t - c, acc = t ? c / t : 0;
+        if (t >= 2) { if (acc < leakScore) { leakScore = acc; leakKey = k; } }
+        else        { if (miss > leakMisses) { leakMisses = miss; if (!leakKey) leakKey = k; } }
+    });
+    meta.lastLeakKey = leakKey || null;
+
+    const hist = Array.isArray(meta.history) ? meta.history.slice() : [];
+    hist.push({ dayIndex: today, at: now, option: dailyRunState.option, run: runScore, total, correct, leakKey: leakKey || null });
+    while (hist.length > 120) hist.shift();
+    meta.history = hist;
+
+    saveDailyRunMeta(meta);
+    return meta;
 }
 
 function formatDuration(ms) {
@@ -671,76 +744,10 @@ function showDailyRunComplete() {
     const runScore = dailyRunState.runStreak || 0;
     const accuracy = total ? Math.round((correct / total) * 100) : 0;
 
-    // Biggest leak = lowest accuracy spot (min 2 attempts), else most misses
-    let leakKey = null;
-    let leakScore = Infinity;
-    let leakMisses = -1;
-
-    Object.entries(dailyRunState.bySpot || {}).forEach(([k, v]) => {
-        const t = v.total || 0;
-        const c = v.correct || 0;
-        const miss = t - c;
-        const acc = t ? (c / t) : 0;
-        if (t >= 2) {
-            if (acc < leakScore) { leakScore = acc; leakKey = k; }
-        } else {
-            if (miss > leakMisses) { leakMisses = miss; leakKey = leakKey || k; }
-        }
-    });
-
-    const leakLabel = leakKey ? prettySpotName(leakKey) : '—';
-
-    // Update meta: 3/day cap + day streak + lifetime stats + history
-    const now = Date.now();
-    const meta = loadDailyRunMeta();
-    const today = getLocalDayIndex(now);
-    const lastDay = (meta.lastDayIndex === null || meta.lastDayIndex === undefined) ? null : meta.lastDayIndex;
-
-    // ensure today's counter is initialized
-    if (meta.runsDayIndex === null || meta.runsDayIndex === undefined || meta.runsDayIndex !== today) {
-        meta.runsDayIndex = today;
-        meta.runsToday = 0;
-    }
-
-    // day-streak increments only on the first completed run of a new day
-    const _prevCompleted = Object.keys(meta.completedToday || {}).length;
-    let newDayStreak = Number(meta.streak || 0);
-    if (_prevCompleted === 0) {
-        if (lastDay === null) newDayStreak = 1;
-        else if (today === lastDay) newDayStreak = Math.max(1, newDayStreak);
-        else if (today === lastDay + 1) newDayStreak = newDayStreak + 1;
-        else newDayStreak = 1;
-        meta.lastDayIndex = today;
-        meta.streak = newDayStreak;
-        meta.bestStreak = Math.max(Number(meta.bestStreak || 0), newDayStreak);
-    }
-
-    meta.runsToday = Number(meta.runsToday || 0) + 1;
-    if (!meta.completedToday) meta.completedToday = {};
-    meta.completedToday[dailyRunState.option] = true;
-
-    meta.lastCompletedAt = now;
-    meta.lastOption = dailyRunState.option;
-
-    meta.totalRuns = Number(meta.totalRuns || 0) + 1;
-
-    meta.lastRun = runScore;
-    meta.lastTotal = total;
-    meta.lastCorrect = correct;
-    meta.lastLeakKey = leakKey || null;
-
-    meta.bestRun = Math.max(Number(meta.bestRun || 0), runScore);
-    if (dailyRunState.option === 'easy') meta.bestRunEasy = Math.max(Number(meta.bestRunEasy || 0), runScore);
-    if (dailyRunState.option === 'medium') meta.bestRunMedium = Math.max(Number(meta.bestRunMedium || 0), runScore);
-    if (dailyRunState.option === 'hard') meta.bestRunHard = Math.max(Number(meta.bestRunHard || 0), runScore);
-
-    // append history entry (cap ~120)
-    const hist = Array.isArray(meta.history) ? meta.history.slice() : [];
-    hist.push({ dayIndex: today, at: now, option: dailyRunState.option, run: runScore, total: total, correct: correct, leakKey: leakKey || null });
-    while (hist.length > 120) hist.shift();
-    meta.history = hist;
-
-    saveDailyRunMeta(meta);
+    // Commit result to meta (idempotent — _commitDailyRunToMeta may have already been
+    // called immediately after the miss to guard against navigation-away data loss).
+    const meta = _commitDailyRunToMeta() || loadDailyRunMeta();
+    const leakLabel = meta.lastLeakKey ? prettySpotName(meta.lastLeakKey) : '—';
 
     // Render modal
     const optName = dailyRunState.option === 'easy' ? 'Warm‑Up' : dailyRunState.option === 'hard' ? 'Boss' : 'Grind';
@@ -3444,6 +3451,9 @@ function handleInput(action) {
         if (!dailyRunState.bySpot[spotKey]) dailyRunState.bySpot[spotKey] = { total: 0, correct: 0 };
         dailyRunState.bySpot[spotKey].total++;
         if (correct) dailyRunState.bySpot[spotKey].correct++;
+        // Commit immediately on miss so navigation away during the 600 ms feedback delay
+        // can't cause the result to be lost.
+        if (dailyRunState.ended) try { _commitDailyRunToMeta(); } catch(_) {}
     }
 
     // Update SR for this hand within the spot
@@ -3904,6 +3914,9 @@ function _resolvePostflopAction(params) {
         if (!dailyRunState.bySpot[spot.spotKey]) dailyRunState.bySpot[spot.spotKey] = { total: 0, correct: 0 };
         dailyRunState.bySpot[spot.spotKey].total++;
         if (result.correct) dailyRunState.bySpot[spot.spotKey].correct++;
+        // Commit immediately on miss so navigation away during the 600 ms feedback delay
+        // can't cause the result to be lost.
+        if (dailyRunState.ended) try { _commitDailyRunToMeta(); } catch(_) {}
     }
 
     const logEntry = {
