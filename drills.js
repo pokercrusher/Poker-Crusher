@@ -1095,7 +1095,8 @@ function renderOutCountingFeedback(s) {
     const resultBg  = correct ? 'bg-emerald-950/50 border-emerald-700/50' : 'bg-rose-950/50 border-rose-700/50';
     const resultCol = correct ? 'text-emerald-400' : 'text-rose-400';
     const icon      = correct ? '\u2713' : '\u2717';
-    const verdict   = correct ? `${s.correctOuts} outs \u2014 correct!` : `${s.correctOuts} outs was the answer`;
+    const outsLabel = s.correctOuts === 1 ? 'out' : 'outs';
+    const verdict   = correct ? `${s.correctOuts} ${outsLabel} \u2014 correct!` : `${s.correctOuts} ${outsLabel} was the answer`;
 
     const pills = (s.choices || []).map(outs => {
         const isBest   = outs === s.correctOuts;

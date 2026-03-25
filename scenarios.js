@@ -1408,7 +1408,7 @@ const OUTS_BY_CATEGORY = {
     'pair-plus-oesd':             10,
     'two-overcards-plus-gutshot': 10,
     'underpair':                   2,
-    'no-draw':                     1
+    'no-draw':                     0
 };
 
 // Wrong answer offsets per category — plausible but never correct
@@ -1474,6 +1474,26 @@ function hasOESD(allRanks) {
     return false;
 }
 
+// Check for a 4-card sequence where exactly ONE end is open (e.g. A-K-Q-J or A-2-3-4)
+// These have 4 outs like a gutshot and should be treated as such (not OESD)
+function hasOneEndedStraightDraw(allRanks) {
+    const ranks = [...new Set(allRanks)].sort((a, b) => a - b);
+    const withLow = ranks.includes(14) ? [1, ...ranks] : ranks;
+    const unique = [...new Set(withLow)].sort((a, b) => a - b);
+    for (let i = 0; i <= unique.length - 4; i++) {
+        const window = unique.slice(i, i + 4);
+        if (window[3] - window[0] === 3 && window.length === 4) {
+            const low  = window[0];
+            const high = window[3];
+            const lowOpen  = low  > 1;   // can extend below
+            const highOpen = high < 14;  // can extend above (ace is highest)
+            // Exactly one end open = one-ended straight draw
+            if (lowOpen !== highOpen) return true;
+        }
+    }
+    return false;
+}
+
 // Check if ranks contain exactly a gutshot (not OESD)
 function hasGutshot(allRanks) {
     const ranks = [...new Set(allRanks)].sort((a, b) => a - b);
@@ -1483,19 +1503,22 @@ function hasGutshot(allRanks) {
         const window = unique.slice(i, i + 4);
         if (window[3] - window[0] === 4 && window.length === 4) return true;
     }
-    return false;
+    // One-ended straight draws (A-K-Q-J, A-2-3-4) also have 4 outs — treat as gutshot
+    return hasOneEndedStraightDraw(allRanks);
 }
 
 // Check if ranks contain a double gutshot (two different cards each independently complete a different straight)
 function hasDoubleGutshot(allRanks) {
-    const ranks = [...new Set(allRanks)].sort((a, b) => a - b);
-    const withLow = ranks.includes(14) ? [1, ...ranks] : ranks;
-    const unique = [...new Set(withLow)].sort((a, b) => a - b);
+    const unique = [...new Set(allRanks)].sort((a, b) => a - b);
+    const withLow = unique.includes(14) ? [1, ...unique] : unique;
+    const deduped = [...new Set(withLow)].sort((a, b) => a - b);
+
     const completingCards = new Set();
     for (let low = 1; low <= 10; low++) {
         const straight = [low, low + 1, low + 2, low + 3, low + 4];
-        const missing = straight.filter(r => !unique.includes(r));
-        if (missing.length === 1 && straight.filter(r => unique.includes(r)).length === 4) {
+        const have    = straight.filter(r => deduped.includes(r));
+        const missing = straight.filter(r => !deduped.includes(r));
+        if (have.length === 4 && missing.length === 1) {
             completingCards.add(missing[0]);
         }
     }
@@ -1510,7 +1533,13 @@ function hasDoubleGutshot(allRanks) {
 
 function constraintFlushDraw(hand, board) {
     for (const suit of ['s', 'h', 'd', 'c']) {
-        if (suitCount(hand, suit) === 2 && suitCount(board, suit) === 2) return true;
+        const heroCount  = suitCount(hand,  suit);
+        const boardCount = suitCount(board, suit);
+        const total = heroCount + boardCount;
+        // Standard flush draw: 4 total cards of the same suit
+        if (total === 4) return true;
+        // One-card flush draw on turn: hero has 1, board has 3 of same suit
+        if (board.length === 4 && heroCount >= 1 && boardCount === 3) return true;
     }
     return false;
 }
@@ -1525,7 +1554,7 @@ function constraintBackdoorFlushDraw(hand, board) {
 
 function constraintOESD(hand, board) {
     const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
-    return hasOESD(allRanks) && !constraintFlushDraw(hand, board);
+    return hasOESD(allRanks) && !constraintFlushDraw(hand, board) && !hasOneEndedStraightDraw(allRanks);
 }
 
 function constraintDoubleGutshot(hand, board) {
@@ -1576,6 +1605,15 @@ function constraintComboFlushGutshot(hand, board) {
 
 function constraintBackdoorStraight(hand, board) {
     if (board.length !== 3) return false;
+    // Must NOT have any of these stronger draws
+    if (constraintFlushDraw(hand, board))     return false;
+    if (constraintBackdoorFlushDraw(hand, board)) return false;
+    if (constraintOESD(hand, board))          return false;
+    if (constraintDoubleGutshot(hand, board)) return false;
+    if (constraintGutshot(hand, board))       return false;
+    if (constraintComboFlushOESD(hand, board))    return false;
+    if (constraintComboFlushGutshot(hand, board)) return false;
+    // Only then check for 3 ranks within a 5-wide window (backdoor straight)
     const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
     const unique = [...new Set(allRanks)].sort((a, b) => a - b);
     for (let i = 0; i <= unique.length - 3; i++) {
@@ -1631,6 +1669,27 @@ function constraintNoDraw(hand, board) {
         !constraintFlushDraw(hand, board) && !constraintBackdoorFlushDraw(hand, board);
 }
 
+// Priority-ordered draw classifier — walks strongest-first, returns first match
+// Used to verify that a dealt hand/board truly belongs to the requested category
+function classifyDrawCategory(hand, board) {
+    if (constraintRoyalFlushDraw(hand, board))       return 'royal-flush-draw';
+    if (constraintStraightFlushDraw(hand, board))    return 'straight-flush-draw';
+    if (constraintComboFlushOESD(hand, board))       return 'combo-flush-oesd';
+    if (constraintComboFlushGutshot(hand, board))    return 'combo-flush-gutshot';
+    if (constraintFlushDraw(hand, board))            return 'flush-draw';
+    if (constraintPairPlusFlushDraw(hand, board))    return 'pair-plus-flush-draw';
+    if (constraintPairPlusOESD(hand, board))         return 'pair-plus-oesd';
+    if (constraintPairPlusGutshot(hand, board))      return 'pair-plus-gutshot';
+    if (constraintTwoOvercardsGutshot(hand, board))  return 'two-overcards-plus-gutshot';
+    if (constraintOESD(hand, board))                 return 'oesd';
+    if (constraintDoubleGutshot(hand, board))        return 'double-gutshot';
+    if (constraintGutshot(hand, board))              return 'gutshot';
+    if (constraintUnderpair(hand, board))            return 'underpair';
+    if (constraintBackdoorFlushDraw(hand, board))    return 'backdoor-flush-draw';
+    if (constraintBackdoorStraight(hand, board))     return 'backdoor-straight';
+    return 'no-draw';
+}
+
 // Dispatch map — must be defined after all constraint functions
 const OC_CONSTRAINT_FNS = {
     'flush-draw':                  constraintFlushDraw,
@@ -1669,31 +1728,62 @@ const OC_EXPLANATIONS = {
     'pair-plus-oesd':              function(h, b) { return 'You have a pair on the board plus an open-ended straight draw. 6 outs to trips plus 8 straight outs (with some overlap). ~10 outs.'; },
     'two-overcards-plus-gutshot':  function(h, b) { return 'You have two overcards plus a gutshot. 6 overcard outs plus 4 straight outs. 10 outs total.'; },
     'underpair':                   function(h, b) { return 'You have a pocket pair lower than all board cards. Your only outs are the 2 remaining cards of your rank to make a set. 2 outs.'; },
-    'no-draw':                     function(h, b) { return 'You have complete air \u2014 no pair, no draw, no overcard. You have at most 1\u20132 runner-runner outs. Generally a fold to any significant bet.'; }
+    'no-draw':                     function(h, b) { return 'You have complete air \u2014 no pair, no draw, no overcard. With 0 meaningful outs this is a clear fold to any significant bet. Even runner-runner outs are too unlikely to justify calling.'; }
 };
 
 // ── GENERATORS (continued) ──
 
 function generateOutCountingScenario(category, street) {
-    if (!category) category = OC_CATEGORIES[Math.floor(Math.random() * OC_CATEGORIES.length)];
+    const providedCategory = !!category;
+    let hand, board, usedCategory;
 
-    if (OC_FLOP_ONLY.includes(category)) {
-        street = 'FLOP';
-    } else if (!street) {
-        street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
-    }
+    if (providedCategory) {
+        // Category explicitly requested: deal with constraint AND verify classification matches
+        if (OC_FLOP_ONLY.includes(category)) {
+            street = 'FLOP';
+        } else if (!street) {
+            street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+        }
+        const boardSize = street === 'FLOP' ? 3 : 4;
+        const constraintFn = OC_CONSTRAINT_FNS[category];
 
-    const boardSize = street === 'FLOP' ? 3 : 4;
-    const constraintFn = OC_CONSTRAINT_FNS[category];
+        let result = null;
+        for (let attempt = 0; attempt < 50; attempt++) {
+            const deck = buildShuffledDeck();
+            const h = dealCards(deck, 2);
+            const b = dealCards(deck, boardSize);
+            if (constraintFn && constraintFn(h, b) &&
+                classifyDrawCategory(h, b) === category &&
+                validateNoDuplicates(h, b)) {
+                result = { hand: h, board: b };
+                break;
+            }
+        }
 
-    const result = dealWithConstraints(2, boardSize, constraintFn, 50);
+        hand  = result ? result.hand  : ['Ah', 'Jh'];
+        board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
+        usedCategory = result ? category : 'flush-draw';
+        if (!result) console.warn('generateOutCountingScenario: no verified deal for ' + category + '/' + street);
 
-    const hand  = result ? result.hand  : ['Ah', 'Jh'];
-    const board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
-    const usedCategory = result ? category : 'flush-draw';
+    } else {
+        // No category provided: deal random cards then classify what was dealt
+        if (!street) {
+            street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+        }
+        const boardSize = street === 'FLOP' ? 3 : 4;
+        const deck = buildShuffledDeck();
+        hand  = dealCards(deck, 2);
+        board = dealCards(deck, boardSize);
+        usedCategory = classifyDrawCategory(hand, board);
 
-    if (!result) {
-        console.warn('generateOutCountingScenario: dealWithConstraints failed for ' + category + '/' + street + ', using fallback');
+        // If classification is flop-only but we dealt a turn board, redeal as flop
+        if (OC_FLOP_ONLY.includes(usedCategory) && street === 'TURN') {
+            const deck2 = buildShuffledDeck();
+            hand  = dealCards(deck2, 2);
+            board = dealCards(deck2, 3);
+            street = 'FLOP';
+            usedCategory = classifyDrawCategory(hand, board);
+        }
     }
 
     const correctOuts = OUTS_BY_CATEGORY[usedCategory];
@@ -1736,8 +1826,8 @@ function generateOutCountingScenario(category, street) {
         hand, board,
         correctOuts,
         choices,
-        outsSummary: correctOuts + ' outs \u2014 ' + usedCategory.replace(/-/g, ' '),
-        explanation: explanationFn ? explanationFn(hand, board) : correctOuts + ' outs.'
+        outsSummary: correctOuts + (correctOuts === 1 ? ' out \u2014 ' : ' outs \u2014 ') + usedCategory.replace(/-/g, ' '),
+        explanation: explanationFn ? explanationFn(hand, board) : correctOuts + (correctOuts === 1 ? ' out.' : ' outs.')
     };
 }
 
@@ -1749,30 +1839,61 @@ const ED_BET_SIZES = {
 };
 
 function generateEquityDecisionScenario(category, street, betSizeCategory) {
-    if (!category) category = OC_CATEGORIES[Math.floor(Math.random() * OC_CATEGORIES.length)];
-
-    if (OC_FLOP_ONLY.includes(category)) {
-        street = 'FLOP';
-    } else if (!street) {
-        street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
-    }
+    const providedCategory = !!category;
+    let hand, board, usedCategory;
 
     if (!betSizeCategory) {
         const sizes = Object.keys(ED_BET_SIZES);
         betSizeCategory = sizes[Math.floor(Math.random() * sizes.length)];
     }
 
-    const boardSize = street === 'FLOP' ? 3 : 4;
-    const constraintFn = OC_CONSTRAINT_FNS[category];
+    if (providedCategory) {
+        // Category explicitly requested: deal with constraint AND verify classification matches
+        if (OC_FLOP_ONLY.includes(category)) {
+            street = 'FLOP';
+        } else if (!street) {
+            street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+        }
+        const boardSize = street === 'FLOP' ? 3 : 4;
+        const constraintFn = OC_CONSTRAINT_FNS[category];
 
-    const result = dealWithConstraints(2, boardSize, constraintFn, 50);
+        let result = null;
+        for (let attempt = 0; attempt < 50; attempt++) {
+            const deck = buildShuffledDeck();
+            const h = dealCards(deck, 2);
+            const b = dealCards(deck, boardSize);
+            if (constraintFn && constraintFn(h, b) &&
+                classifyDrawCategory(h, b) === category &&
+                validateNoDuplicates(h, b)) {
+                result = { hand: h, board: b };
+                break;
+            }
+        }
 
-    const hand  = result ? result.hand  : ['Ah', 'Jh'];
-    const board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
-    const usedCategory = result ? category : 'flush-draw';
+        hand  = result ? result.hand  : ['Ah', 'Jh'];
+        board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
+        usedCategory = result ? category : 'flush-draw';
+        if (!result) console.warn('generateEquityDecisionScenario: no verified deal for ' + category + '/' + street);
 
-    if (!result) {
-        console.warn('generateEquityDecisionScenario: dealWithConstraints failed for ' + category + '/' + street);
+    } else {
+        // No category provided: deal random cards then classify what was dealt
+        if (!street) {
+            street = OC_STREETS[Math.floor(Math.random() * OC_STREETS.length)];
+        }
+        const boardSize = street === 'FLOP' ? 3 : 4;
+        const deck = buildShuffledDeck();
+        hand  = dealCards(deck, 2);
+        board = dealCards(deck, boardSize);
+        usedCategory = classifyDrawCategory(hand, board);
+
+        // If classification is flop-only but we dealt a turn board, redeal as flop
+        if (OC_FLOP_ONLY.includes(usedCategory) && street === 'TURN') {
+            const deck2 = buildShuffledDeck();
+            hand  = dealCards(deck2, 2);
+            board = dealCards(deck2, 3);
+            street = 'FLOP';
+            usedCategory = classifyDrawCategory(hand, board);
+        }
     }
 
     const pot = POT_POOL[Math.floor(Math.random() * POT_POOL.length)];
@@ -1820,11 +1941,21 @@ function generateEquityDecisionScenario(category, street, betSizeCategory) {
         equityNeededPct,
         heroEquityPct,
         correctAction,
-        outsSummary: outs + ' outs \u2014 ' + usedCategory.replace(/-/g, ' '),
+        outsSummary: outs + (outs === 1 ? ' out \u2014 ' : ' outs \u2014 ') + usedCategory.replace(/-/g, ' '),
         explanation
     };
 }
 
+/* CLASSIFICATION TESTS — do not execute at runtime
+  classifyDrawCategory(['9s','3c'], ['8h','5s','6c'])      // expect: gutshot (7 completes 5-6-7-8-9; not double-gutshot since 3-4-5-6-7 needs two cards)
+  classifyDrawCategory(['Qd','Td'], ['6d','9h','7c','Jd']) // expect: combo-flush-gutshot
+  classifyDrawCategory(['Kc','8h'], ['Jh','Th','Qh'])      // expect: combo-flush-gutshot
+  classifyDrawCategory(['Ah','Jh'], ['Kh','9h','3c'])      // expect: flush-draw
+  classifyDrawCategory(['8s','7d'], ['9h','6c','2d'])       // expect: oesd
+  classifyDrawCategory(['5s','5d'], ['Ah','Kc','9d'])       // expect: underpair
+  classifyDrawCategory(['2s','7d'], ['Ah','Kc','9d'])       // expect: no-draw
+  classifyDrawCategory(['Tc','Qs'], ['Ah','Jd','8h'])       // expect: double-gutshot (needs 9 or K)
+*/
 /* CONSTRAINT TESTS — remove before production
    constraintFlushDraw(['Ah','Jh'], ['Kh','9h','3c'])          // should be true
    constraintOESD(['8s','7d'], ['9h','6c','2d'])                // should be true
