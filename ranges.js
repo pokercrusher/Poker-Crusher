@@ -24,7 +24,7 @@ let SEAT_COORDS = SEAT_COORDS_DESKTOP;
 // Ranges Definitions (same as previous)
 const rfiRanges = {
     UTG: ['22+', 'AJs+', 'AQo+', 'KJs+', 'KQo', 'QJs', 'JTs', 'T9s'],
-    UTG1: ['22+', 'ATs+', 'AQo+', 'KJs+', 'KQo', 'QJs', 'JTs', 'T9s',the re '98s'],
+    UTG1: ['22+', 'ATs+', 'AQo+', 'KJs+', 'KQo', 'QJs', 'JTs', 'T9s', '98s'],
     UTG2: ['22+', 'A9s+', 'AJo+', 'KJs+', 'KQo', 'QJs', 'JTs', 'T9s', '98s', '87s'],
     LJ: ['22+', 'A8s+', 'AJo+', 'KTs+', 'KQo', 'QJs', 'JTs', 'T9s', '98s', '87s', '76s'],
     HJ: ['22+', 'A5s+', 'AJo+', 'K9s+', 'KJo+', 'QTs+', 'QJo', 'JTs', 'T9s', '98s', '87s', '76s', '65s'],
