@@ -67,7 +67,7 @@ function showActionBadge(seatEl, text, badgeClass, duration, cb) {
 // Animate a chip appearing at a position
 function animateChip(betsLayer, coords, amountBb, labelOverride) {
     const betDiv = document.createElement('div');
-    betDiv.className = 'absolute flex items-center gap-1 z-35 -translate-x-1/2 -translate-y-1/2 pointer-events-none chip-anim';
+    betDiv.className = 'absolute flex items-center gap-1 z-40 -translate-x-1/2 -translate-y-1/2 pointer-events-none chip-anim';
     const origL = parseFloat(coords.left), origT = parseFloat(coords.top);
     let betL = origL, betT = origT;
 
@@ -320,8 +320,7 @@ function runTableAnimation(heroPos, oppPos, scenario, onDone) {
             }
             await delay(150);
             // BB might fold too if oppPos is BB — but BB can 3bet, so show 3bet
-            // Clear prior chips so only the 3-bet shows (realistic re-raise display)
-            betsLayer.innerHTML = '';
+            // Keep hero's open-raise chip visible alongside the villain's 3-bet chip
             const oppCoords = getSeatCoords(heroPos, oppPos);
             const threeBetAnim$ = get3betSize$(oppPos, heroPos);
             const threeBetAnimBB = threeBetAnim$ / BB_DOLLARS;
@@ -920,7 +919,7 @@ function renderPotBadge(betsLayer, total$) {
     const potTop  = isMob ? 48 : 50;
     const badge = document.createElement('div');
     badge.id = 'pot-badge';
-    badge.className = 'absolute z-35 pointer-events-none flex flex-col items-center gap-0.5';
+    badge.className = 'absolute z-40 pointer-events-none flex flex-col items-center gap-0.5';
     badge.style.cssText = `left:${potLeft}%;top:${potTop}%;transform:translate(-50%,-50%);`;
     badge.innerHTML =
         `<div style="width:var(--pot-chip,18px);height:var(--pot-chip,18px);" ` +
@@ -953,7 +952,7 @@ function renderVillainCheck(betsLayer, heroPos, villainPos) {
     cT = Math.max(10, Math.min(88, cT));
 
     const el = document.createElement('div');
-    el.className = 'absolute z-35 pointer-events-none flex items-center gap-1';
+    el.className = 'absolute z-40 pointer-events-none flex items-center gap-1';
     el.style.cssText = `left:${cL}%;top:${cT}%;transform:translate(-50%,-50%);animation:ccDeal 0.25s ease-out both;`;
     el.innerHTML =
         `<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);" ` +
@@ -981,7 +980,7 @@ function renderVillainBet(betsLayer, heroPos, villainPos, betAmount$) {
     cT = Math.max(10, Math.min(88, cT));
 
     const el = document.createElement('div');
-    el.className = 'absolute z-35 pointer-events-none flex items-center gap-1';
+    el.className = 'absolute z-40 pointer-events-none flex items-center gap-1';
     el.style.cssText = `left:${cL}%;top:${cT}%;transform:translate(-50%,-50%);animation:ccDeal 0.25s ease-out both;`;
     el.innerHTML =
         `<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);" ` +
@@ -1986,7 +1985,7 @@ function formatSpotLabel(rawSpotId) {
     if (rawSpotId === '1L' || rawSpotId === '2L' || rawSpotId === '3P') return '';
     return POS_LABELS[clean] || clean;
 }
-const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn D-Defend', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend', POSTFLOP_RIVER_PROBE: 'River Probe', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River TCC-Bet', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River TCC-Def', POSTFLOP_RIVER_PROBE_CALL_BET: 'River P2-Bet', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River P2-Def' };
+const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_4BET: 'vs 4Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn D-Defend', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend', POSTFLOP_RIVER_PROBE: 'River Probe', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River TCC-Bet', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River TCC-Def', POSTFLOP_RIVER_PROBE_CALL_BET: 'River P2-Bet', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River P2-Def' };
 const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', '5BET': '5-Bet Shove', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
 
 function showSessionLog() {

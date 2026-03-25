@@ -1652,6 +1652,10 @@ function _rawToFlopBucket(rawResult, heroCards, boardCards) {
 
         const hLow = Math.min(h1, h2);
         const matchHigh = bFreq.get(hHigh) || 0;
+        const matchLow  = bFreq.get(hLow)  || 0;
+        // BUG 4 FIX: if neither hero card pairs a board rank the "pair" is a board pair only —
+        // hero has high card, not an underpair. Return null so caller falls through to draw classification.
+        if (matchHigh === 0 && matchLow === 0) return null;
         const pairedRank = matchHigh >= 1 ? hHigh : hLow;
         const bDistinct = [...new Set([...boardCards.map(c => RANK_NUM[c.rank])])].sort((a, b) => b - a);
         if (pairedRank === bDistinct[0]) return 'TOP_PAIR';
@@ -1683,7 +1687,9 @@ function classifyFlopHand(heroHand, flopCards) {
 
     // --- Layer 2: map to flop bucket if a made hand is present ---
     if (raw.rank >= 2) {
-        return _rawToFlopBucket(raw, hr, flopCards);
+        const bucket = _rawToFlopBucket(raw, hr, flopCards);
+        // null means board-only pair (hero doesn't contribute) — fall through to draw classification
+        if (bucket !== null) return bucket;
     }
 
     // --- No made pair: draw classification (unchanged from legacy) ---
@@ -1700,7 +1706,7 @@ function classifyFlopHand(heroHand, flopCards) {
     const uniqueRanks = [...new Set(allRanks)].sort((a, b) => b - a);
     const hasFlushDraw = hSuited && _countSuitOnBoard(hSuit, fSuits) >= 2;
     const hasBackdoorFD = hSuited && _countSuitOnBoard(hSuit, fSuits) === 1;
-    const straightInfo = _straightDrawType(uniqueRanks);
+    const straightInfo = _straightDrawType(uniqueRanks, [hHigh, hLow]);
     const hasOESD = straightInfo === 'OESD';
     const hasGutshot = straightInfo === 'GUTSHOT';
 
@@ -1738,11 +1744,18 @@ function _highestFlushCardOnBoard(suit, flopCards) {
  * Returns 'OESD', 'GUTSHOT', or null.
  * Checks every 5-card straight window to see if we have 4 of 5 (OESD) or 4 of 5 with gap (gutshot).
  */
-function _straightDrawType(sortedUniqueRanks) {
+function _straightDrawType(sortedUniqueRanks, heroRanks) {
     const ranks = [...sortedUniqueRanks];
     // Add ace as 1 for wheel draws
     if (ranks.includes(14)) ranks.push(1);
     const unique = [...new Set(ranks)];
+
+    // BUG 6 FIX: build hero rank set (with ace-as-1) to ensure hero contributes to any draw window
+    let heroSet = null;
+    if (heroRanks) {
+        heroSet = new Set(heroRanks);
+        if (heroSet.has(14)) heroSet.add(1);
+    }
 
     let bestDraw = null;
 
@@ -1750,8 +1763,11 @@ function _straightDrawType(sortedUniqueRanks) {
     // A straight window is [low, low+1, low+2, low+3, low+4]
     for (let low = 1; low <= 10; low++) {
         const window5 = [low, low+1, low+2, low+3, low+4];
-        const have = window5.filter(r => unique.includes(r)).length;
+        const inWindow = window5.filter(r => unique.includes(r));
+        const have = inWindow.length;
         if (have >= 4) {
+            // Hero must contribute at least one rank to this window
+            if (heroSet && !inWindow.some(r => heroSet.has(r))) continue;
             // 4 of 5 in a straight window
             // Check if it's open-ended (both ends available) or gutshot (one gap inside)
             const missing = window5.filter(r => !unique.includes(r));
@@ -1803,8 +1819,8 @@ function _detectFlopDraws(heroCards, boardCards) {
         if (total === 2 && heroCnt === 2) backdoorFD = true; // both hero cards suited, 0 board cards of suit
     }
 
-    // --- Straight draw detection (4 of 5 in window) ---
-    const straightType = _straightDrawType(uniqueRanks);
+    // --- Straight draw detection (4 of 5 in window, hero must contribute) ---
+    const straightType = _straightDrawType(uniqueRanks, [h1r, h2r]);
 
     // --- Backdoor straight draw (3 of 5 in a window, with hero contributing) ---
     let backdoorSD = false;
@@ -3533,7 +3549,7 @@ function classifyTurnHand(heroHand, flopCards, turnCard) {
     const uniqueRanks = [...new Set(allRanks)].sort((a, b) => b - a);
 
     const hasFlushDraw = hSuited && _countSuitOnBoard(hSuit, bSuits) === 2;
-    const straightInfo = _straightDrawType(uniqueRanks);
+    const straightInfo = _straightDrawType(uniqueRanks, [hHigh, hLow]);
     const hasOESD    = straightInfo === 'OESD';
     const hasGutshot = straightInfo === 'GUTSHOT';
 

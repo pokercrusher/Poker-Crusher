@@ -794,7 +794,7 @@ const BET_SIZING_SCENARIOS = [
         id: 'monotone-board-check',
         category: 'WET_BOARD',
         street: 'FLOP',
-        hand: ['Ah','Kd'],
+        hand: ['Ac','Kd'],
         board: ['Qh','8h','3h'],
         position: 'IP',
         potSize: 30,
