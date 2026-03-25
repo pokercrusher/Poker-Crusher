@@ -1232,25 +1232,20 @@ function generateRuleOf42Scenario(outs, street) {
     const mult = street === 'FLOP' ? 4 : 2;
     const correctEquity = outs * mult;
 
-    const offsets = [3, 6, 10];
-    for (let i = offsets.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [offsets[i], offsets[j]] = [offsets[j], offsets[i]];
-    }
+    // Wrong answers represent real mistakes: wrong street rule, adjacent out counts
+    const wrongRule  = street === 'FLOP' ? outs * 2 : outs * 4;          // right outs, wrong street rule
+    const wrongOuts1 = (outs + 1) * mult;                                  // one out too many, correct rule
+    const wrongOuts2 = (outs - 1) * (street === 'FLOP' ? 2 : 4);         // one out short, wrong rule
 
     const used = new Set([correctEquity]);
     const wrongs = [];
-    for (const off of offsets) {
-        const sign = Math.random() < 0.5 ? 1 : -1;
-        let c = correctEquity + sign * off;
-        if (c <= 0 || c > 100 || used.has(c)) c = correctEquity - sign * off;
-        if (c <= 0 || c > 100 || used.has(c)) {
-            for (let step = 2; step <= 30; step += 2) {
-                const f = correctEquity + step;
-                if (f <= 100 && !used.has(f)) { c = f; break; }
-            }
-        }
+    for (const c of [wrongRule, wrongOuts1, wrongOuts2]) {
         if (c > 0 && c <= 100 && !used.has(c)) { used.add(c); wrongs.push(c); }
+    }
+    // Pad with offsets if deduplication left fewer than 3
+    for (let step = 2; wrongs.length < 3 && step <= 30; step += 2) {
+        const f = correctEquity + step;
+        if (f <= 100 && !used.has(f)) { used.add(f); wrongs.push(f); }
     }
 
     const choices = [correctEquity, ...wrongs];
@@ -1331,7 +1326,9 @@ function generatePotOddsRatioScenario(sizingCategory, potTier) {
 
     const id = 'por-' + sizingCategory + '-' + potTier;
     const srKey = 'POT_RATIO|' + id;
-    const explanation = 'Pot $' + pot + ' + bet $' + bet + ' = $' + (pot + bet) + ' total. You call $' + bet + ' to win $' + (pot + bet) + '. That\'s ' + correctRatio + '.';
+    const explanation = 'Pot $' + pot + ' + bet $' + bet + ' = $' + (pot + bet) + ' total. You call $' + bet + ' to win $' + (pot + bet) + '. That\u2019s ' + correctRatio + '. ' +
+        'Quick check: if bet equals pot you always get 2:1. ' +
+        (bet < pot ? 'Bet is smaller than pot \u2014 so you\u2019re getting better than 2:1.' : bet > pot ? 'Bet is larger than pot \u2014 so you\u2019re getting worse than 2:1.' : 'Bet equals pot \u2014 exactly 2:1.');
 
     return { id, srKey, type: 'POT_RATIO', sizingCategory, potTier, pot, bet, correctRatio, choices, explanation };
 }
@@ -1344,25 +1341,23 @@ function generateRatioToPercentScenario(ratio) {
     const correctPct = Math.round(1 / (ratio + 1) * 100);
     const ratioDisplay = ratio + ':1';
 
-    const offsets = [4, 8, 13];
-    for (let i = offsets.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [offsets[i], offsets[j]] = [offsets[j], offsets[i]];
-    }
+    // Wrong answers: common formula errors
+    const wrongAdd2   = Math.round(1 / (ratio + 2) * 100);   // added 2 instead of 1
+    const wrongRatioD = Math.round(ratio / (ratio + 1) * 100); // used ratio directly instead of 1
 
     const used = new Set([correctPct]);
     const wrongs = [];
-    for (const off of offsets) {
-        const sign = Math.random() < 0.5 ? 1 : -1;
-        let c = correctPct + sign * off;
-        if (c <= 0 || c > 100 || used.has(c)) c = correctPct - sign * off;
-        if (c <= 0 || c > 100 || used.has(c)) {
-            for (let step = 1; step <= 30; step++) {
-                const f = correctPct + step * 2;
-                if (f <= 100 && !used.has(f)) { c = f; break; }
-            }
-        }
+    for (const c of [wrongAdd2, wrongRatioD]) {
         if (c > 0 && c <= 100 && !used.has(c)) { used.add(c); wrongs.push(c); }
+    }
+    // Pad with offsets if needed
+    const padOffsets = [4, 8, 13, 17];
+    for (const off of padOffsets) {
+        if (wrongs.length >= 3) break;
+        for (const sign of [1, -1]) {
+            const c = correctPct + sign * off;
+            if (c > 0 && c <= 100 && !used.has(c)) { used.add(c); wrongs.push(c); break; }
+        }
     }
 
     const choices = [correctPct, ...wrongs];
@@ -1384,7 +1379,7 @@ const OC_CATEGORIES = [
     'flush-draw', 'backdoor-flush-draw', 'oesd', 'double-gutshot',
     'gutshot', 'straight-flush-draw', 'royal-flush-draw',
     'combo-flush-oesd', 'combo-flush-gutshot', 'backdoor-straight',
-    'overcards-two', 'overcard-one', 'pair-plus-flush-draw',
+    'pair-plus-flush-draw',
     'pair-plus-gutshot', 'pair-plus-oesd', 'two-overcards-plus-gutshot',
     'underpair', 'no-draw'
 ];
@@ -1408,8 +1403,6 @@ const OUTS_BY_CATEGORY = {
     'combo-flush-oesd':           15,
     'combo-flush-gutshot':        12,
     'backdoor-straight':           2,
-    'overcards-two':               6,
-    'overcard-one':                3,
     'pair-plus-flush-draw':       14,
     'pair-plus-gutshot':          10,
     'pair-plus-oesd':             10,
@@ -1430,8 +1423,6 @@ const OC_WRONG_OFFSETS = {
     'combo-flush-oesd':            [2, 4, 7],
     'combo-flush-gutshot':         [2, 4, 6],
     'backdoor-straight':           [1, 3, 5],
-    'overcards-two':               [2, 3, 5],
-    'overcard-one':                [1, 2, 4],
     'pair-plus-flush-draw':        [2, 4, 6],
     'pair-plus-gutshot':           [2, 4, 6],
     'pair-plus-oesd':              [2, 4, 6],
@@ -1593,28 +1584,6 @@ function constraintBackdoorStraight(hand, board) {
     return false;
 }
 
-function constraintOvercardsTwo(hand, board) {
-    const boardRanks = board.map(c => rankNum(cardRank(c)));
-    const maxBoard = Math.max(...boardRanks);
-    const heroRanks = hand.map(c => rankNum(cardRank(c)));
-    if (heroRanks.every(r => r > maxBoard)) {
-        const allRanks = [...heroRanks, ...boardRanks];
-        return !hasOESD(allRanks) && !hasGutshot(allRanks) && !constraintFlushDraw(hand, board);
-    }
-    return false;
-}
-
-function constraintOvercardOne(hand, board) {
-    const boardRanks = board.map(c => rankNum(cardRank(c)));
-    const maxBoard = Math.max(...boardRanks);
-    const heroRanks = hand.map(c => rankNum(cardRank(c)));
-    const overcards = heroRanks.filter(r => r > maxBoard);
-    if (overcards.length === 1) {
-        const allRanks = [...heroRanks, ...boardRanks];
-        return !hasOESD(allRanks) && !hasGutshot(allRanks) && !constraintFlushDraw(hand, board);
-    }
-    return false;
-}
 
 function constraintPairPlusFlushDraw(hand, board) {
     const boardRankSet = new Set(board.map(c => cardRank(c)));
@@ -1674,8 +1643,6 @@ const OC_CONSTRAINT_FNS = {
     'combo-flush-oesd':            constraintComboFlushOESD,
     'combo-flush-gutshot':         constraintComboFlushGutshot,
     'backdoor-straight':           constraintBackdoorStraight,
-    'overcards-two':               constraintOvercardsTwo,
-    'overcard-one':                constraintOvercardOne,
     'pair-plus-flush-draw':        constraintPairPlusFlushDraw,
     'pair-plus-gutshot':           constraintPairPlusGutshot,
     'pair-plus-oesd':              constraintPairPlusOESD,
@@ -1688,7 +1655,7 @@ const OC_CONSTRAINT_FNS = {
 
 const OC_EXPLANATIONS = {
     'flush-draw':                  function(h, b) { return 'You have two suited cards and there are two more of your suit on board. Any of the remaining ' + OUTS_BY_CATEGORY['flush-draw'] + ' cards of that suit complete your flush. 9 outs.'; },
-    'backdoor-flush-draw':         function(h, b) { return 'You have two suited cards but only one matching suit on the flop. You need running cards \u2014 two more of your suit to hit. 2 outs equivalent (backdoor).'; },
+    'backdoor-flush-draw':         function(h, b) { return 'Backdoor flush draws have no direct outs \u2014 you need two running cards (turn AND river both your suit). This is roughly 4% equity total, sometimes expressed as \u201c2 outs equivalent\u201d as a mental shorthand. It is not a real out count.'; },
     'oesd':                        function(h, b) { return 'You have an open-ended straight draw \u2014 both the low and high end complete your straight. 8 outs.'; },
     'double-gutshot':              function(h, b) { return 'You have a double gutshot \u2014 two different single cards each independently complete a different straight. 8 outs total.'; },
     'gutshot':                     function(h, b) { return 'You have a gutshot straight draw \u2014 only one specific rank completes your straight. 4 outs.'; },
@@ -1696,9 +1663,7 @@ const OC_EXPLANATIONS = {
     'royal-flush-draw':            function(h, b) { return 'You have a royal flush draw \u2014 two broadway suited cards with two more broadway cards of the same suit on board. 15 outs to the nuts.'; },
     'combo-flush-oesd':            function(h, b) { return 'You have a combination flush draw and open-ended straight draw. Up to 15 outs (9 flush + 8 straight minus overlap).'; },
     'combo-flush-gutshot':         function(h, b) { return 'You have a combination flush draw and gutshot straight draw. 12 outs total (9 flush + 4 straight minus overlap).'; },
-    'backdoor-straight':           function(h, b) { return 'You have three to a straight \u2014 you need running cards on turn and river to complete it. 2 outs equivalent (backdoor).'; },
-    'overcards-two':               function(h, b) { return 'Both your hole cards are higher than anything on the board. If you pair either card you likely take the lead. 6 outs.'; },
-    'overcard-one':                function(h, b) { return 'One of your hole cards is higher than all board cards. Pairing it likely gives you the best hand. 3 outs.'; },
+    'backdoor-straight':           function(h, b) { return 'Backdoor straight draws need two running cards to complete. Roughly 2\u20133% equity total. Expressed as \u201c2 outs equivalent\u201d as a shorthand only \u2014 not a real out count.'; },
     'pair-plus-flush-draw':        function(h, b) { return 'You have a pair on the board plus a flush draw. You\u2019re not drawing dead \u2014 5 outs to improve your pair to trips plus 9 flush outs. 14 outs total.'; },
     'pair-plus-gutshot':           function(h, b) { return 'You have a pair on the board plus a gutshot straight draw. 6 outs to trips plus 4 straight outs. 10 outs total.'; },
     'pair-plus-oesd':              function(h, b) { return 'You have a pair on the board plus an open-ended straight draw. 6 outs to trips plus 8 straight outs (with some overlap). ~10 outs.'; },
@@ -1930,7 +1895,7 @@ const BS_CONSTRAINT_FNS = {
 
 const BS_CATEGORIES = ['dry-rainbow', 'semi-wet', 'wet-two-tone', 'monotone', 'paired'];
 const BS_POSITIONS  = ['IP', 'OOP'];
-const BS_STREETS    = ['FLOP', 'TURN', 'RIVER'];
+const BS_STREETS    = ['FLOP']; // board is always 3 cards; turn/river require 4-5 card boards
 
 const BET_SIZE_ANSWERS = {
     'dry-rainbow-IP-FLOP':    { correctSizes: ['25', '33'], bestSize: '33',  wrongSizes: ['75', 'POT', 'OVERBET'] },
@@ -1965,6 +1930,16 @@ const BET_SIZE_ANSWERS = {
     'paired-OOP-RIVER':       { correctSizes: ['50', '75'], bestSize: '75',  wrongSizes: ['25', 'OVERBET'] }
 };
 
+// Priority order for board texture classification — more specific textures checked first
+const TEXTURE_PRIORITY = ['monotone', 'paired', 'wet-two-tone', 'semi-wet', 'dry-rainbow'];
+
+function classifyBoardTexture(hand, board) {
+    for (const tex of TEXTURE_PRIORITY) {
+        if (BS_CONSTRAINT_FNS[tex] && BS_CONSTRAINT_FNS[tex](hand, board)) return tex;
+    }
+    return 'dry-rainbow';
+}
+
 function generateBetSizingScenario(textureCategory, position, street) {
     if (!textureCategory || !BS_CATEGORIES.includes(textureCategory)) {
         textureCategory = BS_CATEGORIES[Math.floor(Math.random() * BS_CATEGORIES.length)];
@@ -1972,18 +1947,27 @@ function generateBetSizingScenario(textureCategory, position, street) {
     if (!position || !BS_POSITIONS.includes(position)) {
         position = BS_POSITIONS[Math.floor(Math.random() * BS_POSITIONS.length)];
     }
-    if (!street || !BS_STREETS.includes(street)) {
-        street = BS_STREETS[Math.floor(Math.random() * BS_STREETS.length)];
-    }
+    // Board is always 3 cards; street is always FLOP
+    street = 'FLOP';
 
+    // Deal a board and verify it classifies as the requested texture (not just satisfies constraint)
+    let hand = null, board = null;
     const constraintFn = BS_CONSTRAINT_FNS[textureCategory];
-    const result = dealWithConstraints(2, 3, constraintFn, 60);
-
-    const hand  = result ? result.hand  : ['Ah', 'Kd'];
-    const board = result ? result.board : ['Jc', '7d', '2s'];
-
-    if (!result) {
-        console.warn('generateBetSizingScenario: dealWithConstraints failed for ' + textureCategory + ', using fallback');
+    for (let attempt = 0; attempt < 10; attempt++) {
+        const result = dealWithConstraints(2, 3, constraintFn, 50);
+        if (result) {
+            const classified = classifyBoardTexture(result.hand, result.board);
+            if (classified === textureCategory) {
+                hand  = result.hand;
+                board = result.board;
+                break;
+            }
+        }
+    }
+    if (!hand) {
+        console.warn('generateBetSizingScenario: fallback for ' + textureCategory);
+        hand  = ['Ah', 'Kd'];
+        board = ['Jc', '7d', '2s'];
     }
 
     const pot = POT_POOL[Math.floor(Math.random() * POT_POOL.length)];

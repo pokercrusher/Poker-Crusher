@@ -353,7 +353,7 @@ function renderMenuView() {
     const bsAcc  = prefixAccuracy('BET_SIZE', BET_SIZING_SCENARIOS);
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-8 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="text-center">
             <p class="text-2xl font-black text-slate-100">Poker Math</p>
             <p class="text-xs text-slate-500 mt-1">Build the instincts that cost you money at the table</p>
@@ -421,7 +421,7 @@ function renderPotMathQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Pot / bet display -->
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
@@ -484,7 +484,7 @@ function renderPotOddsQuestion(s) {
     const pct         = Math.round(s.bet / totalIfCall * 100);
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Category + street pill -->
         <div class="flex gap-2 items-center">
@@ -559,12 +559,54 @@ function renderPotOddsQuestion(s) {
 // BET SIZING QUESTION
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Returns a plain-English label for the player's hand relative to the board
+function classifyHandContextBs(hand, board) {
+    const boardSuits = board.map(cardSuit);
+    // Made flush (all board cards same suit, hero has matching)
+    if (boardSuits.every(s => s === boardSuits[0]) && suitCount(hand, boardSuits[0]) >= 1) {
+        return 'Made flush';
+    }
+    // Flush draw
+    if (constraintFlushDraw(hand, board)) return 'Flush draw';
+    // Straight draws
+    const allRanks = [...hand, ...board].map(c => rankNum(cardRank(c)));
+    if (hasOESD(allRanks)) return 'OESD';
+    if (hasDoubleGutshot(allRanks)) return 'Double gutshot';
+    if (hasGutshot(allRanks)) return 'Gutshot';
+    // Pocket pair
+    if (cardRank(hand[0]) === cardRank(hand[1])) {
+        const pairRank = rankNum(cardRank(hand[0]));
+        const bRanks   = board.map(c => rankNum(cardRank(c)));
+        if (bRanks.every(r => r < pairRank)) return 'Overpair';
+        if (bRanks.every(r => r > pairRank)) return 'Underpair';
+        return 'Middle pair';
+    }
+    // Pair on board
+    const boardRankSet = new Set(board.map(c => cardRank(c)));
+    if (hand.some(c => boardRankSet.has(cardRank(c)))) {
+        const bRankNums = board.map(c => rankNum(cardRank(c))).sort((a, b) => b - a);
+        const heroRankNums = hand.map(c => rankNum(cardRank(c)));
+        const pairedRank = heroRankNums.find(r => bRankNums.includes(r));
+        if (pairedRank === bRankNums[0]) return 'Top pair';
+        if (pairedRank === bRankNums[bRankNums.length - 1]) return 'Bottom pair';
+        return 'Middle pair';
+    }
+    // Overcards
+    const maxBoard = Math.max(...board.map(c => rankNum(cardRank(c))));
+    const heroRanks = hand.map(c => rankNum(cardRank(c)));
+    const overcards = heroRanks.filter(r => r > maxBoard);
+    if (overcards.length === 2) return 'Two overcards';
+    if (overcards.length === 1) return 'One overcard';
+    return 'Air';
+}
+
 function renderBetSizeQuestion(s) {
     const streetLabel = { FLOP: 'Flop', TURN: 'Turn', RIVER: 'River' }[s.street] || s.street;
     const catLabel    = (BET_SIZING_CATEGORIES && BET_SIZING_CATEGORIES[s.textureCategory || s.category])
         ? BET_SIZING_CATEGORIES[s.textureCategory || s.category].label : (s.textureCategory || s.category);
     const posLabel    = s.position === 'IP' ? 'In position' : 'Out of position';
     const spr         = s.stackBehind ? (s.stackBehind / s.potSize).toFixed(1) : null;
+    const handContext = classifyHandContextBs(s.hand, s.board);
 
     const sizeButtons = [
         { val: 'CHECK', label: 'Check' },
@@ -584,7 +626,7 @@ function renderBetSizeQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Category + street pill -->
         <div class="flex gap-2 items-center">
@@ -593,16 +635,20 @@ function renderBetSizeQuestion(s) {
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">${streetLabel}</span>
         </div>
 
-        <!-- Hole cards -->
-        <div class="flex flex-col items-center gap-2">
-            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
-            ${renderDrillCardsHtml(s.hand)}
-        </div>
-
-        <!-- Board -->
+        <!-- Board (top) -->
         <div class="flex flex-col items-center gap-2">
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Board</span>
             ${renderDrillCardsHtml(s.board)}
+        </div>
+
+        <!-- Divider -->
+        <div class="w-full border-t border-slate-800"></div>
+
+        <!-- Hole cards (bottom, closer to action) -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
+            ${renderDrillCardsHtml(s.hand)}
+            <span class="text-[10px] text-slate-500 italic">You have: ${handContext}</span>
         </div>
 
         <!-- Situation info -->
@@ -743,7 +789,7 @@ function renderPotOddsFeedback(s) {
         : `<span class="text-rose-400">${s.heroEquity}%</span> &lt; <span class="text-slate-400">${s.potOddsNeeded}%</span> needed — unprofitable`;
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -841,7 +887,7 @@ function renderBetSizeFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -919,7 +965,7 @@ function renderPotMathFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Result banner -->
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
@@ -959,6 +1005,19 @@ function renderPotMathFeedback(s) {
 
 function renderOutCountingQuestion(s) {
     const streetLabel = s.street === 'FLOP' ? 'Flop' : 'Turn';
+    const isBackdoor  = s.category === 'backdoor-flush-draw' || s.category === 'backdoor-straight';
+    const catLabels = {
+        'flush-draw': 'Flush Draw', 'backdoor-flush-draw': 'Backdoor Flush Draw',
+        'oesd': 'OESD', 'double-gutshot': 'Double Gutshot', 'gutshot': 'Gutshot',
+        'straight-flush-draw': 'Straight Flush Draw', 'royal-flush-draw': 'Royal Flush Draw',
+        'combo-flush-oesd': 'Flush Draw + OESD', 'combo-flush-gutshot': 'Flush Draw + Gutshot',
+        'backdoor-straight': 'Backdoor Straight', 'pair-plus-flush-draw': 'Pair + Flush Draw',
+        'pair-plus-gutshot': 'Pair + Gutshot', 'pair-plus-oesd': 'Pair + OESD',
+        'two-overcards-plus-gutshot': 'Two Overcards + Gutshot',
+        'underpair': 'Underpair', 'no-draw': 'No Draw'
+    };
+    const drawLabel = catLabels[s.category] || s.category;
+
     const btns = (s.choices || []).map(outs =>
         `<button onclick="submitOutCountingAnswer(${outs})"
             class="py-5 rounded-2xl font-black text-2xl bg-slate-800 border border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 active:scale-[0.97] transition-all">
@@ -967,7 +1026,7 @@ function renderOutCountingQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Street pill -->
         <div class="flex gap-2 items-center">
@@ -976,16 +1035,25 @@ function renderOutCountingQuestion(s) {
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">${streetLabel}</span>
         </div>
 
-        <!-- Hole cards -->
+        <!-- Board (top) -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Board</span>
+            ${renderDrillCardsHtml(s.board)}
+        </div>
+
+        <!-- Divider -->
+        <div class="w-full border-t border-slate-800"></div>
+
+        <!-- Hole cards (bottom, closer to action) -->
         <div class="flex flex-col items-center gap-2">
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
             ${renderDrillCardsHtml(s.hand)}
         </div>
 
-        <!-- Board -->
-        <div class="flex flex-col items-center gap-2">
-            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Board</span>
-            ${renderDrillCardsHtml(s.board)}
+        <!-- Draw type label -->
+        <div class="text-center">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Draw Type</p>
+            <p class="text-base font-black text-slate-200">${drawLabel}${isBackdoor ? ' <span class="text-[9px] font-bold text-amber-500 bg-amber-950/40 border border-amber-800/40 rounded-full px-2 py-0.5 ml-1">approximation only</span>' : ''}</p>
         </div>
 
         <!-- Question -->
@@ -1040,7 +1108,7 @@ function renderOutCountingFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
@@ -1086,7 +1154,7 @@ function renderEquityDecQuestion(s) {
     const totalIfCall = s.pot + s.bet * 2;
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Street pill -->
         <div class="flex gap-2 items-center">
@@ -1095,16 +1163,19 @@ function renderEquityDecQuestion(s) {
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-500">${streetLabel}</span>
         </div>
 
-        <!-- Hole cards -->
-        <div class="flex flex-col items-center gap-2">
-            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
-            ${renderDrillCardsHtml(s.hand)}
-        </div>
-
-        <!-- Board -->
+        <!-- Board (top) -->
         <div class="flex flex-col items-center gap-2">
             <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Board</span>
             ${renderDrillCardsHtml(s.board)}
+        </div>
+
+        <!-- Divider -->
+        <div class="w-full border-t border-slate-800"></div>
+
+        <!-- Hole cards (bottom, closer to action) -->
+        <div class="flex flex-col items-center gap-2">
+            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-600">Your hand</span>
+            ${renderDrillCardsHtml(s.hand)}
         </div>
 
         <!-- Pot info -->
@@ -1130,6 +1201,16 @@ function renderEquityDecQuestion(s) {
             <p class="text-xs text-slate-500 mt-2">Do your outs give you enough equity?</p>
         </div>
 
+        <!-- Hint -->
+        <div class="w-full">
+            <button id="ed-hint-btn" onclick="showEquityDecHint()"
+                class="w-full py-2.5 rounded-xl text-[12px] font-bold text-amber-400 border border-amber-800/40 bg-amber-950/20 hover:bg-amber-900/30 active:scale-[0.98] transition-all">
+                \ud83d\udca1 How do I solve this?
+            </button>
+            <div id="ed-hint-panel" class="hidden mt-2 bg-slate-900 border border-amber-800/30 rounded-xl px-4 py-3">
+            </div>
+        </div>
+
         <!-- Action buttons -->
         <div class="w-full grid grid-cols-2 gap-3">
             <button onclick="submitEquityDecAnswer('FOLD')"
@@ -1143,6 +1224,34 @@ function renderEquityDecQuestion(s) {
         </div>
 
     </div>`;
+}
+
+function showEquityDecHint() {
+    const hintPanel = document.getElementById('ed-hint-panel');
+    const hintBtn   = document.getElementById('ed-hint-btn');
+    if (!hintPanel) return;
+    hintPanel.innerHTML = `
+        <p class="text-[11px] font-bold uppercase tracking-widest text-amber-500 mb-3">How to Solve</p>
+        <div class="flex flex-col gap-2.5 text-[11px]">
+            <div>
+                <p class="font-bold text-slate-300">Step 1 \u2014 Count your outs</p>
+                <p class="text-slate-500 mt-0.5">Flush draw = 9 \u00b7 OESD = 8 \u00b7 Gutshot = 4 \u00b7 Underpair = 2</p>
+            </div>
+            <div>
+                <p class="font-bold text-slate-300">Step 2 \u2014 Convert to equity</p>
+                <p class="text-slate-500 mt-0.5">Flop: outs \u00d7 4 &nbsp;&nbsp;&nbsp; Turn: outs \u00d7 2</p>
+            </div>
+            <div>
+                <p class="font-bold text-slate-300">Step 3 \u2014 Read pot odds</p>
+                <p class="text-slate-500 mt-0.5">2:1 = 33% \u00b7 3:1 = 25% \u00b7 4:1 = 20% \u00b7 5:1 = 17%</p>
+            </div>
+            <div>
+                <p class="font-bold text-slate-300">Step 4 \u2014 Compare</p>
+                <p class="text-slate-500 mt-0.5">Equity &gt; needed? CALL &nbsp;&nbsp; Equity &lt; needed? FOLD</p>
+            </div>
+        </div>`;
+    hintPanel.classList.remove('hidden');
+    if (hintBtn) hintBtn.classList.add('hidden');
 }
 
 function submitEquityDecAnswer(action) {
@@ -1174,7 +1283,7 @@ function renderEquityDecFeedback(s) {
         : `<span class="text-rose-400">${s.heroEquityPct}%</span> &lt; <span class="text-slate-400">${s.equityNeededPct}%</span> needed \u2014 unprofitable`;
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
 
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg font-black ${resultCol}">${resultIcon} ${verdict}</span>
@@ -1241,7 +1350,7 @@ function renderRule42Question(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
             <div class="flex justify-between items-center mb-4">
                 <span class="text-slate-400 text-base">Outs</span>
@@ -1301,7 +1410,7 @@ function renderRule42Feedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
@@ -1336,7 +1445,7 @@ function renderPotRatioQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6">
             <div class="flex justify-between items-center mb-4">
                 <span class="text-slate-400 text-base">Pot</span>
@@ -1394,7 +1503,7 @@ function renderPotRatioFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
@@ -1430,10 +1539,23 @@ function renderRatioPctQuestion(s) {
     ).join('');
 
     return `
-    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-6 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center">
             <p class="text-slate-400 text-base mb-3">Pot odds you're getting</p>
             <p class="font-black text-slate-100 text-5xl">${s.ratioDisplay}</p>
+        </div>
+        <!-- Reference table -->
+        <div class="w-full bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-3">
+            <div class="grid grid-cols-4 gap-1 text-center text-[10px]">
+                <div class="text-slate-500">2:1</div>
+                <div class="text-slate-500">3:1</div>
+                <div class="text-slate-500">4:1</div>
+                <div class="text-slate-500">5:1</div>
+                <div class="text-slate-300 font-bold">33%</div>
+                <div class="text-slate-300 font-bold">25%</div>
+                <div class="text-slate-300 font-bold">20%</div>
+                <div class="text-slate-300 font-bold">17%</div>
+            </div>
         </div>
         <p class="text-base text-slate-200 text-center font-semibold">
             What % equity do you need to call?
@@ -1482,7 +1604,7 @@ function renderRatioPctFeedback(s) {
     }).join('');
 
     return `
-    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-4 px-4 py-6 max-w-md md:max-w-2xl mx-auto w-full">
         <div class="w-full border ${resultBg} rounded-2xl p-4 text-center">
             <span class="text-lg font-black ${resultCol}">${icon} ${verdict}</span>
         </div>
@@ -1585,7 +1707,7 @@ function renderSummaryView() {
     const againType = mathDrill.type;
 
     return `
-    <div class="flex flex-col items-center gap-5 px-4 py-8 max-w-md mx-auto w-full">
+    <div class="flex flex-col items-center gap-5 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full">
 
         <!-- Score -->
         <div class="text-center">
