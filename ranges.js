@@ -1412,8 +1412,13 @@ const POSTFLOP_PREFLOP_FAMILIES = {
     HJ_vs_BB:{heroPos:'HJ',villainPos:'BB',positionState:'IP'}, LJ_vs_BB:{heroPos:'LJ',villainPos:'BB',positionState:'IP'},
     SB_vs_BB:{heroPos:'SB',villainPos:'BB',positionState:'OOP'}, BTN_vs_SB:{heroPos:'BTN',villainPos:'SB',positionState:'IP'},
     CO_vs_BTN:{heroPos:'CO',villainPos:'BTN',positionState:'OOP'}, UTG_vs_BB:{heroPos:'UTG',villainPos:'BB',positionState:'IP'},
-    // 3BP families: BTN 3bets CO (BTN is IP c-bettor, CO called the 3bet)
-    BTN_3BP_vs_CO:{heroPos:'BTN',villainPos:'CO',positionState:'IP'}
+    // 3BP families — IP 3bettor as hero (c-bettor on the flop)
+    // Villain is the original opener who called the 3bet.
+    BTN_3BP_vs_CO:{heroPos:'BTN',villainPos:'CO',positionState:'IP'},
+    BTN_3BP_vs_HJ:{heroPos:'BTN',villainPos:'HJ',positionState:'IP'},
+    CO_3BP_vs_HJ:{heroPos:'CO',villainPos:'HJ',positionState:'IP'},
+    BTN_3BP_vs_UTG:{heroPos:'BTN',villainPos:'UTG',positionState:'IP'},
+    CO_3BP_vs_UTG:{heroPos:'CO',villainPos:'UTG',positionState:'IP'}
 };
 function classifyFlop(cards) {
     const ranks = cards.map(c => RANK_NUM[c.rank]).sort((a,b) => b-a); const suits = cards.map(c => c.suit);
@@ -1573,8 +1578,11 @@ const HERO_HAND_AWARE_FAMILIES = new Set([
     'BTN_vs_BB', 'CO_vs_BB', 'HJ_vs_BB', 'LJ_vs_BB',
     'SB_vs_BB', 'BTN_vs_SB', 'CO_vs_BTN', 'UTG_vs_BB'
 ]);
-// 3BP families with hero-hand-aware strategies (Phase: BTN 3bets CO)
-const HERO_HAND_AWARE_3BP_FAMILIES = new Set(['BTN_3BP_vs_CO']);
+// 3BP IP families with hero-hand-aware strategies
+const HERO_HAND_AWARE_3BP_FAMILIES = new Set([
+    'BTN_3BP_vs_CO', 'BTN_3BP_vs_HJ', 'CO_3BP_vs_HJ',
+    'BTN_3BP_vs_UTG', 'CO_3BP_vs_UTG'
+]);
 
 // --- Flop hand classification ---
 const HAND_CLASS_LABELS = {
@@ -2124,10 +2132,10 @@ const POSTFLOP_STRATEGY_V2 = {};
     }
 })();
 // ============================================================
-// 3BP FLOP C-BET STRATEGY — BTN 3bets CO, CO calls, BTN IP
+// 3BP FLOP C-BET STRATEGY — IP 3bettor as hero (Pass 1: 5 families)
 // ============================================================
-// BTN's 3bet range is polar (strong value + bluffs); CO's calling range is condensed.
-// IP 3BP c-bet frequencies run ~10-15% higher than SRP due to range advantage.
+// Hero is IP 3bettor. Caller's range gets tighter vs earlier-position openers,
+// giving hero increasing range advantage → higher c-bet frequencies per family.
 (function() {
     const HAND_CLASSES = [
         'OVERPAIR','TOP_PAIR','SECOND_PAIR','THIRD_PAIR','UNDERPAIR','SET','TWO_PAIR_PLUS',
@@ -2135,8 +2143,8 @@ const POSTFLOP_STRATEGY_V2 = {};
         'OESD','GUTSHOT','NFD','FD','COMBO_DRAW','ACE_HIGH_BACKDOOR','OVERCARDS','AIR'
     ];
 
-    // Base c-bet frequencies for BTN IP in 3BP. _default used when archetype not listed.
-    // Derived from SRP IP tables + 3BP uplift: stronger range advantage, bigger pot incentive.
+    // Base c-bet frequencies (BTN vs CO baseline). _default used when archetype not listed.
+    // ~10-15% higher than SRP IP due to 3BP range advantage.
     const BASE = {
         OVERPAIR:          { _default:0.90, MONOTONE:0.75, TRIPS:0.75 },
         TOP_PAIR:          { _default:0.85, A_HIGH_DRY:0.88, A_HIGH_DYNAMIC:0.78,
@@ -2167,56 +2175,69 @@ const POSTFLOP_STRATEGY_V2 = {};
                              LOW_CONNECTED:0.35, MONOTONE:0.30, TRIPS:0.30 }
     };
 
-    const REASONING = {
-        OVERPAIR: 'In 3BP, overpairs have massive equity vs CO\'s condensed calling range. Bet for value and protection.',
-        TOP_PAIR: 'Top pair is strong in 3BP; CO\'s calling range is condensed so top pair faces fewer two-pair combos.',
-        SECOND_PAIR: 'Second pair has decent showdown value in 3BP; bet selectively on dry boards.',
-        THIRD_PAIR: 'Third pair is marginal in 3BP; mostly check to get to showdown.',
-        UNDERPAIR: 'Underpairs are weak in 3BP; check mostly and reassess on later streets.',
-        SET: 'Sets are the nuts — bet in 3BP to build the large pot. Slow-play monotone carefully.',
-        TWO_PAIR_PLUS: 'Two pair+ is strong value in 3BP; bet to charge CO\'s draws in the inflated pot.',
-        FULL_HOUSE: 'Full house — slow play some, but bet mostly to extract value from overpairs/draws.',
-        QUADS: 'Quads — slow play to extract maximum value from full houses and overpairs.',
-        TRIPS: 'Trips — bet for value; CO\'s condensed range has fewer full house combinations.',
-        BOARD_TRIPS: 'Board trips — bet for value with your kicker advantage.',
-        COMBO_DRAW: 'Combo draws have ~50%+ equity in 3BP; semi-bluff the large pot aggressively.',
-        NFD: 'Nut flush draw has strong equity in 3BP; semi-bluff to build pot with best flush draw.',
-        FD: 'Flush draws have decent equity; semi-bluff in 3BP but be cautious on monotone boards.',
-        OESD: 'OESD has ~32% equity; semi-bluff the 3BP pot frequently.',
-        GUTSHOT: 'Gutshot has some equity; selective semi-bluffs in 3BP on favorable textures.',
-        ACE_HIGH_BACKDOOR: 'Ace-high with backdoor equity — good bluff candidate in 3BP on A-high boards.',
-        OVERCARDS: 'Overcards can be semi-bluffs in 3BP on boards where BTN\'s range has strong equity.',
-        AIR: 'Pure air in 3BP — bluff on textures where BTN\'s polar range has maximum fold equity.'
+    // Per-family offset applied uniformly to all hand classes / archetypes.
+    // Tighter caller = more range advantage for hero = higher c-bet frequency.
+    const FAMILY_OFF = {
+        BTN_3BP_vs_CO:  0,      // baseline: CO is widest caller
+        BTN_3BP_vs_HJ:  0.03,   // HJ flats 3bets tighter than CO
+        CO_3BP_vs_HJ:   0.02,   // CO 3bets HJ — similar but CO's 3bet range is wider
+        BTN_3BP_vs_UTG: 0.05,   // UTG calling range is very condensed
+        CO_3BP_vs_UTG:  0.04,
     };
 
-    const fi = POSTFLOP_PREFLOP_FAMILIES['BTN_3BP_vs_CO'];
-    if (!fi) return;
+    const REASONING = {
+        OVERPAIR: 'Overpairs are premium in 3BP; caller\'s condensed range has few better hands. Bet for value and protection.',
+        TOP_PAIR: 'Top pair is strong in 3BP; caller\'s condensed range has fewer two-pair combos than in SRP.',
+        SECOND_PAIR: 'Second pair has some showdown value in 3BP; bet selectively on dry boards.',
+        THIRD_PAIR: 'Third pair is marginal in 3BP; mostly check to get to showdown cheaply.',
+        UNDERPAIR: 'Underpairs are weak in 3BP; check mostly and reassess on later streets.',
+        SET: 'Sets are the nuts in 3BP — bet to build the large pot. Slow-play monotone carefully.',
+        TWO_PAIR_PLUS: 'Two pair+ is strong value in 3BP; bet to charge caller\'s draws in the inflated pot.',
+        FULL_HOUSE: 'Full house — bet mostly for value; occasional slow-play on paired boards.',
+        QUADS: 'Quads — slow play to extract maximum value from overpairs and full houses.',
+        TRIPS: 'Trips — bet for value; caller\'s condensed range has fewer full house combinations.',
+        BOARD_TRIPS: 'Board trips — bet for value with your kicker advantage.',
+        COMBO_DRAW: 'Combo draws have ~50%+ equity in 3BP; semi-bluff the large pot aggressively.',
+        NFD: 'Nut flush draw has strong equity in 3BP; semi-bluff frequently to build the pot.',
+        FD: 'Flush draws have decent equity in 3BP; semi-bluff on favorable textures.',
+        OESD: 'OESD has ~32% equity; semi-bluff the 3BP pot frequently.',
+        GUTSHOT: 'Gutshot has some equity; semi-bluff selectively on 3BP-favorable textures.',
+        ACE_HIGH_BACKDOOR: 'Ace-high with backdoor equity — good bluff candidate in 3BP on A-high boards.',
+        OVERCARDS: 'Overcards can semi-bluff in 3BP on boards where hero\'s polar range has maximum equity.',
+        AIR: 'Pure air in 3BP — bluff on textures where hero\'s polar range has maximum fold equity.'
+    };
 
-    for (const arch of FLOP_ARCHETYPES) {
-        for (const hc of HAND_CLASSES) {
-            const row = BASE[hc];
-            if (!row) continue;
-            const rawBet = row[arch] !== undefined ? row[arch] : row._default;
-            const bet = Math.max(0.05, Math.min(0.95, parseFloat(rawBet.toFixed(2))));
-            const chk = parseFloat((1 - bet).toFixed(2));
-            const preferred = bet >= 0.50 ? 'bet33' : 'check';
-            const sk = makePostflopSpotKeyV2({
-                potType:'3BP', preflopFamily:'BTN_3BP_vs_CO', street:'FLOP', heroRole:'PFR',
-                positionState:'IP', nodeType:'CBET_DECISION',
-                boardArchetype:arch, heroHandClass:hc
-            });
-            POSTFLOP_STRATEGY_V2[sk] = {
-                actions: { check: chk, bet33: bet },
-                preferredAction: preferred,
-                reasoning: REASONING[hc] || '',
-                simplification: '3BP: Hero-hand-aware Flop C-Bet'
-            };
+    for (const fam of HERO_HAND_AWARE_3BP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+
+        for (const arch of FLOP_ARCHETYPES) {
+            for (const hc of HAND_CLASSES) {
+                const row = BASE[hc];
+                if (!row) continue;
+                const rawBet = row[arch] !== undefined ? row[arch] : row._default;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((rawBet + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const preferred = bet >= 0.50 ? 'bet33' : 'check';
+                const sk = makePostflopSpotKeyV2({
+                    potType:'3BP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
+                    positionState:'IP', nodeType:'CBET_DECISION',
+                    boardArchetype:arch, heroHandClass:hc
+                });
+                POSTFLOP_STRATEGY_V2[sk] = {
+                    actions: { check: chk, bet33: bet },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: '3BP: Hero-hand-aware Flop C-Bet'
+                };
+            }
         }
     }
 
     if (window.RANGE_VALIDATE) {
         const count = Object.keys(POSTFLOP_STRATEGY_V2).filter(k => k.startsWith('3BP|')).length;
-        console.log(`[3BP Flop] Built ${count} strategy entries.`);
+        console.log(`[3BP Flop] Built ${count} strategy entries across ${HERO_HAND_AWARE_3BP_FAMILIES.size} families.`);
     }
 })();
 
