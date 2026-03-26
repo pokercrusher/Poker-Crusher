@@ -846,6 +846,10 @@ function getScenarioPot$(scenario) {
         if (state.postflop) return getSRPPot$(state.postflop.preflopFamily);
         return open$ * 2 + getSmallBlind$();
     }
+    if (scenario === 'POSTFLOP_3BP_DEFEND') {
+        if (state.postflop) return get3BPPot$(state.postflop.preflopFamily);
+        return open$ * 6 + getSmallBlind$() + getBigBlind$();
+    }
     if (scenario === 'POSTFLOP_TURN_CBET') {
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 1.66);
         return Math.round((open$ * 2 + getSmallBlind$()) * 1.66);
@@ -909,10 +913,19 @@ function getSRPPot$(preflopFamily) {
     return getOpenSize$() * 2 + (dead[preflopFamily] !== undefined ? dead[preflopFamily] : sb);
 }
 // Pot size for a 3BP (Three Bet Pot) heading into the flop.
-// CO opens, BTN 3bets to ~3x, CO calls. Dead money = SB + BB.
+// Formula: (3bet size × 2) + dead money. Dead money differs by who 3bet.
+// IP families: both blinds fold → dead = SB + BB.
+// BB 3bets: only SB folds → dead = SB (BB's own blind is already in BB's total).
+// SB 3bets: only BB folds → dead = BB.
 function get3BPPot$(preflopFamily) {
     const threeBet = getOpenSize$() * 3;
-    return threeBet * 2 + getSmallBlind$() + getBigBlind$();
+    const sb = getSmallBlind$(), bb = getBigBlind$();
+    const dead = {
+        BB_3BP_vs_BTN: sb, BB_3BP_vs_CO: sb, BB_3BP_vs_HJ: sb,  // only SB is dead
+        SB_3BP_vs_BTN: bb, SB_3BP_vs_CO: bb, SB_3BP_vs_HJ: bb, SB_3BP_vs_UTG: bb, // only BB is dead
+    };
+    const deadAmt = dead[preflopFamily] !== undefined ? dead[preflopFamily] : sb + bb;
+    return threeBet * 2 + deadAmt;
 }
 
 // Render a single central pot badge on the felt — positioned above community cards
@@ -2038,7 +2051,7 @@ function logRowChart(idx) {
     const e = state.sessionLog[idx];
     // Postflop log entries: show the postflop feedback modal (read-only) instead
     // of the preflop range chart, which has no handler for postflop spots.
-    if (e.scenario === 'POSTFLOP_CBET' || e.scenario === 'POSTFLOP_3BP_CBET' || e.scenario === 'POSTFLOP_DEFEND' ||
+    if (e.scenario === 'POSTFLOP_CBET' || e.scenario === 'POSTFLOP_3BP_CBET' || e.scenario === 'POSTFLOP_DEFEND' || e.scenario === 'POSTFLOP_3BP_DEFEND' ||
         e.scenario === 'POSTFLOP_TURN_CBET' || e.scenario === 'POSTFLOP_TURN_DEFEND' ||
         e.scenario === 'POSTFLOP_TURN_DELAYED_CBET' ||
         e.scenario === 'POSTFLOP_TURN_PROBE' || e.scenario === 'POSTFLOP_TURN_PROBE_DEFEND' ||
@@ -2069,6 +2082,8 @@ function logRowChart(idx) {
         };
         if (e.scenario === 'POSTFLOP_DEFEND' && typeof showDefenderFeedback === 'function') {
             showDefenderFeedback(logSpot, logResult);
+        } else if (e.scenario === 'POSTFLOP_3BP_DEFEND' && typeof show3BPDefenderFeedback === 'function') {
+            show3BPDefenderFeedback(logSpot, logResult);
         } else if (e.scenario === 'POSTFLOP_TURN_CBET' && typeof showTurnCBetFeedback === 'function') {
             // Reconstruct spot with turnCard/turnFamily for display
             logSpot.turnCard = e.turnCard || null;
@@ -2300,7 +2315,7 @@ function launchSpotDrill(spotKey) {
 
     // Map spotKey to training config filters
     const VALID_SCENARIOS = ['RFI','FACING_RFI','RFI_VS_3BET','VS_LIMP','SQUEEZE','SQUEEZE_2C','PUSH_FOLD',
-        'POSTFLOP_CBET','POSTFLOP_3BP_CBET','POSTFLOP_DEFEND','POSTFLOP_TURN_CBET','POSTFLOP_TURN_DEFEND','POSTFLOP_TURN_DELAYED_CBET'];
+        'POSTFLOP_CBET','POSTFLOP_3BP_CBET','POSTFLOP_DEFEND','POSTFLOP_3BP_DEFEND','POSTFLOP_TURN_CBET','POSTFLOP_TURN_DEFEND','POSTFLOP_TURN_DELAYED_CBET'];
 
     // Resolve scenario — POSTFLOP_CBET spots use SRP|/3BP|/LIMP_POT| prefixes
     let resolvedSc = sc;
@@ -2387,7 +2402,7 @@ function drilldownSpot(spotKey) {
         const bucketLabel = { '1L': '1 Limper', '2L': '2 Limpers', '3P': '3+ Limpers' }[parts[2]] || '';
         if (bucketLabel) spotLabel += ` · ${bucketLabel}`;
     }
-    const SC_LABELS = { RFI: 'RFI', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_3BP_CBET: '3BP Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Delayed C-Bet' };
+    const SC_LABELS = { RFI: 'RFI', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_LIMP: 'Vs Limpers', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_3BP_CBET: '3BP Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_3BP_DEFEND: '3BP Defense', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Delayed C-Bet' };
     const scLabel = SC_LABELS[sc] || sc;
 
     showDrilldown(`${spotLabel}${scLabel ? ' · ' + scLabel : ''}`, (content) => {

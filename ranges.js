@@ -1418,7 +1418,24 @@ const POSTFLOP_PREFLOP_FAMILIES = {
     BTN_3BP_vs_HJ:{heroPos:'BTN',villainPos:'HJ',positionState:'IP'},
     CO_3BP_vs_HJ:{heroPos:'CO',villainPos:'HJ',positionState:'IP'},
     BTN_3BP_vs_UTG:{heroPos:'BTN',villainPos:'UTG',positionState:'IP'},
-    CO_3BP_vs_UTG:{heroPos:'CO',villainPos:'UTG',positionState:'IP'}
+    CO_3BP_vs_UTG:{heroPos:'CO',villainPos:'UTG',positionState:'IP'},
+    // 3BP families — OOP 3bettor as hero (BB or SB 3bet, faces IP caller)
+    // Villain is the original opener who called the 3bet and holds position postflop.
+    BB_3BP_vs_BTN:{heroPos:'BB',villainPos:'BTN',positionState:'OOP'},
+    BB_3BP_vs_CO:{heroPos:'BB',villainPos:'CO',positionState:'OOP'},
+    SB_3BP_vs_BTN:{heroPos:'SB',villainPos:'BTN',positionState:'OOP'},
+    // 3BP EP/MP c-bet gap families
+    HJ_3BP_vs_UTG:{heroPos:'HJ',villainPos:'UTG',positionState:'IP'},
+    SB_3BP_vs_CO:{heroPos:'SB',villainPos:'CO',positionState:'OOP'},
+    SB_3BP_vs_HJ:{heroPos:'SB',villainPos:'HJ',positionState:'OOP'},
+    SB_3BP_vs_UTG:{heroPos:'SB',villainPos:'UTG',positionState:'OOP'},
+    BB_3BP_vs_HJ:{heroPos:'BB',villainPos:'HJ',positionState:'OOP'},
+    // 3BP Defender families (hero called the 3bet, now faces c-bet from 3bettor)
+    CO_CALL_3BP_vs_BTN:{heroPos:'CO',villainPos:'BTN',positionState:'OOP'},
+    HJ_CALL_3BP_vs_BTN:{heroPos:'HJ',villainPos:'BTN',positionState:'OOP'},
+    BTN_CALL_3BP_vs_BB:{heroPos:'BTN',villainPos:'BB',positionState:'IP'},
+    BTN_CALL_3BP_vs_SB:{heroPos:'BTN',villainPos:'SB',positionState:'IP'},
+    CO_CALL_3BP_vs_BB:{heroPos:'CO',villainPos:'BB',positionState:'IP'}
 };
 function classifyFlop(cards) {
     const ranks = cards.map(c => RANK_NUM[c.rank]).sort((a,b) => b-a); const suits = cards.map(c => c.suit);
@@ -1578,10 +1595,17 @@ const HERO_HAND_AWARE_FAMILIES = new Set([
     'BTN_vs_BB', 'CO_vs_BB', 'HJ_vs_BB', 'LJ_vs_BB',
     'SB_vs_BB', 'BTN_vs_SB', 'CO_vs_BTN', 'UTG_vs_BB'
 ]);
-// 3BP IP families with hero-hand-aware strategies
+// 3BP families with hero-hand-aware strategies (IP Pass 1 + OOP Pass 2 + EP/MP gap fill)
 const HERO_HAND_AWARE_3BP_FAMILIES = new Set([
     'BTN_3BP_vs_CO', 'BTN_3BP_vs_HJ', 'CO_3BP_vs_HJ',
-    'BTN_3BP_vs_UTG', 'CO_3BP_vs_UTG'
+    'BTN_3BP_vs_UTG', 'CO_3BP_vs_UTG',
+    'BB_3BP_vs_BTN', 'BB_3BP_vs_CO', 'SB_3BP_vs_BTN',
+    'HJ_3BP_vs_UTG', 'SB_3BP_vs_CO', 'SB_3BP_vs_HJ', 'SB_3BP_vs_UTG', 'BB_3BP_vs_HJ'
+]);
+// 3BP Defender families (hero called the 3bet, faces c-bet from 3bettor)
+const HERO_HAND_AWARE_3BP_DEFEND_FAMILIES = new Set([
+    'CO_CALL_3BP_vs_BTN', 'HJ_CALL_3BP_vs_BTN',
+    'BTN_CALL_3BP_vs_BB', 'BTN_CALL_3BP_vs_SB', 'CO_CALL_3BP_vs_BB'
 ]);
 
 // --- Flop hand classification ---
@@ -2132,10 +2156,10 @@ const POSTFLOP_STRATEGY_V2 = {};
     }
 })();
 // ============================================================
-// 3BP FLOP C-BET STRATEGY — IP 3bettor as hero (Pass 1: 5 families)
+// 3BP FLOP C-BET STRATEGY — IP + OOP 3bettor as hero (Pass 1+2: 8 families)
 // ============================================================
-// Hero is IP 3bettor. Caller's range gets tighter vs earlier-position openers,
-// giving hero increasing range advantage → higher c-bet frequencies per family.
+// IP families: hero is BTN or CO who 3bet. OOP families: hero is BB or SB who 3bet.
+// Tighter caller range → higher c-bet frequency. OOP penalty ~12-15% vs IP equivalent.
 (function() {
     const HAND_CLASSES = [
         'OVERPAIR','TOP_PAIR','SECOND_PAIR','THIRD_PAIR','UNDERPAIR','SET','TWO_PAIR_PLUS',
@@ -2143,9 +2167,8 @@ const POSTFLOP_STRATEGY_V2 = {};
         'OESD','GUTSHOT','NFD','FD','COMBO_DRAW','ACE_HIGH_BACKDOOR','OVERCARDS','AIR'
     ];
 
-    // Base c-bet frequencies (BTN vs CO baseline). _default used when archetype not listed.
-    // ~10-15% higher than SRP IP due to 3BP range advantage.
-    const BASE = {
+    // IP base frequencies (BTN vs CO baseline). ~10-15% above SRP IP.
+    const BASE_IP = {
         OVERPAIR:          { _default:0.90, MONOTONE:0.75, TRIPS:0.75 },
         TOP_PAIR:          { _default:0.85, A_HIGH_DRY:0.88, A_HIGH_DYNAMIC:0.78,
                              BROADWAY_DYNAMIC:0.75, MID_CONNECTED:0.75, LOW_CONNECTED:0.70,
@@ -2175,14 +2198,56 @@ const POSTFLOP_STRATEGY_V2 = {};
                              LOW_CONNECTED:0.35, MONOTONE:0.30, TRIPS:0.30 }
     };
 
-    // Per-family offset applied uniformly to all hand classes / archetypes.
-    // Tighter caller = more range advantage for hero = higher c-bet frequency.
+    // OOP base frequencies (BB vs BTN baseline). ~12-15% below IP equivalent.
+    // BB/SB retain range advantage on high boards but are penalised by position.
+    const BASE_OOP = {
+        OVERPAIR:          { _default:0.78, MONOTONE:0.62, TRIPS:0.62 },
+        TOP_PAIR:          { _default:0.72, A_HIGH_DRY:0.75, A_HIGH_DYNAMIC:0.65,
+                             BROADWAY_DYNAMIC:0.62, MID_CONNECTED:0.60, LOW_CONNECTED:0.55,
+                             MONOTONE:0.55, TRIPS:0.58 },
+        SECOND_PAIR:       { _default:0.45, A_HIGH_DRY:0.52, MID_CONNECTED:0.38,
+                             LOW_CONNECTED:0.32, MONOTONE:0.30 },
+        THIRD_PAIR:        { _default:0.25, A_HIGH_DRY:0.32, LOW_CONNECTED:0.18, MONOTONE:0.15 },
+        UNDERPAIR:         { _default:0.28, A_HIGH_DRY:0.38, LOW_CONNECTED:0.18, MONOTONE:0.18 },
+        SET:               { _default:0.80, MONOTONE:0.60, TRIPS:0.42 },
+        TWO_PAIR_PLUS:     { _default:0.80, MONOTONE:0.60, TRIPS:0.45 },
+        FULL_HOUSE:        { _default:0.62, TRIPS:0.42 },
+        QUADS:             { _default:0.42, TRIPS:0.42 },
+        TRIPS:             { _default:0.65 },
+        BOARD_TRIPS:       { _default:0.62 },
+        COMBO_DRAW:        { _default:0.82 },
+        NFD:               { _default:0.70, MONOTONE:0.12 },
+        FD:                { _default:0.55, MONOTONE:0.12 },
+        OESD:              { _default:0.60, MONOTONE:0.48, TRIPS:0.42 },
+        GUTSHOT:           { _default:0.38, LOW_CONNECTED:0.35, MONOTONE:0.28 },
+        ACE_HIGH_BACKDOOR: { _default:0.45, A_HIGH_DRY:0.62, A_HIGH_DYNAMIC:0.55,
+                             LOW_CONNECTED:0.25, MONOTONE:0.22 },
+        OVERCARDS:         { _default:0.40, A_HIGH_DRY:0.58, A_HIGH_DYNAMIC:0.50,
+                             BROADWAY_STATIC:0.48, MID_CONNECTED:0.30,
+                             LOW_CONNECTED:0.22, MONOTONE:0.20 },
+        AIR:               { _default:0.35, A_HIGH_DRY:0.55, A_HIGH_DYNAMIC:0.48,
+                             BROADWAY_STATIC:0.42, MID_CONNECTED:0.25,
+                             LOW_CONNECTED:0.20, MONOTONE:0.15, TRIPS:0.15 }
+    };
+
+    // Per-family offsets. Tighter caller = more range advantage = higher c-bet frequency.
+    // OOP families share the OOP base; IP families share the IP base.
     const FAMILY_OFF = {
-        BTN_3BP_vs_CO:  0,      // baseline: CO is widest caller
+        // IP families
+        BTN_3BP_vs_CO:  0,      // baseline: CO is widest IP caller
         BTN_3BP_vs_HJ:  0.03,   // HJ flats 3bets tighter than CO
-        CO_3BP_vs_HJ:   0.02,   // CO 3bets HJ — similar but CO's 3bet range is wider
+        CO_3BP_vs_HJ:   0.02,
         BTN_3BP_vs_UTG: 0.05,   // UTG calling range is very condensed
         CO_3BP_vs_UTG:  0.04,
+        HJ_3BP_vs_UTG:  0.04,   // HJ vs UTG: UTG caller is condensed
+        // OOP families (applied on top of BASE_OOP)
+        BB_3BP_vs_BTN:  0,      // baseline: BTN calls 3bets wide → least range advantage for BB
+        BB_3BP_vs_CO:   0.03,   // CO's flatting range is tighter than BTN's
+        SB_3BP_vs_BTN:  0.02,   // SB's 3bet range is more linear/strong than BB's
+        SB_3BP_vs_CO:   0.03,   // SB vs CO: CO caller is tighter than BTN
+        SB_3BP_vs_HJ:   0.04,   // SB vs HJ: HJ caller is tight
+        SB_3BP_vs_UTG:  0.05,   // SB vs UTG: UTG caller is very condensed
+        BB_3BP_vs_HJ:   0.04,   // BB vs HJ: HJ caller is tight
     };
 
     const REASONING = {
@@ -2211,10 +2276,11 @@ const POSTFLOP_STRATEGY_V2 = {};
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
         if (!fi) continue;
         const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
 
         for (const arch of FLOP_ARCHETYPES) {
             for (const hc of HAND_CLASSES) {
-                const row = BASE[hc];
+                const row = baseTable[hc];
                 if (!row) continue;
                 const rawBet = row[arch] !== undefined ? row[arch] : row._default;
                 const bet = Math.max(0.05, Math.min(0.95, parseFloat((rawBet + famOff).toFixed(2))));
@@ -2229,7 +2295,7 @@ const POSTFLOP_STRATEGY_V2 = {};
                     actions: { check: chk, bet33: bet },
                     preferredAction: preferred,
                     reasoning: REASONING[hc] || '',
-                    simplification: '3BP: Hero-hand-aware Flop C-Bet'
+                    simplification: fi.positionState === 'OOP' ? '3BP OOP: Hero-hand-aware Flop C-Bet' : '3BP: Hero-hand-aware Flop C-Bet'
                 };
             }
         }
@@ -2237,7 +2303,7 @@ const POSTFLOP_STRATEGY_V2 = {};
 
     if (window.RANGE_VALIDATE) {
         const count = Object.keys(POSTFLOP_STRATEGY_V2).filter(k => k.startsWith('3BP|')).length;
-        console.log(`[3BP Flop] Built ${count} strategy entries across ${HERO_HAND_AWARE_3BP_FAMILIES.size} families.`);
+        console.log(`[3BP Flop] Built ${count} strategy entries across ${HERO_HAND_AWARE_3BP_FAMILIES.size} families (IP + OOP).`);
     }
 })();
 
@@ -2600,6 +2666,262 @@ function scoreDefenderAction(playerAction, strategy, spot) {
     }
 
     return { correct: isCorrect, grade, feedback, preferredLabel, freqPct, reasoning: strategy.reasoning };
+}
+
+// ============================================================
+// 3BP FLOP DEFENDER — hero called the 3bet, now faces c-bet
+// ============================================================
+// IP defender (BTN/CO called OOP 3bet from BB/SB): has position, folds less.
+// OOP defender (CO/HJ called BTN's 3bet OOP): no position, folds more.
+
+const POSTFLOP_3BP_DEFEND_VS_CBET = {};
+
+(function() {
+    const HAND_CLASSES = [
+        'OVERPAIR','TOP_PAIR','SECOND_PAIR','THIRD_PAIR','UNDERPAIR','SET','TWO_PAIR_PLUS',
+        'FULL_HOUSE','QUADS','TRIPS','BOARD_TRIPS',
+        'OESD','GUTSHOT','NFD','FD','COMBO_DRAW','ACE_HIGH_BACKDOOR','OVERCARDS','AIR'
+    ];
+
+    // IP 3BP defender: BTN/CO called BB's or SB's 3bet, now has position vs c-bet.
+    // Folds less on medium hands, raises more aggressively with strong hands and semi-bluffs.
+    const BASE_IP = {
+        SET:              { _default:{fold:0.00,call:0.30,raise:0.70}, MONOTONE:{fold:0.00,call:0.25,raise:0.75},
+                            TRIPS:{fold:0.00,call:0.50,raise:0.50} },
+        TWO_PAIR_PLUS:    { _default:{fold:0.00,call:0.32,raise:0.68}, MONOTONE:{fold:0.00,call:0.28,raise:0.72},
+                            TRIPS:{fold:0.00,call:0.55,raise:0.45} },
+        FULL_HOUSE:       { _default:{fold:0.00,call:0.22,raise:0.78}, TRIPS:{fold:0.00,call:0.35,raise:0.65} },
+        QUADS:            { _default:{fold:0.00,call:0.58,raise:0.42} },
+        TRIPS:            { _default:{fold:0.00,call:0.30,raise:0.70}, MONOTONE:{fold:0.00,call:0.28,raise:0.72} },
+        BOARD_TRIPS:      { _default:{fold:0.00,call:0.42,raise:0.58} },
+        OVERPAIR:         { _default:{fold:0.00,call:0.55,raise:0.45}, A_HIGH_DRY:{fold:0.00,call:0.50,raise:0.50},
+                            A_HIGH_DYNAMIC:{fold:0.00,call:0.60,raise:0.40}, MONOTONE:{fold:0.03,call:0.60,raise:0.37},
+                            LOW_CONNECTED:{fold:0.00,call:0.48,raise:0.52} },
+        TOP_PAIR:         { _default:{fold:0.00,call:0.68,raise:0.32}, A_HIGH_DRY:{fold:0.00,call:0.70,raise:0.30},
+                            A_HIGH_DYNAMIC:{fold:0.02,call:0.68,raise:0.30}, MID_CONNECTED:{fold:0.03,call:0.65,raise:0.32},
+                            LOW_CONNECTED:{fold:0.03,call:0.62,raise:0.35}, MONOTONE:{fold:0.08,call:0.65,raise:0.27} },
+        SECOND_PAIR:      { _default:{fold:0.18,call:0.70,raise:0.12}, A_HIGH_DRY:{fold:0.12,call:0.76,raise:0.12},
+                            MID_CONNECTED:{fold:0.22,call:0.65,raise:0.13}, LOW_CONNECTED:{fold:0.28,call:0.60,raise:0.12},
+                            MONOTONE:{fold:0.28,call:0.62,raise:0.10} },
+        THIRD_PAIR:       { _default:{fold:0.32,call:0.58,raise:0.10}, A_HIGH_DRY:{fold:0.25,call:0.65,raise:0.10},
+                            MID_CONNECTED:{fold:0.38,call:0.52,raise:0.10}, LOW_CONNECTED:{fold:0.42,call:0.48,raise:0.10},
+                            MONOTONE:{fold:0.40,call:0.50,raise:0.10} },
+        UNDERPAIR:        { _default:{fold:0.35,call:0.55,raise:0.10}, A_HIGH_DRY:{fold:0.28,call:0.62,raise:0.10},
+                            MID_CONNECTED:{fold:0.42,call:0.48,raise:0.10}, LOW_CONNECTED:{fold:0.48,call:0.42,raise:0.10},
+                            MONOTONE:{fold:0.45,call:0.45,raise:0.10} },
+        COMBO_DRAW:       { _default:{fold:0.00,call:0.42,raise:0.58}, MID_CONNECTED:{fold:0.00,call:0.38,raise:0.62},
+                            MONOTONE:{fold:0.02,call:0.45,raise:0.53} },
+        NFD:              { _default:{fold:0.00,call:0.48,raise:0.52}, MONOTONE:{fold:0.03,call:0.52,raise:0.45},
+                            MID_CONNECTED:{fold:0.00,call:0.42,raise:0.58} },
+        FD:               { _default:{fold:0.03,call:0.58,raise:0.39}, MONOTONE:{fold:0.08,call:0.62,raise:0.30},
+                            MID_CONNECTED:{fold:0.02,call:0.52,raise:0.46} },
+        OESD:             { _default:{fold:0.02,call:0.55,raise:0.43}, MID_CONNECTED:{fold:0.00,call:0.48,raise:0.52},
+                            LOW_CONNECTED:{fold:0.00,call:0.45,raise:0.55} },
+        GUTSHOT:          { _default:{fold:0.20,call:0.65,raise:0.15}, A_HIGH_DRY:{fold:0.25,call:0.62,raise:0.13},
+                            MID_CONNECTED:{fold:0.18,call:0.65,raise:0.17} },
+        ACE_HIGH_BACKDOOR:{ _default:{fold:0.22,call:0.65,raise:0.13}, A_HIGH_DRY:{fold:0.15,call:0.72,raise:0.13},
+                            LOW_CONNECTED:{fold:0.30,call:0.58,raise:0.12}, MONOTONE:{fold:0.32,call:0.56,raise:0.12} },
+        OVERCARDS:        { _default:{fold:0.38,call:0.50,raise:0.12}, A_HIGH_DRY:{fold:0.28,call:0.60,raise:0.12},
+                            LOW_CONNECTED:{fold:0.50,call:0.40,raise:0.10}, MONOTONE:{fold:0.48,call:0.42,raise:0.10} },
+        AIR:              { _default:{fold:0.62,call:0.25,raise:0.13}, A_HIGH_DRY:{fold:0.55,call:0.32,raise:0.13},
+                            MID_CONNECTED:{fold:0.68,call:0.20,raise:0.12}, LOW_CONNECTED:{fold:0.72,call:0.18,raise:0.10},
+                            MONOTONE:{fold:0.68,call:0.22,raise:0.10} }
+    };
+
+    // OOP 3BP defender: CO/HJ called BTN's 3bet OOP, faces BTN c-bet with no position.
+    // More folding on marginal hands; condensed range means strong hands fold rarely.
+    const BASE_OOP = {
+        SET:              { _default:{fold:0.00,call:0.42,raise:0.58}, MONOTONE:{fold:0.00,call:0.32,raise:0.68},
+                            TRIPS:{fold:0.00,call:0.58,raise:0.42} },
+        TWO_PAIR_PLUS:    { _default:{fold:0.00,call:0.48,raise:0.52}, MONOTONE:{fold:0.00,call:0.38,raise:0.62},
+                            TRIPS:{fold:0.00,call:0.62,raise:0.38} },
+        FULL_HOUSE:       { _default:{fold:0.00,call:0.30,raise:0.70}, TRIPS:{fold:0.00,call:0.40,raise:0.60} },
+        QUADS:            { _default:{fold:0.00,call:0.68,raise:0.32} },
+        TRIPS:            { _default:{fold:0.00,call:0.42,raise:0.58}, MONOTONE:{fold:0.00,call:0.35,raise:0.65} },
+        BOARD_TRIPS:      { _default:{fold:0.00,call:0.58,raise:0.42} },
+        OVERPAIR:         { _default:{fold:0.00,call:0.68,raise:0.32}, A_HIGH_DRY:{fold:0.00,call:0.62,raise:0.38},
+                            A_HIGH_DYNAMIC:{fold:0.00,call:0.72,raise:0.28}, MONOTONE:{fold:0.05,call:0.68,raise:0.27},
+                            LOW_CONNECTED:{fold:0.00,call:0.60,raise:0.40} },
+        TOP_PAIR:         { _default:{fold:0.03,call:0.82,raise:0.15}, A_HIGH_DRY:{fold:0.00,call:0.85,raise:0.15},
+                            A_HIGH_DYNAMIC:{fold:0.05,call:0.80,raise:0.15}, MID_CONNECTED:{fold:0.07,call:0.77,raise:0.16},
+                            LOW_CONNECTED:{fold:0.08,call:0.75,raise:0.17}, MONOTONE:{fold:0.12,call:0.73,raise:0.15} },
+        SECOND_PAIR:      { _default:{fold:0.35,call:0.55,raise:0.10}, A_HIGH_DRY:{fold:0.28,call:0.62,raise:0.10},
+                            MID_CONNECTED:{fold:0.42,call:0.48,raise:0.10}, LOW_CONNECTED:{fold:0.48,call:0.42,raise:0.10},
+                            MONOTONE:{fold:0.45,call:0.45,raise:0.10} },
+        THIRD_PAIR:       { _default:{fold:0.50,call:0.42,raise:0.08}, A_HIGH_DRY:{fold:0.42,call:0.50,raise:0.08},
+                            MID_CONNECTED:{fold:0.58,call:0.35,raise:0.07}, LOW_CONNECTED:{fold:0.62,call:0.32,raise:0.06},
+                            MONOTONE:{fold:0.60,call:0.34,raise:0.06} },
+        UNDERPAIR:        { _default:{fold:0.58,call:0.35,raise:0.07}, A_HIGH_DRY:{fold:0.48,call:0.45,raise:0.07},
+                            MID_CONNECTED:{fold:0.65,call:0.28,raise:0.07}, LOW_CONNECTED:{fold:0.70,call:0.24,raise:0.06},
+                            MONOTONE:{fold:0.68,call:0.26,raise:0.06} },
+        COMBO_DRAW:       { _default:{fold:0.02,call:0.58,raise:0.40}, MID_CONNECTED:{fold:0.00,call:0.50,raise:0.50},
+                            MONOTONE:{fold:0.05,call:0.52,raise:0.43} },
+        NFD:              { _default:{fold:0.03,call:0.65,raise:0.32}, MONOTONE:{fold:0.05,call:0.60,raise:0.35},
+                            MID_CONNECTED:{fold:0.02,call:0.58,raise:0.40} },
+        FD:               { _default:{fold:0.10,call:0.72,raise:0.18}, MONOTONE:{fold:0.12,call:0.70,raise:0.18},
+                            MID_CONNECTED:{fold:0.07,call:0.68,raise:0.25} },
+        OESD:             { _default:{fold:0.08,call:0.68,raise:0.24}, MID_CONNECTED:{fold:0.05,call:0.62,raise:0.33},
+                            LOW_CONNECTED:{fold:0.05,call:0.60,raise:0.35} },
+        GUTSHOT:          { _default:{fold:0.38,call:0.52,raise:0.10}, A_HIGH_DRY:{fold:0.42,call:0.48,raise:0.10},
+                            MID_CONNECTED:{fold:0.32,call:0.56,raise:0.12} },
+        ACE_HIGH_BACKDOOR:{ _default:{fold:0.42,call:0.47,raise:0.11}, A_HIGH_DRY:{fold:0.32,call:0.56,raise:0.12},
+                            LOW_CONNECTED:{fold:0.52,call:0.38,raise:0.10}, MONOTONE:{fold:0.50,call:0.40,raise:0.10} },
+        OVERCARDS:        { _default:{fold:0.58,call:0.32,raise:0.10}, A_HIGH_DRY:{fold:0.48,call:0.42,raise:0.10},
+                            LOW_CONNECTED:{fold:0.68,call:0.24,raise:0.08}, MONOTONE:{fold:0.65,call:0.27,raise:0.08} },
+        AIR:              { _default:{fold:0.80,call:0.13,raise:0.07}, A_HIGH_DRY:{fold:0.72,call:0.18,raise:0.10},
+                            MID_CONNECTED:{fold:0.85,call:0.10,raise:0.05}, LOW_CONNECTED:{fold:0.88,call:0.08,raise:0.04},
+                            MONOTONE:{fold:0.85,call:0.10,raise:0.05} }
+    };
+
+    const REASONING = {
+        SET: 'Sets are the nuts in 3BP; raise for value to build the large pot. IP: push aggression; OOP: mix raise/call.',
+        TWO_PAIR_PLUS: 'Two pair+ is strong; raise frequently for value in the inflated 3BP pot.',
+        FULL_HOUSE: 'Full house — raise for value mostly; rare slow-play on paired boards.',
+        QUADS: 'Quads — slow-play by calling to extract maximum value from opponent\'s range.',
+        TRIPS: 'Trips — raise for value; opponent\'s polar range has strong holdings too.',
+        BOARD_TRIPS: 'Board trips — raise with strong kickers; call to trap on paired boards.',
+        OVERPAIR: 'Overpairs are strong in 3BP — caller\'s condensed range rarely has better. IP: raise more; OOP: mostly call.',
+        TOP_PAIR: 'Top pair is a strong calling hand in 3BP. Raise more often when IP. Protect against draws.',
+        SECOND_PAIR: 'Second pair in 3BP. IP: call freely on dry boards; OOP: fold on wet textures.',
+        THIRD_PAIR: 'Third pair is marginal in 3BP. IP: can float position; OOP: mostly fold.',
+        UNDERPAIR: 'Underpairs are weak in 3BP. IP: can float on dry boards; OOP: fold frequently.',
+        COMBO_DRAW: 'Combo draws have 50%+ equity; semi-bluff raise aggressively in the 3BP pot.',
+        NFD: 'Nut flush draws have strong equity in 3BP; raise as semi-bluff or call for implied odds.',
+        FD: 'Flush draws have decent equity. IP: mix raise/call; OOP: mostly call and realize equity.',
+        OESD: 'OESD has ~32% equity. IP: semi-bluff raise; OOP: mostly call with equity.',
+        GUTSHOT: 'Gutshots are marginal in 3BP. IP: occasionally float; OOP: mostly fold.',
+        ACE_HIGH_BACKDOOR: 'Ace-high with backdoor draws. IP: can float; OOP: fold on most textures.',
+        OVERCARDS: 'Overcards have marginal equity in 3BP. IP: float on favorable boards; OOP: mostly fold.',
+        AIR: 'Pure air in 3BP. IP: occasional float or bluff; OOP: fold heavily.'
+    };
+
+    // Family offsets: positive = folds less (stronger defense), negative = folds more
+    const FAM_OFF = {
+        // IP families: BTN/CO who called OOP 3bet. Positive = less folding.
+        BTN_CALL_3BP_vs_BB:  0,    // baseline IP defender vs BB's c-bet
+        BTN_CALL_3BP_vs_SB:  0.01, // SB 3bet range is slightly stronger, but BTN still IP
+        CO_CALL_3BP_vs_BB:  -0.01, // CO vs BB: slight adjustment (CO's calling range vs BB 3bet)
+        // OOP families: CO/HJ who called BTN's 3bet. No adjustments needed (pure OOP).
+        CO_CALL_3BP_vs_BTN:  0,
+        HJ_CALL_3BP_vs_BTN:  0.02  // HJ called BTN 3bet with even tighter range → stronger hands
+    };
+
+    for (const fam of HERO_HAND_AWARE_3BP_DEFEND_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const off = FAM_OFF[fam] || 0;
+        const BASE = fi.positionState === 'IP' ? BASE_IP : BASE_OOP;
+
+        for (const arch of FLOP_ARCHETYPES) {
+            for (const hc of HAND_CLASSES) {
+                const hcData = BASE[hc];
+                if (!hcData) continue;
+                const raw = hcData[arch] || hcData._default;
+                if (!raw) continue;
+
+                // Apply family offset (positive = less folding)
+                let fold = Math.max(0, raw.fold - off);
+                let call = raw.call + off * 0.5;
+                let raise = raw.raise + off * 0.5;
+                // Normalize
+                const total = fold + call + raise;
+                fold = parseFloat((fold / total).toFixed(2));
+                call = parseFloat((call / total).toFixed(2));
+                raise = parseFloat((1 - fold - call).toFixed(2));
+                fold  = Math.max(0, Math.min(1, fold));
+                call  = Math.max(0, Math.min(1, call));
+                raise = Math.max(0, Math.min(1, raise));
+
+                let preferred;
+                if (fold >= call && fold >= raise) preferred = 'fold';
+                else if (raise >= call && raise >= fold) preferred = 'raise';
+                else preferred = 'call';
+
+                const sk = makePostflopSpotKeyV2({
+                    potType:'3BP', preflopFamily:fam, street:'FLOP', heroRole:'DEFENDER',
+                    positionState: fi.positionState, nodeType:'VS_CBET_DECISION',
+                    boardArchetype:arch, heroHandClass:hc
+                });
+                POSTFLOP_3BP_DEFEND_VS_CBET[sk] = {
+                    actions: { fold, call, raise },
+                    preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: fi.positionState === 'IP' ? '3BP IP Defender vs C-Bet' : '3BP OOP Defender vs C-Bet'
+                };
+            }
+        }
+    }
+
+    if (window.RANGE_VALIDATE) {
+        console.log(`[3BP Defend] Built ${Object.keys(POSTFLOP_3BP_DEFEND_VS_CBET).length} entries across ${HERO_HAND_AWARE_3BP_DEFEND_FAMILIES.size} families.`);
+    }
+})();
+
+/**
+ * Deal a hero hand from the 3BP defender's calling range.
+ * Hero is the player who called the 3bet (from their opening range as a proxy).
+ */
+function _deal3BPDefenderHeroHand(heroPos) {
+    return _dealPostflopHeroHand(heroPos);
+}
+
+/**
+ * Generate a 3BP defender spot (hero called 3bet, faces c-bet from 3bettor).
+ * familyFilter: optional array of family keys to restrict.
+ */
+function generate3BPDefenderSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 20;
+    let fams = [...HERO_HAND_AWARE_3BP_DEFEND_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+
+        const arch = pickFlopArchetype();
+        const heroHand = _deal3BPDefenderHeroHand(fi.heroPos);
+        if (!heroHand) continue;
+        const fc = _generateFlopNoConflict(arch, heroHand);
+        const heroHandClass = classifyFlopHand(heroHand, fc);
+        const heroCardsD = heroHand.cards || _heroHandToCards(heroHand);
+        const heroDrawsD = _detectFlopDraws(heroCardsD, fc);
+
+        const spot = {
+            potType:'3BP', preflopFamily:fam, street:'FLOP', heroRole:'DEFENDER',
+            positionState: fi.positionState, nodeType:'VS_CBET_DECISION',
+            boardArchetype:arch,
+            heroPos: fi.heroPos, villainPos: fi.villainPos,
+            flopCards:fc, flopClassification:classifyFlop(fc),
+            heroHand, heroHandClass, heroDraws:heroDrawsD
+        };
+        spot.spotKey = makePostflopSpotKeyV2(spot);
+        spot.strategy = POSTFLOP_3BP_DEFEND_VS_CBET[spot.spotKey] || null;
+
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+
+    // Fallback
+    console.warn('[3BP Defend] Retries exhausted; forcing BTN_CALL_3BP_vs_BB fallback.');
+    const heroHand = _deal3BPDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const arch = 'A_HIGH_DRY';
+    const fc = _generateFlopNoConflict(arch, heroHand);
+    const heroHandClass = classifyFlopHand(heroHand, fc);
+    const heroCardsDF = heroHand.cards || _heroHandToCards(heroHand);
+    const heroDrawsDF = _detectFlopDraws(heroCardsDF, fc);
+    const spot = {
+        potType:'3BP', preflopFamily:'BTN_CALL_3BP_vs_BB', street:'FLOP', heroRole:'DEFENDER',
+        positionState:'IP', nodeType:'VS_CBET_DECISION',
+        boardArchetype:arch, heroPos:'BTN', villainPos:'BB',
+        flopCards:fc, flopClassification:classifyFlop(fc),
+        heroHand, heroHandClass, heroDraws:heroDrawsDF
+    };
+    spot.spotKey = makePostflopSpotKeyV2(spot);
+    spot.strategy = POSTFLOP_3BP_DEFEND_VS_CBET[spot.spotKey] || null;
+    return spot;
 }
 
 // ============================================================
