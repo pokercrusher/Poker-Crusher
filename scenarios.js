@@ -1674,14 +1674,16 @@ function constraintNoDraw(hand, board) {
 }
 
 // Priority-ordered draw classifier — walks strongest-first, returns first match
-// Used to verify that a dealt hand/board truly belongs to the requested category
+// Used to verify that a dealt hand/board truly belongs to the requested category.
+// NOTE: pair-plus-flush-draw MUST come before flush-draw — every pair+FD hand also
+// satisfies constraintFlushDraw, so checking flush-draw first would misclassify it.
 function classifyDrawCategory(hand, board) {
     if (constraintRoyalFlushDraw(hand, board))       return 'royal-flush-draw';
     if (constraintStraightFlushDraw(hand, board))    return 'straight-flush-draw';
     if (constraintComboFlushOESD(hand, board))       return 'combo-flush-oesd';
     if (constraintComboFlushGutshot(hand, board))    return 'combo-flush-gutshot';
-    if (constraintFlushDraw(hand, board))            return 'flush-draw';
     if (constraintPairPlusFlushDraw(hand, board))    return 'pair-plus-flush-draw';
+    if (constraintFlushDraw(hand, board))            return 'flush-draw';
     if (constraintPairPlusOESD(hand, board))         return 'pair-plus-oesd';
     if (constraintPairPlusGutshot(hand, board))      return 'pair-plus-gutshot';
     if (constraintTwoOvercardsGutshot(hand, board))  return 'two-overcards-plus-gutshot';
@@ -1862,6 +1864,54 @@ const ED_BET_SIZES = {
     overbet: [1.50, 2.00]
 };
 
+// ── EQUITY DECISION FALLBACK POOL ──
+// Used only when the random-deal loop exhausts all attempts.
+// Each entry has hand + boardF (3-card flop) + boardT (4-card turn).
+// Suits are rotated across entries to prevent same-suit repetition.
+// Verified: constraint passes AND classifyDrawCategory matches the category.
+const _ED_FALLBACKS = {
+    'flush-draw': [
+        { hand: ['Ah','Jh'], boardF: ['Kh','9h','3c'],   boardT: ['Kh','9h','3c','2d']  },
+        { hand: ['Qs','Ts'], boardF: ['As','6s','3c'],   boardT: ['As','6s','3c','7d']  },
+        { hand: ['Kd','7d'], boardF: ['Jd','5d','2c'],   boardT: ['Jd','5d','2c','8h']  },
+        { hand: ['9c','8c'], boardF: ['Qc','4c','2h'],   boardT: ['Qc','4c','2h','7s']  },
+    ],
+    'pair-plus-flush-draw': [
+        { hand: ['Kh','Th'], boardF: ['Kd','5h','2h'],   boardT: ['Kd','5h','2h','7c']  },
+        { hand: ['As','9s'], boardF: ['Ad','4s','2s'],   boardT: ['Ad','4s','2s','8c']  },
+        { hand: ['Qd','6d'], boardF: ['Qc','Jd','3d'],   boardT: ['Qc','Jd','3d','9h']  },
+        { hand: ['Jc','8c'], boardF: ['Jh','5c','2c'],   boardT: ['Jh','5c','2c','7d']  },
+    ],
+    'oesd': [
+        { hand: ['8s','7d'], boardF: ['9h','6c','2d'],   boardT: ['9h','6c','2d','Qd']  },
+        { hand: ['Js','Tc'], boardF: ['Qd','9h','2c'],   boardT: ['Qd','9h','2c','5s']  },
+        { hand: ['5h','4c'], boardF: ['6s','3d','Kh'],   boardT: ['6s','3d','Kh','Qc']  },
+        { hand: ['Ts','9d'], boardF: ['Jh','8c','2s'],   boardT: ['Jh','8c','2s','5d']  },
+    ],
+    'gutshot': [
+        { hand: ['Js','9d'], boardF: ['Kh','Tc','3c'],   boardT: ['Kh','Tc','3c','2s']  },
+        { hand: ['7s','4d'], boardF: ['8h','5c','Kd'],   boardT: ['8h','5c','Kd','Ah']  },
+        { hand: ['Qh','9c'], boardF: ['Kd','Js','2h'],   boardT: ['Kd','Js','2h','5c']  },
+        { hand: ['Ac','3d'], boardF: ['4s','5h','9c'],   boardT: ['4s','5h','9c','Kd']  },
+    ],
+    'underpair': [
+        { hand: ['5s','5d'], boardF: ['Ah','Kc','9d'],   boardT: ['Ah','Kc','9d','Jh']  },
+        { hand: ['3h','3c'], boardF: ['Ks','Qd','7s'],   boardT: ['Ks','Qd','7s','9c']  },
+        { hand: ['6s','6d'], boardF: ['Ah','Jc','8d'],   boardT: ['Ah','Jc','8d','Tc']  },
+        { hand: ['4h','4c'], boardF: ['Ks','7d','6s'],   boardT: ['Ks','7d','6s','9d']  },
+    ],
+    'no-draw': [
+        { hand: ['2s','7d'], boardF: ['Ah','Kc','9d'],   boardT: ['Ah','Kc','9d','Jh']  },
+        { hand: ['3h','8c'], boardF: ['Ks','Qd','Td'],   boardT: ['Ks','Qd','Td','2c']  },
+        { hand: ['4s','9h'], boardF: ['Ac','Kh','Jd'],   boardT: ['Ac','Kh','Jd','3s']  },
+        { hand: ['2d','6c'], boardF: ['As','Ks','Ts'],   boardT: ['As','Ks','Ts','3h']  },
+    ],
+};
+let _equityFallbackIdx = 0;
+
+// Session deduplication: track last 5 scenario ids to prevent repeat buckets
+const _recentEquityIds = [];
+
 function generateEquityDecisionScenario(category, street, betSizeCategory) {
     const providedCategory = !!category;
     let hand, board, usedCategory;
@@ -1882,7 +1932,7 @@ function generateEquityDecisionScenario(category, street, betSizeCategory) {
         const constraintFn = OC_CONSTRAINT_FNS[category];
 
         let result = null;
-        for (let attempt = 0; attempt < 50; attempt++) {
+        for (let attempt = 0; attempt < 100; attempt++) {
             const deck = buildShuffledDeck();
             const h = dealCards(deck, 2);
             const b = dealCards(deck, boardSize);
@@ -1894,10 +1944,20 @@ function generateEquityDecisionScenario(category, street, betSizeCategory) {
             }
         }
 
-        hand  = result ? result.hand  : ['Ah', 'Jh'];
-        board = result ? result.board : (street === 'FLOP' ? ['Kh', '9h', '3c'] : ['Kh', '9h', '3c', '2d']);
-        usedCategory = result ? category : 'flush-draw';
-        if (!result) console.warn('generateEquityDecisionScenario: no verified deal for ' + category + '/' + street);
+        if (result) {
+            hand = result.hand;
+            board = result.board;
+            usedCategory = category;
+        } else {
+            // Rotate through verified fallback pool so the same hand never repeats
+            const pool = _ED_FALLBACKS[category] || _ED_FALLBACKS['flush-draw'];
+            const entry = pool[_equityFallbackIdx % pool.length];
+            _equityFallbackIdx++;
+            hand = entry.hand;
+            board = street === 'FLOP' ? entry.boardF : entry.boardT;
+            usedCategory = category;
+            console.warn('generateEquityDecisionScenario: using fallback for ' + category + '/' + street);
+        }
 
     } else {
         // No category provided: deal random cards then classify what was dealt
@@ -1963,6 +2023,18 @@ function generateEquityDecisionScenario(category, street, betSizeCategory) {
 
     const id = 'ed-' + bucketId;
     const srKey = 'EQUITY_DEC|' + bucketId;
+
+    // Session deduplication: if this id was recently seen, try one re-deal (providedCategory path only)
+    if (providedCategory && _recentEquityIds.includes(id)) {
+        const pool = _ED_FALLBACKS[usedCategory] || _ED_FALLBACKS['flush-draw'];
+        const entry = pool[_equityFallbackIdx % pool.length];
+        _equityFallbackIdx++;
+        hand = entry.hand;
+        board = street === 'FLOP' ? entry.boardF : entry.boardT;
+    }
+
+    _recentEquityIds.push(id);
+    if (_recentEquityIds.length > 5) _recentEquityIds.shift();
 
     const explanation = 'You have ' + outs + ' outs = ~' + heroEquityPct + '% equity on the ' + street.toLowerCase() + '. ' +
         'You\u2019re getting ' + potOddsRatio + ' (need ' + equityNeededPct + '% to call). ' +
