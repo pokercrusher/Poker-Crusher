@@ -2288,7 +2288,7 @@ const POSTFLOP_STRATEGY_V2 = {};
                 const preferred = bet >= 0.50 ? 'bet33' : 'check';
                 const sk = makePostflopSpotKeyV2({
                     potType:'3BP', preflopFamily:fam, street:'FLOP', heroRole:'PFR',
-                    positionState:'IP', nodeType:'CBET_DECISION',
+                    positionState:fi.positionState, nodeType:'CBET_DECISION',
                     boardArchetype:arch, heroHandClass:hc
                 });
                 POSTFLOP_STRATEGY_V2[sk] = {
