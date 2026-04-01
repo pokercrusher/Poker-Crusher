@@ -81,16 +81,52 @@ function _sampleHandFromRange(rangeArray) {
     return base;
 }
 
-// Count approximate combos in a range token array (rough: 6 per pair, 4 per suited, 12 per offsuit, 16 per no-suffix)
+// Count approximate combos in a range token array, handling + and - range syntax.
 function _roughCombosInRange(rangeArray) {
     if (!rangeArray || rangeArray.length === 0) return 0;
     let count = 0;
     for (const token of rangeArray) {
-        const base = token.replace(/[+]$/, '').replace(/-.*$/, '');
-        if (base.length === 2 && base[0] === base[1]) count += 6;       // pair
-        else if (base.endsWith('s')) count += 4;
-        else if (base.endsWith('o')) count += 12;
-        else count += 16;
+        const r1 = RANKS.indexOf(token[0]);
+        const r2 = RANKS.indexOf(token[1]);
+        const isPair = token[0] === token[1];
+        const isSuited = token.includes('s');
+        const isOffsuit = token.includes('o');
+        const isPlus = token.endsWith('+');
+        const dashIdx = token.indexOf('-');
+        const isDash = dashIdx !== -1;
+
+        if (isPair) {
+            if (isPlus) {
+                // JJ+ = JJ,QQ,KK,AA; r1=3 for J → (3+1)*6 = 24
+                count += (r1 + 1) * 6;
+            } else if (isDash) {
+                // TT-22: top is token[0], bottom is char right after dash
+                const botRank = RANKS.indexOf(token[dashIdx + 1]);
+                count += (botRank - r1 + 1) * 6;
+            } else {
+                count += 6;
+            }
+        } else if (isSuited) {
+            if (isPlus) {
+                // A2s+: kickers from index r2 down to r1+1 in RANKS → (r2-r1) suited hands × 4
+                count += (r2 - r1) * 4;
+            } else if (isDash) {
+                // A5s-A4s: dashIdx=3, bottom kicker at token[dashIdx+2]
+                const botKicker = RANKS.indexOf(token[dashIdx + 2]);
+                count += (botKicker - r2 + 1) * 4;
+            } else {
+                count += 4;
+            }
+        } else if (isOffsuit) {
+            if (isPlus) {
+                count += (r2 - r1) * 12;
+            } else {
+                count += 12;
+            }
+        } else {
+            // No suit marker (e.g. 'AK' = suited + offsuit)
+            count += 16;
+        }
     }
     return count;
 }
@@ -344,10 +380,11 @@ function resolveVillainAction(handRun) {
         const callRange = rangeData['Call'] || [];
         const threeBetCombos = _roughCombosInRange(threeBetRange);
         const callCombos = _roughCombosInRange(callRange);
-        // Approximate total hand space as 1326; fold = remainder
+        // facingRfiRanges arrays are training summaries, not complete GTO solutions —
+        // using 1326 as denominator would make unlisted hands fold, giving ~80% fold.
+        // Instead scale fold to ~38% (realistic BB vs BTN defend frequency is ~62%).
         const totalNonFold = threeBetCombos + callCombos;
-        const totalSpace = 1326;
-        const foldCombos = Math.max(0, totalSpace - totalNonFold);
+        const foldCombos = Math.round(totalNonFold * 0.61);  // fold ≈ 38% overall
 
         const roll = Math.random() * (threeBetCombos + callCombos + foldCombos);
         if (roll < threeBetCombos) return '3bet_9bb';
