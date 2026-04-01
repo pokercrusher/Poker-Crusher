@@ -2789,18 +2789,13 @@ function _simSetScenarioHint(text) {
 function _simRestoreLayout() {
     try {
         const tw = document.getElementById('table-wrapper');
-        if (tw) {
-            tw.classList.remove('hidden');
-            tw.style.flex = '';
-            tw.style.height = '';
-            tw._simHeightLocked = false;
-        }
+        if (tw) tw.classList.remove('hidden');
         const ha = document.getElementById('hero-area');
-        if (ha) {
-            ha.classList.remove('hidden');
-            ha.style.flexShrink = '';
-            ha.style.height = '';
-            ha._simHeightLocked = false;
+        if (ha) ha.classList.remove('hidden');
+        const ab = document.getElementById('action-buttons');
+        if (ab) {
+            ab.style.minHeight = '';
+            ab._simMinHeightLocked = false;
         }
         const tcl = document.getElementById('turn-context-line');
         if (tcl) {
@@ -2844,21 +2839,14 @@ function startSimulator() {
 
     _simRenderRound();
 
-    // Lock table-wrapper and hero-area to their rendered heights so changes in
-    // #action-buttons (villain thinking, results, etc.) never cause the table to resize.
+    // Lock #action-buttons to its initial rendered height so when content changes
+    // (villain thinking, etc.) the table/cards above never resize.
     requestAnimationFrame(function() {
         requestAnimationFrame(function() {
-            var tw = document.getElementById('table-wrapper');
-            if (tw && !tw._simHeightLocked) {
-                tw._simHeightLocked = true;
-                tw.style.flex = 'none';
-                tw.style.height = tw.offsetHeight + 'px';
-            }
-            var ha = document.getElementById('hero-area');
-            if (ha && !ha._simHeightLocked) {
-                ha._simHeightLocked = true;
-                ha.style.flexShrink = '0';
-                ha.style.height = ha.offsetHeight + 'px';
+            var ab = document.getElementById('action-buttons');
+            if (ab && !ab._simMinHeightLocked) {
+                ab._simMinHeightLocked = true;
+                ab.style.minHeight = ab.offsetHeight + 'px';
             }
         });
     });
@@ -2919,6 +2907,7 @@ function _simRenderActionArea(h) {
 
     // ---- Terminal: collapse table, expand #turn-context-line for review ----
     if (isTerminal(h)) {
+        try { const ab = document.getElementById('action-buttons'); if (ab) { ab.style.minHeight = ''; ab._simMinHeightLocked = false; } } catch(_) {}
         try { document.getElementById('table-wrapper').classList.add('hidden'); } catch(_) {}
         try { document.getElementById('hero-area').classList.add('hidden'); } catch(_) {}
         try { document.getElementById('community-cards-strip').classList.add('hidden'); } catch(_) {}
