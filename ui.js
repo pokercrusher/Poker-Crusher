@@ -2789,9 +2789,19 @@ function _simSetScenarioHint(text) {
 function _simRestoreLayout() {
     try {
         const tw = document.getElementById('table-wrapper');
-        if (tw) tw.classList.remove('hidden');
+        if (tw) {
+            tw.classList.remove('hidden');
+            tw.style.flex = '';
+            tw.style.height = '';
+            tw._simHeightLocked = false;
+        }
         const ha = document.getElementById('hero-area');
-        if (ha) ha.classList.remove('hidden');
+        if (ha) {
+            ha.classList.remove('hidden');
+            ha.style.flexShrink = '';
+            ha.style.height = '';
+            ha._simHeightLocked = false;
+        }
         const tcl = document.getElementById('turn-context-line');
         if (tcl) {
             tcl.classList.add('hidden');
@@ -2833,6 +2843,25 @@ function startSimulator() {
     state.oppPos = 'BB';
 
     _simRenderRound();
+
+    // Lock table-wrapper and hero-area to their rendered heights so changes in
+    // #action-buttons (villain thinking, results, etc.) never cause the table to resize.
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            var tw = document.getElementById('table-wrapper');
+            if (tw && !tw._simHeightLocked) {
+                tw._simHeightLocked = true;
+                tw.style.flex = 'none';
+                tw.style.height = tw.offsetHeight + 'px';
+            }
+            var ha = document.getElementById('hero-area');
+            if (ha && !ha._simHeightLocked) {
+                ha._simHeightLocked = true;
+                ha.style.flexShrink = '0';
+                ha.style.height = ha.offsetHeight + 'px';
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
