@@ -2747,3 +2747,337 @@ function hideUserStats() {
         // ============================================================
 // PROFILE (simple username) — namespaced storage keys
 // ============================================================
+
+// ============================================================
+// === SIMULATOR UI ===
+// Pass 2: "Play a Hand" screen wired to sim.js HandRun state machine.
+// All functions in this section are new — nothing above is modified.
+// ============================================================
+
+let _simRun = null;
+let _simMathVisible = false;
+let _simPendingTimeout = null;
+
+// ---------------------------------------------------------------------------
+// simActionLabel — human-readable labels for action strings
+// ---------------------------------------------------------------------------
+function simActionLabel(action) {
+    const map = {
+        'fold': 'Fold',
+        'call': 'Call',
+        'check': 'Check',
+        'raise_2.5bb': 'Raise 2.5bb',
+        'raise_3bb': 'Raise 3bb',
+        'raise_4bb': 'Raise 4bb',
+        '3bet_9bb': '3-Bet 9bb',
+        'bet_33pct': 'Bet 33%',
+        'raise_2.5x': 'Raise 2.5x'
+    };
+    return map[action] || action;
+}
+
+// ---------------------------------------------------------------------------
+// _simCardHtml — render a single card on a dark background (board-card style)
+// card: string like 'Ah' or object { rank, suit }
+// ---------------------------------------------------------------------------
+function _simCardHtml(card, sizeClass) {
+    let rank, suit;
+    if (typeof card === 'string' && card.length >= 2) {
+        rank = card[0];
+        suit = card[1];
+    } else if (card && typeof card === 'object') {
+        rank = card.rank;
+        suit = card.suit;
+    } else {
+        return '';
+    }
+    const sym = (typeof SUIT_SYMBOLS !== 'undefined') ? (SUIT_SYMBOLS[suit] || suit) : suit;
+    const color = (suit === 'h' || suit === 'd') ? '#dc2626' : '#ffffff';
+    const w = sizeClass === 'board' ? 42 : 52;
+    const h = Math.round(w * 1.38);
+    const rankSz = Math.round(w * 0.38);
+    const suitSz = Math.round(w * 0.30);
+    return `<div class="card-display flex flex-col items-center justify-center" style="width:${w}px;height:${h}px;background:linear-gradient(145deg,#ffffff,#e2e8f0);">
+        <div style="font-size:${rankSz}px;font-weight:900;color:${color};line-height:1;">${rank}</div>
+        <div style="font-size:${suitSz}px;color:${color};line-height:1;">${sym}</div>
+    </div>`;
+}
+
+// Placeholder card slot (empty board position)
+function _simCardPlaceholder() {
+    return `<div style="width:42px;height:58px;border:2px dashed #334155;border-radius:8px;opacity:0.4;"></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// showSimScreen — hide all screens, reveal #sim-screen
+// ---------------------------------------------------------------------------
+function showSimScreen() {
+    // Close any pending auto-advance timers from a previous hand
+    if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
+
+    // Hide every known screen the same way hideAllScreens does, then show ours
+    const allIds = [
+        'menu-screen','config-screen','trainer-screen','stats-screen','settings-screen',
+        'challenge-screen','library-screen','daily-run-screen',
+        'review-preview-screen','review-complete-screen','session-summary-screen',
+        'drill-complete-screen','daily-run-complete-screen','chart-modal','math-drill-screen'
+    ];
+    allIds.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+    const screen = document.getElementById('sim-screen');
+    if (screen) screen.classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------------------
+// startSimulator — entry point from menu button
+// ---------------------------------------------------------------------------
+function startSimulator() {
+    _simMathVisible = false;
+    _simRun = createHandRun({ lane: 'BTN_vs_BB_SRP' });
+    showSimScreen();
+    renderSimScreen();
+}
+
+// ---------------------------------------------------------------------------
+// renderSimScreen — main idempotent render; dispatches to zone renderers
+// ---------------------------------------------------------------------------
+function renderSimScreen() {
+    if (!_simRun) return;
+    renderSimHeader(_simRun);
+    renderSimBoard(_simRun);
+    renderSimHeroHand(_simRun);
+    renderSimActionArea(_simRun);
+}
+
+// ---------------------------------------------------------------------------
+// renderSimHeader — Zone 1: pot, stacks, street
+// ---------------------------------------------------------------------------
+function renderSimHeader(handRun) {
+    const heroSeat = handRun.seats[handRun.heroSeatIndex];
+    const villainSeat = handRun.seats.find(s => s !== null && !s.isHero);
+
+    const potEl = document.getElementById('sim-pot');
+    const streetEl = document.getElementById('sim-street-label');
+    const heroStackEl = document.getElementById('sim-hero-stack');
+    const villainStackEl = document.getElementById('sim-villain-stack');
+
+    if (potEl) potEl.textContent = 'Pot: ' + handRun.potBB.toFixed(1) + 'bb';
+    if (streetEl) streetEl.textContent = handRun.street.toUpperCase();
+    if (heroStackEl && heroSeat) heroStackEl.textContent = heroSeat.label + ': ' + heroSeat.stackBB.toFixed(1) + 'bb';
+    if (villainStackEl && villainSeat) villainStackEl.textContent = villainSeat.label + ': ' + villainSeat.stackBB.toFixed(1) + 'bb';
+}
+
+// ---------------------------------------------------------------------------
+// renderSimBoard — Zone 2: five card slots
+// ---------------------------------------------------------------------------
+function renderSimBoard(handRun) {
+    const el = document.getElementById('sim-board');
+    if (!el) return;
+
+    const board = handRun.board || [];
+    let html = '';
+    for (let i = 0; i < 5; i++) {
+        if (i < board.length) {
+            html += _simCardHtml(board[i], 'board');
+        } else {
+            html += _simCardPlaceholder();
+        }
+    }
+    el.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// renderSimHeroHand — Zone 3: hero's two hole cards
+// ---------------------------------------------------------------------------
+function renderSimHeroHand(handRun) {
+    const el = document.getElementById('sim-hero-hand');
+    if (!el) return;
+
+    const heroSeat = handRun.seats[handRun.heroSeatIndex];
+    if (!heroSeat || !heroSeat.holeCards || heroSeat.holeCards.length < 2) {
+        el.innerHTML = _simCardPlaceholder() + _simCardPlaceholder();
+        return;
+    }
+    el.innerHTML = _simCardHtml(heroSeat.holeCards[0], 'hero') + _simCardHtml(heroSeat.holeCards[1], 'hero');
+}
+
+// ---------------------------------------------------------------------------
+// renderSimActionArea — Zone 4: decision / villain / advance / terminal
+// ---------------------------------------------------------------------------
+function renderSimActionArea(handRun) {
+    const el = document.getElementById('sim-action-area');
+    if (!el) return;
+
+    // --- Terminal / end-of-hand summary ---
+    if (isTerminal(handRun)) {
+        el.innerHTML = _simBuildSummaryHtml(handRun);
+        return;
+    }
+
+    // --- Villain response ---
+    if (handRun.nodeType === 'villain_response') {
+        el.innerHTML = `<div class="text-slate-400 font-bold text-sm animate-pulse">Villain thinks...</div>`;
+        _simPendingTimeout = setTimeout(function() {
+            _simPendingTimeout = null;
+            _simRun = applyVillainAction(_simRun);
+            renderSimScreen();
+        }, 600);
+        return;
+    }
+
+    // --- Street advance ---
+    if (handRun.nodeType === 'street_advance') {
+        el.innerHTML = `<div class="text-slate-500 font-bold text-sm">Dealing next street...</div>`;
+        _simPendingTimeout = setTimeout(function() {
+            _simPendingTimeout = null;
+            _simRun = advanceStreet(_simRun);
+            renderSimScreen();
+        }, 800);
+        return;
+    }
+
+    // --- Hero decision ---
+    if (handRun.nodeType === 'hero_decision') {
+        const actions = getAvailableActions(handRun);
+        const node = [...handRun.decisionNodes].reverse().find(n => n.heroAction === null);
+        const math = (node && node.mathContext) ? node.mathContext : null;
+
+        // Action buttons
+        const btnRowHtml = actions.map(action => {
+            const label = simActionLabel(action);
+            const isFold = action === 'fold';
+            const isAggr = action.startsWith('raise') || action.startsWith('3bet') || action.startsWith('bet');
+            let btnColor = 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-500';
+            if (isFold) btnColor = 'bg-slate-900 border-slate-700 text-slate-400 hover:border-rose-700 hover:text-rose-300';
+            if (isAggr) btnColor = 'bg-slate-800 border-amber-800/40 text-amber-300 hover:bg-amber-900/40 hover:border-amber-500';
+            return `<button onclick="handleSimAction('${action}')" class="px-5 py-3 rounded-full font-black text-sm border transition-all active:scale-[0.96] ${btnColor}">${label}</button>`;
+        }).join('');
+
+        // Math panel (hidden by default)
+        let mathPanelHtml = '';
+        if (math) {
+            const mathRows = [
+                math.potOddsRatio ? `<div class="flex justify-between gap-4"><span class="text-slate-500">Pot odds</span><span class="font-bold text-slate-300">${math.potOddsRatio} (need ${math.potOddsPct}% eq.)</span></div>` : '',
+                math.heroEquityEst !== null && math.heroEquityEst !== undefined ? `<div class="flex justify-between gap-4"><span class="text-slate-500">Est. equity</span><span class="font-bold text-slate-300">~${math.heroEquityEst}%</span></div>` : '',
+                math.outsCount ? `<div class="flex justify-between gap-4"><span class="text-slate-500">Outs</span><span class="font-bold text-slate-300">${math.outsCount}</span></div>` : '',
+                math.hint ? `<div class="mt-2 text-[11px] text-slate-400 leading-snug italic">${math.hint}</div>` : ''
+            ].filter(Boolean).join('');
+
+            mathPanelHtml = `<div id="sim-math-panel" class="${_simMathVisible ? '' : 'hidden'} mt-3 w-full max-w-xs bg-slate-900/80 border border-slate-700/60 rounded-2xl p-4 text-xs flex flex-col gap-1.5">${mathRows}</div>`;
+        }
+
+        el.innerHTML = `
+            <div class="flex flex-wrap justify-center gap-3 mb-2">${btnRowHtml}</div>
+            <button onclick="toggleSimMath()" class="mt-1 text-[11px] text-slate-600 hover:text-slate-400 font-bold transition-colors">[Show math]</button>
+            ${mathPanelHtml}
+        `;
+        return;
+    }
+
+    // Fallback
+    el.innerHTML = `<div class="text-slate-600 text-sm">Processing...</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// _simBuildSummaryHtml — end-of-hand summary panel HTML
+// ---------------------------------------------------------------------------
+function _simBuildSummaryHtml(handRun) {
+    const summary = getHandSummary(handRun);
+    const outcome = handRun.outcome;
+
+    // Outcome line
+    let outcomeLine = '';
+    if (outcome) {
+        if (outcome.heroNetBB > 0) {
+            outcomeLine = `<span class="text-emerald-400 font-black">Hero wins ${outcome.heroNetBB.toFixed(1)}bb</span>`;
+        } else if (outcome.heroNetBB < 0) {
+            outcomeLine = `<span class="text-rose-400 font-black">Hero loses ${Math.abs(outcome.heroNetBB).toFixed(1)}bb</span>`;
+        } else {
+            outcomeLine = `<span class="text-slate-300 font-black">Breakeven</span>`;
+        }
+        if (outcome.showdownReached) {
+            outcomeLine = `Showdown — ` + outcomeLine;
+        } else {
+            const villainSeat = handRun.seats.find(s => s !== null && !s.isHero);
+            const heroSeat = handRun.seats[handRun.heroSeatIndex];
+            const heroFolded = heroSeat && heroSeat.folded;
+            const villainFolded = villainSeat && villainSeat.folded;
+            if (villainFolded) outcomeLine = `Villain folded — ` + outcomeLine;
+            else if (heroFolded) outcomeLine = `Hero folded — ` + outcomeLine;
+        }
+    }
+
+    // Decision rows
+    const gradeIcon = { correct: '✓', error: '✗', mixed: '~', null: '' };
+    const gradeColor = { correct: 'text-emerald-400', error: 'text-rose-400', mixed: 'text-amber-400' };
+    const streetBadgeColor = { preflop: 'bg-indigo-900/60 text-indigo-300', flop: 'bg-amber-900/40 text-amber-300', turn: 'bg-orange-900/40 text-orange-300', river: 'bg-rose-900/40 text-rose-300' };
+
+    const rowsHtml = summary.streetSummaries.map(row => {
+        const gc = gradeColor[row.grade] || 'text-slate-400';
+        const gi = gradeIcon[row.grade] || '';
+        const bc = streetBadgeColor[row.street] || 'bg-slate-800 text-slate-400';
+        const wrongAction = (row.grade === 'error') ? `<span class="text-slate-500 text-[10px] ml-1">→ should be <span class="text-slate-300">${simActionLabel(row.correctAction)}</span></span>` : '';
+        const expHtml = row.explanation ? `<div class="text-[10px] text-slate-500 leading-snug mt-0.5">${row.explanation}</div>` : '';
+        return `<div class="flex flex-col gap-0.5 py-2 border-b border-slate-800/60 last:border-0">
+            <div class="flex items-center gap-2">
+                <span class="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${bc}">${row.street}</span>
+                <span class="text-sm font-bold text-slate-200">${simActionLabel(row.heroAction)}</span>
+                <span class="${gc} font-black text-sm">${gi}</span>
+                ${wrongAction}
+            </div>
+            ${expHtml}
+        </div>`;
+    }).join('');
+
+    return `
+        <div class="w-full max-w-xs flex flex-col gap-4">
+            <!-- Outcome -->
+            <div class="text-center text-base py-2">${outcomeLine || '<span class="text-slate-400">Hand complete</span>'}</div>
+
+            <!-- Decision review -->
+            <div class="bg-slate-900/60 border border-slate-800/60 rounded-2xl px-4 py-2 flex flex-col">
+                ${rowsHtml || '<div class="text-slate-600 text-xs py-2 text-center">No decisions recorded.</div>'}
+            </div>
+
+            <!-- Line assessment -->
+            <div class="text-[11px] text-slate-500 italic text-center px-2">${summary.lineAssessment}</div>
+
+            <!-- Navigation buttons -->
+            <div class="flex flex-col gap-3">
+                <button onclick="startSimulator()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-sm transition-all">
+                    Play Another Hand
+                </button>
+                <button onclick="showMenu()" class="w-full py-3 bg-slate-900 border border-slate-700 hover:border-slate-500 active:scale-[0.98] rounded-2xl font-bold text-slate-300 text-sm transition-all">
+                    Back to Menu
+                </button>
+            </div>
+        </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// handleSimAction — called by action button taps
+// ---------------------------------------------------------------------------
+function handleSimAction(action) {
+    if (!_simRun) return;
+    if (isTerminal(_simRun)) return;
+
+    _simMathVisible = false;  // reset math panel on each action
+    _simRun = applyHeroAction(_simRun, action);
+    renderSimScreen();
+
+    // If the new state needs villain to act, queue it (renderSimActionArea handles setTimeout,
+    // but if applyHeroAction returned villain_response we let renderSimScreen's action area do it)
+}
+
+// ---------------------------------------------------------------------------
+// toggleSimMath — show/hide mathContext panel (pure DOM toggle, no state mutation)
+// ---------------------------------------------------------------------------
+function toggleSimMath() {
+    _simMathVisible = !_simMathVisible;
+    const panel = document.getElementById('sim-math-panel');
+    if (panel) {
+        panel.classList.toggle('hidden', !_simMathVisible);
+    }
+    // Update toggle label
+    const btn = document.querySelector('#sim-action-area button[onclick="toggleSimMath()"]');
+    if (btn) btn.textContent = _simMathVisible ? '[Hide math]' : '[Show math]';
+}
