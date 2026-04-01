@@ -442,9 +442,10 @@ function advanceStreet(handRun) {
         if (spot && spot.flopCards) {
             hr.board = [...spot.flopCards];
         }
-        hr.actingIndex = hr.heroSeatIndex; // IP hero acts first on flop in BTN_vs_BB
-        hr.nodeType = 'hero_decision';
-        resolveDecisionNode(hr);
+        // OOP (BB/villain) acts first postflop — resolveDecisionNode called after villain acts
+        const vSeatF = hr.seats.find(s => s !== null && !s.isHero);
+        hr.actingIndex = vSeatF ? vSeatF.index : 1;
+        hr.nodeType = 'villain_response';
 
     } else if (nextStreet === 'turn') {
         // Check flop action history to decide which turn generator to use
@@ -460,9 +461,10 @@ function advanceStreet(handRun) {
         if (spot && spot.turnCard) {
             hr.board = [...(spot.flopCards || hr.board.slice(0, 3)), spot.turnCard];
         }
-        hr.actingIndex = hr.heroSeatIndex;
-        hr.nodeType = 'hero_decision';
-        resolveDecisionNode(hr);
+        // OOP (BB/villain) acts first postflop
+        const vSeatT = hr.seats.find(s => s !== null && !s.isHero);
+        hr.actingIndex = vSeatT ? vSeatT.index : 1;
+        hr.nodeType = 'villain_response';
 
     } else if (nextStreet === 'river') {
         // Pass 1: no river spot generators — skip straight to showdown
