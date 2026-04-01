@@ -9,7 +9,8 @@
       "Bash(echo \"$f OK\")",
       "Bash(echo \"$f FAILED\")",
       "Bash(done)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(python3:*)"
     ]
   }
 }
