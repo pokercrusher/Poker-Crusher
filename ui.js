@@ -2748,56 +2748,87 @@ function hideUserStats() {
 // PROFILE (simple username) — namespaced storage keys
 // ============================================================
 
+
 // ============================================================
 // === SIMULATOR UI ===
-// Pass 2 REDO: simulator wired into #trainer-screen (no custom screen).
-// All functions in this section are new — nothing above is modified.
+// Pass 2 REDO (fixed): bugs addressed —
+//   1. Cards no longer re-flip on every state change (_simTableInitialized guard)
+//   2. Summary uses #turn-context-line (flex-1) + hides table — no more squish
+//   3. River skipped in sim.js — turn now terminates correctly
+//   4. Villain action shown inline with delay; street context in #scenario-hint
+// All functions here are new — nothing above is modified.
 // ============================================================
 
 let _simRun = null;
 let _simPendingTimeout = null;
+let _simTableInitialized = false;   // guard: only set up table/cards once per hand
 
 // ---------------------------------------------------------------------------
-// simActionLabel — human-readable labels for action strings
+// simActionLabel
 // ---------------------------------------------------------------------------
 function simActionLabel(action) {
     const map = {
-        'fold': 'Fold',
-        'call': 'Call',
-        'check': 'Check',
-        'raise_2.5bb': 'Raise 2.5bb',
-        'raise_3bb': 'Raise 3bb',
-        'raise_4bb': 'Raise 4bb',
-        '3bet_9bb': '3-Bet 9bb',
-        'bet_33pct': 'Bet 33%',
-        'raise_2.5x': 'Raise 2.5x'
+        'fold': 'Fold', 'call': 'Call', 'check': 'Check',
+        'raise_2.5bb': 'Raise 2.5bb', 'raise_3bb': 'Raise 3bb', 'raise_4bb': 'Raise 4bb',
+        '3bet_9bb': '3-Bet 9bb', 'bet_33pct': 'Bet 33%', 'raise_2.5x': 'Raise 2.5x'
     };
     return map[action] || action;
 }
 
 // ---------------------------------------------------------------------------
-// startSimulator — entry point from menu "PLAY A HAND" button
+// _simSetScenarioHint — writes street/context into #scenario-hint
+// ---------------------------------------------------------------------------
+function _simSetScenarioHint(text) {
+    const el = document.getElementById('scenario-hint');
+    if (el) el.textContent = text || '';
+}
+
+// ---------------------------------------------------------------------------
+// _simRestoreLayout — undo terminal layout overrides before new hand / exit
+// ---------------------------------------------------------------------------
+function _simRestoreLayout() {
+    try {
+        const tw = document.getElementById('table-wrapper');
+        if (tw) tw.classList.remove('hidden');
+        const ha = document.getElementById('hero-area');
+        if (ha) ha.classList.remove('hidden');
+        const tcl = document.getElementById('turn-context-line');
+        if (tcl) {
+            tcl.classList.add('hidden');
+            tcl.style.flex = '';
+            tcl.style.overflowY = '';
+            tcl.style.minHeight = '';
+            tcl.style.padding = '';
+            tcl.innerHTML = '';
+        }
+    } catch(_) {}
+}
+
+// ---------------------------------------------------------------------------
+// startSimulator — entry point; also called by "Play Another Hand"
 // ---------------------------------------------------------------------------
 function startSimulator() {
     try { __clearNextTimer(); __endResolve(); } catch(_) {}
     try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
 
+    _simTableInitialized = false;
     _simRun = createHandRun({ lane: 'BTN_vs_BB_SRP' });
 
-    // Boot trainer screen the same way startConfiguredTraining does
     hideAllScreens();
     document.getElementById('trainer-screen').classList.remove('hidden');
     if (typeof window._trainerLayoutBoot === 'function') window._trainerLayoutBoot();
     try { ensureTableLayers(true); } catch(_) {}
 
-    // Hide trainer-specific chrome that doesn't apply to simulator
-    try { document.getElementById('dr-round-counter').classList.add('hidden'); } catch(_) {}
-    try { document.getElementById('drill-counter').classList.add('hidden'); } catch(_) {}
-    try { document.getElementById('streak-best-block').classList.add('hidden'); } catch(_) {}
-    try { document.getElementById('stack-bb-badge').classList.add('hidden'); } catch(_) {}
+    // Restore layout (clears any terminal-state overrides from the previous hand)
+    _simRestoreLayout();
 
-    // Set state.currentPos so animateHeroBetDollars / _heroSeatPct know where hero sits
+    // Hide trainer chrome that doesn't apply here
+    ['dr-round-counter', 'drill-counter', 'streak-best-block',
+     'stack-bb-badge', 'flop-info-line'].forEach(function(id) {
+        try { document.getElementById(id).classList.add('hidden'); } catch(_) {}
+    });
+
     state.currentPos = 'BTN';
     state.oppPos = 'BB';
 
@@ -2805,35 +2836,36 @@ function startSimulator() {
 }
 
 // ---------------------------------------------------------------------------
-// _simRenderRound — main render; called after every state change
+// _simRenderRound — main render; guards re-initializing table/cards each call
 // ---------------------------------------------------------------------------
 function _simRenderRound() {
     if (!_simRun) return;
     const h = _simRun;
 
-    // 1. Update table seats — hero BTN, villain BB
-    updateTable('BTN', 'BB');
+    // One-time per hand: set up table layout and deal/flip hero cards
+    if (!_simTableInitialized) {
+        _simTableInitialized = true;
+        updateTable('BTN', 'BB');
 
-    // 2. Render hero hole cards — convert ['Ah','Kd'] strings to {rank,suit} objects
-    const heroSeat = h.seats[h.heroSeatIndex];
-    if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
-        const heroHandObj = {
-            cards: heroSeat.holeCards.map(function(c) {
-                return typeof c === 'string' ? { rank: c[0], suit: c[1] } : c;
-            })
-        };
-        renderHand(heroHandObj);
-        setTimeout(flipHeroCards, 50);
+        const heroSeat = h.seats[h.heroSeatIndex];
+        if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
+            renderHand({
+                cards: heroSeat.holeCards.map(function(c) {
+                    return typeof c === 'string' ? { rank: c[0], suit: c[1] } : c;
+                })
+            });
+            setTimeout(flipHeroCards, 80);
+        }
     }
 
-    // 3. Board cards — renderCommunityCards expects [{rank,suit}] objects
+    // Board: update on every render (cards appear as streets advance)
     if (h.board && h.board.length > 0) {
         renderCommunityCards(h.board);
     } else {
         clearCommunityCards();
     }
 
-    // 4. Pot badge — update bets-layer with current pot
+    // Pot badge: update in-place so bets-layer card-backs survive
     try {
         const betsLayer = document.getElementById('bets-layer');
         if (betsLayer) {
@@ -2843,43 +2875,84 @@ function _simRenderRound() {
         }
     } catch(_) {}
 
-    // 5. Action area
     _simRenderActionArea(h);
 }
 
 // ---------------------------------------------------------------------------
-// _simRenderActionArea — Zone 4 dispatcher
+// _simRenderActionArea — dispatches on nodeType; manages layout for terminal
 // ---------------------------------------------------------------------------
 function _simRenderActionArea(h) {
     const container = document.getElementById('action-buttons');
     if (!container) return;
-
     setSizingHint('');
 
     const btnStyle = 'style="padding:var(--btn-pad,14px) 0;font-size:var(--btn-font,14px);"';
 
-    // --- Terminal ---
+    // ---- Terminal: collapse table, expand #turn-context-line for review ----
     if (isTerminal(h)) {
-        container.innerHTML = _simBuildSummaryHtml(h);
+        try { document.getElementById('table-wrapper').classList.add('hidden'); } catch(_) {}
+        try { document.getElementById('hero-area').classList.add('hidden'); } catch(_) {}
+        try { document.getElementById('community-cards-strip').classList.add('hidden'); } catch(_) {}
+        try { document.getElementById('postflop-card-divider').classList.add('hidden'); } catch(_) {}
+
+        const tcl = document.getElementById('turn-context-line');
+        if (tcl) {
+            tcl.classList.remove('hidden');
+            tcl.style.flex = '1';
+            tcl.style.overflowY = 'auto';
+            tcl.style.minHeight = '0';
+            tcl.style.padding = '8px 0';
+            tcl.innerHTML = _simBuildReviewHtml(h);
+        }
+
+        container.innerHTML =
+            '<div class="flex flex-col gap-3 action-buttons-revealed">' +
+            '<button onclick="startSimulator()" ' + btnStyle + ' class="pc-btn pc-btn-primary w-full">Play Another Hand</button>' +
+            '<button onclick="_simExitToMenu()" ' + btnStyle + ' class="pc-btn pc-btn-fold w-full">Back to Menu</button>' +
+            '</div>';
+        _simSetScenarioHint('Hand Complete');
         return;
     }
 
-    // --- Villain response ---
+    // ---- Villain response ----
     if (h.nodeType === 'villain_response') {
-        container.innerHTML = '<div class="text-center text-slate-400 font-bold py-4" style="font-size:var(--btn-font,14px);">Villain thinking...</div>';
+        container.innerHTML =
+            '<div class="text-center text-slate-400 font-bold py-3" style="font-size:var(--btn-font,14px);">Villain thinking\u2026</div>';
         _simPendingTimeout = setTimeout(function() {
             _simPendingTimeout = null;
             _simRun = applyVillainAction(_simRun);
-            const lastAction = _simRun.actionHistory[_simRun.actionHistory.length - 1];
-            if (lastAction) showToast('Villain: ' + simActionLabel(lastAction.action), 'neutral', 900);
-            _simRenderRound();
-        }, 600);
+            const lastAct = _simRun.actionHistory[_simRun.actionHistory.length - 1];
+            const actLabel = lastAct ? simActionLabel(lastAct.action) : '';
+
+            // Show villain action on their seat badge
+            try {
+                const bbEl = document.getElementById('seat-BB');
+                if (bbEl && lastAct) {
+                    const bc = lastAct.action === 'fold' ? 'badge-fold'
+                        : lastAct.action === 'call' ? 'badge-call' : 'badge-raise';
+                    showActionBadge(bbEl, actLabel.toUpperCase(), bc, 1000);
+                }
+            } catch(_) {}
+
+            // Show inline for 1.1s so player can read it before buttons appear
+            if (container && actLabel) {
+                const badgeColor = lastAct.action === 'fold' ? 'text-rose-400'
+                    : lastAct.action === 'call' ? 'text-emerald-400'
+                    : 'text-amber-400';
+                container.innerHTML =
+                    '<div class="text-center py-3">' +
+                    '<span class="text-slate-400 font-bold" style="font-size:var(--btn-font,14px);">Villain: </span>' +
+                    '<span class="font-black ' + badgeColor + '" style="font-size:var(--btn-font,14px);">' + actLabel + '</span></div>';
+            }
+            setTimeout(function() { _simRenderRound(); }, 1100);
+        }, 500);
         return;
     }
 
-    // --- Street advance ---
+    // ---- Street advance (triggered from _simRenderActionArea, not applyVillainAction) ----
     if (h.nodeType === 'street_advance') {
-        container.innerHTML = '<div class="text-center text-slate-500 font-bold py-4" style="font-size:var(--btn-font,14px);">Dealing...</div>';
+        container.innerHTML =
+            '<div class="text-center text-slate-500 font-bold py-3" style="font-size:var(--btn-font,14px);">Dealing\u2026</div>';
         _simPendingTimeout = setTimeout(function() {
             _simPendingTimeout = null;
             _simRun = advanceStreet(_simRun);
@@ -2888,18 +2961,28 @@ function _simRenderActionArea(h) {
         return;
     }
 
-    // --- Hero decision ---
+    // ---- Hero decision ----
     if (h.nodeType === 'hero_decision') {
         const actions = getAvailableActions(h);
         const node = [...h.decisionNodes].reverse().find(function(n) { return n.heroAction === null; });
         const math = node ? node.mathContext : null;
+
+        // Street + board context in scenario-hint
+        const boardStr = (h.board && h.board.length > 0)
+            ? ' \u00b7 ' + h.board.map(function(c) {
+                return typeof c === 'string' ? c : (c.rank + c.suit);
+              }).join(' ')
+            : '';
+        _simSetScenarioHint(h.street.toUpperCase() + boardStr);
 
         const cols = actions.length <= 2 ? 2 : 3;
         const btns = actions.map(function(action) {
             const label = simActionLabel(action);
             const isFold = action === 'fold';
             const isAggr = action.startsWith('raise') || action.startsWith('3bet') || action.startsWith('bet');
-            const cls = isFold ? 'pc-btn pc-btn-fold' : isAggr ? 'pc-btn pc-btn-aggressive' : 'pc-btn pc-btn-passive';
+            const cls = isFold ? 'pc-btn pc-btn-fold'
+                : isAggr ? 'pc-btn pc-btn-aggressive'
+                : 'pc-btn pc-btn-passive';
             return '<button onclick="handleSimAction(\'' + action + '\')" ' + btnStyle + ' class="' + cls + '">' + label + '</button>';
         }).join('');
 
@@ -2907,21 +2990,22 @@ function _simRenderActionArea(h) {
         if (math && (math.potOddsRatio || (math.heroEquityEst !== null && math.heroEquityEst !== undefined))) {
             const parts = [];
             if (math.potOddsRatio) parts.push('Pot odds: ' + math.potOddsRatio + ' (need ' + math.potOddsPct + '%)');
-            if (math.heroEquityEst !== null && math.heroEquityEst !== undefined) parts.push('Est. equity: ~' + math.heroEquityEst + '%');
+            if (math.heroEquityEst !== null && math.heroEquityEst !== undefined) parts.push('Equity: ~' + math.heroEquityEst + '%');
             if (math.outsCount) parts.push('Outs: ' + math.outsCount);
-            mathHtml = '<div id="sim-math-hint" class="hidden text-center text-slate-400 font-bold mt-1" style="font-size:var(--hint-size,13px);">' + parts.join(' · ') + '</div>' +
-                '<div class="text-center mt-1"><button onclick="toggleSimMath()" class="text-slate-600 hover:text-slate-400 font-bold" style="font-size:11px;">[Show math]</button></div>';
+            mathHtml =
+                '<div id="sim-math-hint" class="hidden text-center text-slate-400 font-bold mt-1" style="font-size:var(--hint-size,13px);">' +
+                parts.join(' \u00b7 ') + '</div>' +
+                '<div class="text-center mt-0.5"><button onclick="toggleSimMath()" class="text-slate-600 hover:text-slate-400 font-bold" style="font-size:11px;">[Show math]</button></div>';
         }
 
-        container.innerHTML = '<div class="grid grid-cols-' + cols + ' gap-3 action-buttons-revealed">' + btns + '</div>' + mathHtml;
-
-        showToast(h.street.toUpperCase(), 'neutral', 800);
+        container.innerHTML =
+            '<div class="grid grid-cols-' + cols + ' gap-3 action-buttons-revealed">' + btns + '</div>' + mathHtml;
         return;
     }
 }
 
 // ---------------------------------------------------------------------------
-// handleSimAction — called by action button taps
+// handleSimAction — button tap handler
 // ---------------------------------------------------------------------------
 function handleSimAction(action) {
     if (!_simRun || isTerminal(_simRun)) return;
@@ -2930,17 +3014,16 @@ function handleSimAction(action) {
     const isBet = action.startsWith('raise') || action.startsWith('bet') || action.startsWith('3bet');
     if (isBet) {
         try {
-            const sizingMatch = action.match(/([\d.]+)bb/);
-            const amountBB = sizingMatch ? parseFloat(sizingMatch[1]) : 2.5;
-            animateHeroBetDollars(amountBB * getBigBlind$());
+            const m = action.match(/([\d.]+)bb/);
+            animateHeroBetDollars((m ? parseFloat(m[1]) : 2.5) * getBigBlind$());
         } catch(_) {}
     }
 
     try {
-        const heroSeatEl = document.getElementById('seat-BTN');
-        if (heroSeatEl) {
-            const badgeCls = isBet ? 'badge-raise' : action === 'fold' ? 'badge-fold' : 'badge-call';
-            showActionBadge(heroSeatEl, simActionLabel(action).toUpperCase(), badgeCls, 700);
+        const heroEl = document.getElementById('seat-BTN');
+        if (heroEl) {
+            const bc = isBet ? 'badge-raise' : action === 'fold' ? 'badge-fold' : 'badge-call';
+            showActionBadge(heroEl, simActionLabel(action).toUpperCase(), bc, 700);
         }
     } catch(_) {}
 
@@ -2965,7 +3048,9 @@ function toggleSimMath() {
 function _simExitToMenu() {
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
     _simRun = null;
-    try { if (typeof clearCommunityCards === 'function') clearCommunityCards(); } catch(_) {}
+    _simTableInitialized = false;
+    _simRestoreLayout();
+    try { clearCommunityCards(); } catch(_) {}
     try { if (typeof window._trainerLayoutTeardown === 'function') window._trainerLayoutTeardown(); } catch(_) {}
     hideAllScreens();
     document.getElementById('menu-screen').classList.remove('hidden');
@@ -2973,65 +3058,62 @@ function _simExitToMenu() {
 }
 
 // ---------------------------------------------------------------------------
-// _simBuildSummaryHtml — end-of-hand review panel (rendered into #action-buttons)
+// _simBuildReviewHtml — summary rendered into #turn-context-line
 // ---------------------------------------------------------------------------
-function _simBuildSummaryHtml(h) {
+function _simBuildReviewHtml(h) {
     const summary = getHandSummary(h);
     const outcome = h.outcome;
 
-    let outcomeLine = '';
+    let outcomeLine = 'Hand complete';
     if (outcome) {
-        let resultSpan;
-        if (outcome.heroNetBB > 0) {
-            resultSpan = '<span class="text-emerald-400 font-black">Hero wins ' + outcome.heroNetBB.toFixed(1) + 'bb</span>';
-        } else if (outcome.heroNetBB < 0) {
-            resultSpan = '<span class="text-rose-400 font-black">Hero loses ' + Math.abs(outcome.heroNetBB).toFixed(1) + 'bb</span>';
-        } else {
-            resultSpan = '<span class="text-slate-300 font-black">Breakeven</span>';
-        }
-        if (outcome.showdownReached) {
-            outcomeLine = 'Showdown — ' + resultSpan;
-        } else {
-            const heroSeat = h.seats[h.heroSeatIndex];
-            const villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
-            if (villainSeat && villainSeat.folded) outcomeLine = 'Villain folded — ' + resultSpan;
-            else if (heroSeat && heroSeat.folded) outcomeLine = 'Hero folded — ' + resultSpan;
-            else outcomeLine = resultSpan;
-        }
+        const heroSeat = h.seats[h.heroSeatIndex];
+        const villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
+        const prefix = outcome.showdownReached ? 'Showdown' :
+            (villainSeat && villainSeat.folded) ? 'Villain folded' :
+            (heroSeat && heroSeat.folded) ? 'Hero folded' : '';
+        let resultStr;
+        if (outcome.heroNetBB > 0)
+            resultStr = '<span class="text-emerald-400 font-black">+' + outcome.heroNetBB.toFixed(1) + 'bb</span>';
+        else if (outcome.heroNetBB < 0)
+            resultStr = '<span class="text-rose-400 font-black">' + outcome.heroNetBB.toFixed(1) + 'bb</span>';
+        else
+            resultStr = '<span class="text-slate-400 font-black">0bb</span>';
+        outcomeLine = (prefix ? prefix + ' \u2014 ' : '') + resultStr;
     }
 
-    const gradeIcon = { correct: '✓', error: '✗', mixed: '~' };
+    const gradeIcon  = { correct: '\u2713', error: '\u2717', mixed: '\u2248' };
     const gradeColor = { correct: 'text-emerald-400', error: 'text-rose-400', mixed: 'text-amber-400' };
-    const streetBg = { preflop: 'bg-indigo-900/60 text-indigo-300', flop: 'bg-amber-900/40 text-amber-300', turn: 'bg-orange-900/40 text-orange-300', river: 'bg-rose-900/40 text-rose-300' };
+    const streetBg   = {
+        preflop: 'bg-indigo-900/60 text-indigo-300',
+        flop:    'bg-amber-900/40 text-amber-300',
+        turn:    'bg-orange-900/40 text-orange-300',
+        river:   'bg-rose-900/40 text-rose-300'
+    };
 
     const rowsHtml = summary.streetSummaries.map(function(row) {
-        const gc = gradeColor[row.grade] || 'text-slate-400';
-        const gi = gradeIcon[row.grade] || '';
+        if (!row.heroAction) return '';
+        const gc = gradeColor[row.grade] || 'text-slate-500';
+        const gi = gradeIcon[row.grade] || '?';
         const bc = streetBg[row.street] || 'bg-slate-800 text-slate-400';
-        const wrongSpan = (row.grade === 'error')
-            ? '<span class="text-slate-500 text-[10px] ml-1">→ <span class="text-slate-300">' + simActionLabel(row.correctAction) + '</span></span>'
+        const corrSpan = (row.grade === 'error')
+            ? ' <span class="text-slate-500 text-[10px]">\u2192 <span class="text-slate-300">' + simActionLabel(row.correctAction) + '</span></span>'
             : '';
         const expHtml = row.explanation
-            ? '<div class="text-[10px] text-slate-500 leading-snug mt-0.5">' + row.explanation + '</div>'
+            ? '<div class="text-[10px] text-slate-500 leading-snug mt-0.5 pl-1">' + row.explanation + '</div>'
             : '';
-        return '<div class="flex flex-col gap-0.5 py-2 border-b border-slate-800/60 last:border-0">' +
+        return '<div class="flex flex-col py-2 border-b border-slate-800/50 last:border-0">' +
             '<div class="flex items-center gap-2">' +
-            '<span class="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ' + bc + '">' + row.street + '</span>' +
+            '<span class="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ' + bc + '">' + row.street + '</span>' +
             '<span class="text-sm font-bold text-slate-200">' + simActionLabel(row.heroAction) + '</span>' +
-            '<span class="' + gc + ' font-black text-sm">' + gi + '</span>' +
-            wrongSpan +
-            '</div>' + expHtml + '</div>';
-    }).join('');
+            '<span class="font-black ' + gc + '">' + gi + '</span>' +
+            corrSpan + '</div>' + expHtml + '</div>';
+    }).filter(Boolean).join('');
 
-    return '<div class="action-buttons-revealed w-full flex flex-col gap-4">' +
-        '<div class="text-center text-base py-1">' + (outcomeLine || '<span class="text-slate-400">Hand complete</span>') + '</div>' +
-        '<div class="bg-slate-900/60 border border-slate-800/60 rounded-2xl px-4 py-2 flex flex-col">' +
-        (rowsHtml || '<div class="text-slate-600 text-xs py-2 text-center">No decisions recorded.</div>') +
-        '</div>' +
-        '<div class="text-[11px] text-slate-500 italic text-center px-2">' + summary.lineAssessment + '</div>' +
-        '<div class="flex flex-col gap-3">' +
-        '<button onclick="startSimulator()" ' + 'style="padding:var(--btn-pad,14px) 0;font-size:var(--btn-font,14px);" class="pc-btn pc-btn-primary w-full">Play Another Hand</button>' +
-        '<button onclick="_simExitToMenu()" ' + 'style="padding:var(--btn-pad,14px) 0;font-size:var(--btn-font,14px);" class="pc-btn pc-btn-fold w-full">Back to Menu</button>' +
-        '</div></div>';
+    return '<div class="w-full max-w-sm mx-auto px-4 flex flex-col gap-3 pb-2">' +
+        '<div class="text-center text-base font-bold py-1">' + outcomeLine + '</div>' +
+        (rowsHtml
+            ? '<div class="bg-slate-900/60 border border-slate-800/60 rounded-2xl px-3 py-1 flex flex-col">' + rowsHtml + '</div>'
+            : '') +
+        '<div class="text-[11px] text-slate-500 italic text-center">' + summary.lineAssessment + '</div>' +
+        '</div>';
 }
-

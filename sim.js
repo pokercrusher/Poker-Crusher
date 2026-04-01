@@ -465,9 +465,12 @@ function advanceStreet(handRun) {
         resolveDecisionNode(hr);
 
     } else if (nextStreet === 'river') {
-        // Pass 1: river just advances to terminal / showdown after action
-        hr.actingIndex = hr.heroSeatIndex;
-        hr.nodeType = 'hero_decision';
+        // Pass 1: no river spot generators — skip straight to showdown
+        // EXTENSION Pass 3: river street — call generateRiverCBetSpot / generateRiverDefendSpot
+        hr.street = 'showdown';
+        hr.nodeType = 'terminal';
+        hr.terminal = true;
+        _resolveOutcome(hr);
 
     } else if (nextStreet === 'showdown') {
         hr.nodeType = 'terminal';

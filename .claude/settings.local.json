@@ -10,7 +10,8 @@
       "Bash(echo \"$f FAILED\")",
       "Bash(done)",
       "Bash(wc:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(\"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\\\\ui.js\":*)"
     ]
   }
 }
