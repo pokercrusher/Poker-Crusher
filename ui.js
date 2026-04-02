@@ -2850,14 +2850,19 @@ function startSimulator() {
     });
 
     try { clearCommunityCards(); } catch(_) {}
-    // Clear stale terminal buttons and old hero cards before animation fires
-    try { const ab = document.getElementById('action-buttons'); if (ab) ab.innerHTML = ''; } catch(_) {}
-    try { const hd = document.getElementById('hand-display'); if (hd) hd.innerHTML = ''; } catch(_) {}
 
     state.currentPos = 'BTN';
     state.oppPos = 'BB';
     state.scenario = 'FACING_RFI';
     state.villainOpenSize = getOpenSize$();
+
+    // Show card backs + greyed-out buttons before animation (matches trainer UX)
+    renderHeroCardBacks();
+    _simRenderActionArea(_simRun);
+    try {
+        const btnDiv = document.querySelector('#action-buttons > div');
+        if (btnDiv) { btnDiv.classList.remove('action-buttons-revealed'); btnDiv.classList.add('action-buttons-hidden'); }
+    } catch(_) {}
 
     runTableAnimation('BTN', 'BB', 'FACING_RFI', function() {
         const heroSeat = _simRun.seats[_simRun.heroSeatIndex];
@@ -2867,10 +2872,10 @@ function startSimulator() {
                     return typeof c === 'string' ? { rank: c[0], suit: c[1] } : c;
                 })
             });
-            setTimeout(flipHeroCards, 50);
+            requestAnimationFrame(flipHeroCards);
         }
         _simTableInitialized = true;
-        _simRenderActionArea(_simRun);
+        revealButtons();
     });
 }
 
