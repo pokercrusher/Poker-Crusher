@@ -3078,13 +3078,41 @@ function _simExitToMenu() {
 // ---------------------------------------------------------------------------
 // _simBuildReviewHtml — summary rendered into #turn-context-line
 // ---------------------------------------------------------------------------
+function _simReviewCardHtml(card) {
+    // card is a string like "Ac", "Kh", or an object {rank, suit}
+    var rank, suit;
+    if (typeof card === 'string') {
+        rank = card.slice(0, -1);
+        suit = card.slice(-1);
+    } else {
+        rank = card.rank;
+        suit = card.suit;
+    }
+    var color = (suit === 'h' || suit === 'd') ? '#dc2626' : '#e2e8f0';
+    var sym = (typeof SUIT_SYMBOLS !== 'undefined' && SUIT_SYMBOLS[suit]) ? SUIT_SYMBOLS[suit] : suit;
+    return '<span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:44px;background:#1e293b;border:1.5px solid #334155;border-radius:6px;font-weight:900;font-size:13px;color:' + color + ';line-height:1;flex-direction:column;gap:1px;">' +
+        '<span>' + rank + '</span><span style="font-size:11px;">' + sym + '</span></span>';
+}
+
 function _simBuildReviewHtml(h) {
     const summary = getHandSummary(h);
     const outcome = h.outcome;
 
+    // Hero hole cards
+    const heroSeat = h.seats[h.heroSeatIndex];
+    const holeCards = heroSeat && heroSeat.holeCards;
+    const cardsHtml = holeCards && holeCards.length >= 2
+        ? '<div class="flex justify-center gap-2 mb-1">' + holeCards.map(_simReviewCardHtml).join('') + '</div>'
+        : '';
+
+    // Board cards
+    const boardHtml = (h.board && h.board.length > 0)
+        ? '<div class="flex justify-center gap-1.5 mb-1">' + h.board.map(_simReviewCardHtml).join('') + '</div>'
+        : '';
+
+    // Outcome line
     let outcomeLine = 'Hand complete';
     if (outcome) {
-        const heroSeat = h.seats[h.heroSeatIndex];
         const villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
         const prefix = outcome.showdownReached ? 'Showdown' :
             (villainSeat && villainSeat.folded) ? 'Villain folded' :
@@ -3114,24 +3142,26 @@ function _simBuildReviewHtml(h) {
         const gi = gradeIcon[row.grade] || '?';
         const bc = streetBg[row.street] || 'bg-slate-800 text-slate-400';
         const corrSpan = (row.grade === 'error')
-            ? ' <span class="text-slate-500 text-[10px]">\u2192 <span class="text-slate-300">' + simActionLabel(row.correctAction) + '</span></span>'
+            ? '<div class="text-xs text-slate-400 mt-1 pl-1">\u2192 should be <span class="text-slate-100 font-bold">' + simActionLabel(row.correctAction) + '</span></div>'
             : '';
         const expHtml = row.explanation
-            ? '<div class="text-[10px] text-slate-500 leading-snug mt-0.5 pl-1">' + row.explanation + '</div>'
+            ? '<div class="text-xs text-slate-500 leading-snug mt-1 pl-1">' + row.explanation + '</div>'
             : '';
-        return '<div class="flex flex-col py-2 border-b border-slate-800/50 last:border-0">' +
+        return '<div class="flex flex-col py-3 border-b border-slate-800/50 last:border-0">' +
             '<div class="flex items-center gap-2">' +
-            '<span class="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ' + bc + '">' + row.street + '</span>' +
-            '<span class="text-sm font-bold text-slate-200">' + simActionLabel(row.heroAction) + '</span>' +
-            '<span class="font-black ' + gc + '">' + gi + '</span>' +
-            corrSpan + '</div>' + expHtml + '</div>';
+            '<span class="shrink-0 text-xs font-black uppercase tracking-wide px-2 py-0.5 rounded ' + bc + '">' + row.street + '</span>' +
+            '<span class="text-base font-bold text-slate-100 flex-1">' + simActionLabel(row.heroAction) + '</span>' +
+            '<span class="text-lg font-black ' + gc + '">' + gi + '</span>' +
+            '</div>' + corrSpan + expHtml + '</div>';
     }).filter(Boolean).join('');
 
-    return '<div class="w-full max-w-sm mx-auto px-4 flex flex-col gap-3 pb-2">' +
-        '<div class="text-center text-base font-bold py-1">' + outcomeLine + '</div>' +
+    return '<div class="w-full max-w-sm mx-auto px-4 flex flex-col gap-3 pb-4">' +
+        cardsHtml +
+        boardHtml +
+        '<div class="text-center text-lg font-bold py-1">' + outcomeLine + '</div>' +
         (rowsHtml
             ? '<div class="bg-slate-900/60 border border-slate-800/60 rounded-2xl px-3 py-1 flex flex-col">' + rowsHtml + '</div>'
             : '') +
-        '<div class="text-[11px] text-slate-500 italic text-center">' + summary.lineAssessment + '</div>' +
+        '<div class="text-sm text-slate-400 italic text-center">' + summary.lineAssessment + '</div>' +
         '</div>';
 }
