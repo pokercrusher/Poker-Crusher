@@ -11,7 +11,8 @@
       "Bash(done)",
       "Bash(wc:*)",
       "Bash(python3:*)",
-      "Bash(\"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\\\\ui.js\":*)"
+      "Bash(\"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\\\\ui.js\":*)",
+      "Bash(ls \"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\"/*.js)"
     ]
   }
 }

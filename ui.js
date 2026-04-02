@@ -2810,6 +2810,8 @@ function _simRestoreLayout() {
             tcl.style.overflowY = '';
             tcl.style.minHeight = '';
             tcl.style.padding = '';
+            tcl.style.justifyContent = '';
+            tcl.style.alignItems = '';
             tcl.innerHTML = '';
         }
         // Restore elements hidden in terminal state
@@ -2930,11 +2932,13 @@ function _simRenderActionArea(h) {
             tcl.style.overflowY = 'auto';
             tcl.style.minHeight = '0';
             tcl.style.padding = '8px 0';
-            tcl.innerHTML = _simBuildReviewHtml(h);
+            tcl.style.justifyContent = 'flex-start';
+            tcl.style.alignItems = 'stretch';
+            try { tcl.innerHTML = _simBuildReviewHtml(h); } catch(_) { tcl.innerHTML = ''; }
         }
 
         container.innerHTML =
-            '<div class="flex flex-col gap-3 action-buttons-revealed">' +
+            '<div class="flex flex-col gap-3 w-full action-buttons-revealed">' +
             '<button onclick="startSimulator()" ' + btnStyle + ' class="pc-btn pc-btn-primary w-full">Play Another Hand</button>' +
             '<button onclick="_simExitToMenu()" ' + btnStyle + ' class="pc-btn pc-btn-fold w-full">Back to Menu</button>' +
             '</div>';
