@@ -2812,6 +2812,11 @@ function _simRestoreLayout() {
             tcl.style.padding = '';
             tcl.innerHTML = '';
         }
+        // Restore elements hidden in terminal state
+        const ccs = document.getElementById('community-cards-strip');
+        if (ccs) ccs.classList.remove('hidden');
+        const pcd = document.getElementById('postflop-card-divider');
+        if (pcd) pcd.classList.remove('hidden');
     } catch(_) {}
 }
 
@@ -2838,6 +2843,9 @@ function startSimulator() {
     });
 
     try { clearCommunityCards(); } catch(_) {}
+    // Clear stale terminal buttons and old hero cards before animation fires
+    try { const ab = document.getElementById('action-buttons'); if (ab) ab.innerHTML = ''; } catch(_) {}
+    try { const hd = document.getElementById('hand-display'); if (hd) hd.innerHTML = ''; } catch(_) {}
 
     state.currentPos = 'BTN';
     state.oppPos = 'BB';
@@ -2866,13 +2874,11 @@ function _simRenderRound() {
     if (!_simRun) return;
     const h = _simRun;
 
-    // One-time per hand: set up table seats (cards dealt once in startSimulator)
+    // One-time per hand: set up table seats
+    // Cards and table animation are handled by startSimulator → runTableAnimation
     if (!_simTableInitialized) {
         _simTableInitialized = true;
         updateTable('BTN', 'BB');
-    } else {
-        // Refresh seat positions on every state update
-        try { updateTable('BTN', 'BB'); } catch(_) {}
     }
 
     // Board: read exclusively from gameState.board — never from spot internal arrays
@@ -3091,6 +3097,13 @@ function _simExitToMenu() {
     _simTableInitialized = false;
     _simRestoreLayout();
     try { clearCommunityCards(); } catch(_) {}
+    // Restore trainer chrome hidden by startSimulator
+    ['dr-round-counter', 'drill-counter', 'streak-best-block',
+     'stack-bb-badge', 'flop-info-line'].forEach(function(id) {
+        try { document.getElementById(id).classList.remove('hidden'); } catch(_) {}
+    });
+    // Clean up sim-specific state properties so trainer starts fresh
+    try { delete state.scenario; delete state.currentPos; delete state.oppPos; delete state.villainOpenSize; } catch(_) {}
     try { if (typeof window._trainerLayoutTeardown === 'function') window._trainerLayoutTeardown(); } catch(_) {}
     hideAllScreens();
     document.getElementById('menu-screen').classList.remove('hidden');
