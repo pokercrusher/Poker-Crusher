@@ -1,7 +1,8 @@
-// sim.js — HandRun state machine (Pass 2.5: GameState formalization, poker accuracy,
-//   animation parity, math correctness)
-// Depends on: ranges.js (generatePostflopSpot, generateTurnCBetSpot,
-//   generateTurnDefendSpot, facingRfiRanges, RANKS)
+// sim.js — HandRun state machine (Pass 3: River, lane expansion, BB defense, CO/SB lanes)
+// Depends on: ranges.js (generatePostflopSpot, generateTurnCBetSpot, generateTurnDefendSpot,
+//   generateDelayedTurnSpot, generateRiverCBetSpot, generateRiverDefendSpot,
+//   generateRiverDelayedCBetSpot, generateRiverTurnCheckCBetSpot, generateRiverProbeSpot,
+//   facingRfiRanges, RANKS)
 //   engine.js (computeCorrectAction)
 //   ui.js globals (getOpenSizeBB, getBigBlind$, getOpenSize$, get3betSize$, getSRPPot$, formatAmt)
 // EXTENSION Pass 4: bankroll, session mode, career stats → sim_session.js
@@ -11,6 +12,29 @@
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+const SIM_SUPPORTED_LANES = [
+    'BTN_vs_BB_SRP',
+    'BB_vs_BTN_SRP',
+    'CO_vs_BB_SRP',
+    'SB_vs_BB_SRP'
+];
+
+// Maps lane → preflopFamily key used by getSRPPot$ and postflop generators
+const LANE_FAMILY = {
+    'BTN_vs_BB_SRP': 'BTN_vs_BB',
+    'BB_vs_BTN_SRP': 'BTN_vs_BB',
+    'CO_vs_BB_SRP':  'CO_vs_BB',
+    'SB_vs_BB_SRP':  'SB_vs_BB'
+};
+
+// Maps lane → familyFilter array passed to all postflop generators
+const LANE_POSTFLOP_FAMILY = {
+    'BTN_vs_BB_SRP': ['BTN_vs_BB'],
+    'BB_vs_BTN_SRP': ['BTN_vs_BB'],
+    'CO_vs_BB_SRP':  ['CO_vs_BB'],
+    'SB_vs_BB_SRP':  ['SB_vs_BB']
+};
 
 const _SIM_SUITS = ['c', 'd', 'h', 's'];
 
@@ -177,7 +201,8 @@ function _isStreetComplete(hr) {
 // ---------------------------------------------------------------------------
 
 function _heroIsIP(handRun) {
-    return handRun.seats[handRun.heroSeatIndex].label === 'BTN';
+    // IP lanes: hero is opener and acts last postflop
+    return ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP'].includes(handRun.lane);
     // EXTENSION Pass 5: generalize for all position matchups
 }
 
@@ -185,27 +210,60 @@ function _heroIsIP(handRun) {
 // _simResolveTurnGenerator — reads flop streetHistory to pick turn generator
 // ---------------------------------------------------------------------------
 
-function _simResolveTurnGenerator(gameState) {
+function _simResolveTurnGenerator(gameState, heroLabel, villainLabel) {
     const flopActions = gameState.streetHistory.flop || [];
-    const heroFlopAction = flopActions.find(a => a.seatLabel === 'BTN');
-    const villainFlopAction = flopActions.find(a => a.seatLabel === 'BB');
-
-    const heroBetFlop = heroFlopAction && heroFlopAction.action === 'bet';
+    const heroBetFlop = flopActions.some(a => a.seatLabel === heroLabel && a.action === 'bet');
     const heroCheckFlop = !heroBetFlop;
-    const villainBetFlop = villainFlopAction && villainFlopAction.action === 'bet';
-    const villainCheckFlop = villainFlopAction && villainFlopAction.action === 'check';
+    const villainBetFlop = flopActions.some(a => a.seatLabel === villainLabel && a.action === 'bet');
 
-    if (heroBetFlop && villainFlopAction && villainFlopAction.action === 'call') {
+    if (heroBetFlop && flopActions.some(a => a.seatLabel === villainLabel && a.action === 'call')) {
         return 'generateTurnCBetSpot';      // PFR bet flop, called — barreling
     }
-    if (heroCheckFlop && villainCheckFlop) {
-        return 'generateDelayedTurnSpot';   // both checked flop — delayed c-bet
+    if (heroCheckFlop && !villainBetFlop) {
+        return 'generateDelayedTurnSpot';   // both checked flop — delayed c-bet / OOP probe
     }
-    if (villainBetFlop && heroFlopAction && heroFlopAction.action === 'call') {
+    if (villainBetFlop && flopActions.some(a => a.seatLabel === heroLabel && a.action === 'call')) {
         return 'generateTurnDefendSpot';    // villain bet flop, hero called — defending
     }
     return 'generateTurnCBetSpot';          // fallback
-    // EXTENSION Pass 3: add river generator resolution using streetHistory.turn
+}
+
+// ---------------------------------------------------------------------------
+// _simResolveRiverGenerator — reads flop+turn streetHistory to pick river generator
+// ---------------------------------------------------------------------------
+
+function _simResolveRiverGenerator(gameState, heroLabel, villainLabel) {
+    const flopActions = gameState.streetHistory.flop || [];
+    const turnActions = gameState.streetHistory.turn || [];
+
+    const heroBetFlop  = flopActions.some(a => a.seatLabel === heroLabel  && a.action === 'bet');
+    const heroBetTurn  = turnActions.some(a => a.seatLabel === heroLabel  && a.action === 'bet');
+    const villainBetFlop = flopActions.some(a => a.seatLabel === villainLabel && a.action === 'bet');
+    const villainBetTurn = turnActions.some(a => a.seatLabel === villainLabel && a.action === 'bet');
+    const heroCheckFlop = !heroBetFlop;
+    const heroCheckTurn = !heroBetTurn;
+
+    // PFR bet flop + bet turn → river barrel
+    if (heroBetFlop && heroBetTurn) return 'generateRiverCBetSpot';
+
+    // PFR bet flop + checked turn (villain didn't bet either) → river turn-check c-bet
+    if (heroBetFlop && heroCheckTurn && !villainBetTurn) return 'generateRiverTurnCheckCBetSpot';
+
+    // Both checked flop + PFR bet turn → river barrel after delayed
+    if (heroCheckFlop && !villainBetFlop && heroBetTurn) return 'generateRiverDelayedCBetSpot';
+
+    // Villain bet flop, hero called → river defend
+    if (villainBetFlop && !heroBetFlop) return 'generateRiverDefendSpot';
+
+    // Villain bet turn, hero called → river defend
+    if (villainBetTurn && !heroBetTurn) return 'generateRiverDefendSpot';
+
+    // Both checked flop + both checked turn → river probe
+    if (heroCheckFlop && !villainBetFlop && heroCheckTurn && !villainBetTurn) {
+        return 'generateRiverProbeSpot';
+    }
+
+    return 'generateRiverCBetSpot'; // fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -316,22 +374,42 @@ function resolveDecisionNode(handRun) {
     let nodeId, spotType, boardTexture, correctAction, mixFrequency, explanation, availableActions, position;
     let callAmountBB = 0;
 
+    const heroLabel = heroSeat.label;
+
     if (street === 'preflop') {
-        nodeId = 'preflop_open_BTN';
-        spotType = 'RFI';
+        const heroHandNotation = _cardsToHandNotation(heroSeat.holeCards);
         boardTexture = null;
         availableActions = getAvailableActions(hr);
-        position = 'IP';
 
-        const heroHandNotation = _cardsToHandNotation(heroSeat.holeCards);
-        const rawAction = computeCorrectAction(heroHandNotation, 'RFI', 'BTN', '', null);
-        correctAction = rawAction === 'RAISE' ? 'raise' : 'fold';
-        mixFrequency = null;
-        explanation = rawAction === 'RAISE'
-            ? 'BTN RFI: hand is in open-raising range.'
-            : 'BTN RFI: hand is outside open-raising range \u2014 fold.';
+        if (heroLabel === 'BB') {
+            // BB defense — hero faces villain's preflop raise
+            nodeId = 'preflop_defend_BB';
+            spotType = 'FACING_RFI';
+            position = 'OOP';
+            const rawAction = computeCorrectAction(heroHandNotation, 'FACING_RFI', 'BB', 'BTN', null);
+            correctAction = rawAction === 'RAISE' ? '3bet' : (rawAction === 'CALL' ? 'call' : 'fold');
+            mixFrequency = null;
+            explanation = 'BB vs BTN: ' + (
+                correctAction === '3bet'  ? 'hand is in 3-bet range.' :
+                correctAction === 'call'  ? 'hand is in calling range.' :
+                'hand is outside defending range \u2014 fold.'
+            );
+        } else {
+            // RFI opener (BTN / CO / SB)
+            nodeId = 'preflop_open_' + heroLabel;
+            spotType = 'RFI';
+            position = 'IP';
+            const rawAction = computeCorrectAction(heroHandNotation, 'RFI', heroLabel, '', null);
+            correctAction = rawAction === 'RAISE' ? 'raise' : 'fold';
+            mixFrequency = null;
+            explanation = heroLabel + ' RFI: ' + (
+                rawAction === 'RAISE'
+                    ? 'hand is in open-raising range.'
+                    : 'hand is outside open-raising range \u2014 fold.'
+            );
+        }
 
-    } else if (street === 'flop' || street === 'turn') {
+    } else if (street === 'flop' || street === 'turn' || street === 'river') {
         // Check if hero is facing a villain bet (donk/probe)
         const facingVillainBet = ss.actions.some(function(a) {
             return a.seatLabel !== heroSeat.label && (a.action === 'bet' || a.action === 'raise');
@@ -339,10 +417,10 @@ function resolveDecisionNode(handRun) {
 
         if (facingVillainBet) {
             // Hero facing villain's bet — defender decision
-            nodeId = street + '_vs_villainbet_BTN';
+            nodeId = street + '_vs_villainbet_' + heroLabel;
             spotType = 'DEFEND';
             boardTexture = spot ? spot.boardArchetype : null;
-            position = 'IP';
+            position = _heroIsIP(hr) ? 'IP' : 'OOP';
             availableActions = getAvailableActions(hr);
             // Find villain bet size for pot odds
             const villainBet = [...ss.actions].reverse().find(function(a) {
@@ -354,16 +432,15 @@ function resolveDecisionNode(handRun) {
             explanation = 'Facing villain\u2019s ' + street + ' bet \u2014 call with value/draw hands, fold weak air.';
 
         } else {
-            // Hero as PFR / IP — c-bet or barrel decision
+            // Hero as PFR / IP — c-bet, barrel, or OOP probe decision
             const isPFR = spot && spot.heroRole === 'PFR';
-            nodeId = street === 'flop'
-                ? (isPFR ? 'flop_cbet_BTN' : 'flop_defend_BB')
-                : (isPFR ? 'turn_barrel_BTN' : 'turn_defend_BB');
+            const streetLabel = street === 'flop' ? 'flop' : street === 'turn' ? 'turn' : 'river';
+            nodeId = streetLabel + '_' + (isPFR ? 'cbet' : 'defend') + '_' + heroLabel;
             spotType = street === 'flop'
                 ? (isPFR ? 'CBET' : 'DEFEND')
                 : (isPFR ? 'BARREL' : 'DEFEND');
             boardTexture = spot ? (spot.turnFamily || spot.boardArchetype) : null;
-            position = isPFR ? 'IP' : 'OOP';
+            position = _heroIsIP(hr) ? 'IP' : 'OOP';
             availableActions = getAvailableActions(hr);
 
             if (spot && spot.strategy) {
@@ -430,28 +507,21 @@ function resolveDecisionNode(handRun) {
 function getAvailableActions(handRun) {
     const hr = handRun;
     const street = hr.street;
+    const heroLabel = hr.seats[hr.heroSeatIndex].label;
 
     if (street === 'preflop') {
-        // Single raise sizing only — no size choices per spec Part 6
+        // BB defense lane: hero faces villain's open
+        if (heroLabel === 'BB') return ['fold', 'call', '3bet'];
+        // RFI opener (BTN / CO / SB) — single raise sizing
         return ['fold', 'raise'];
     }
 
-    if (street === 'flop' || street === 'turn') {
-        if (!_heroIsIP(hr)) {
-            // OOP defender (future lanes)
-            return ['fold', 'call', 'raise'];
-        }
-        // IP hero (BTN in BTN_vs_BB_SRP) — check if facing a villain bet
-        const heroLabel = hr.seats[hr.heroSeatIndex].label;
+    if (street === 'flop' || street === 'turn' || street === 'river') {
         const ss = hr.gameState.streetState;
         const facingBet = ss.actions.some(function(a) {
             return a.seatLabel !== heroLabel && (a.action === 'bet' || a.action === 'raise');
         });
         return facingBet ? ['fold', 'call', 'raise'] : ['check', 'bet'];
-    }
-
-    if (street === 'river') {
-        return ['check', 'bet'];
     }
 
     return ['check', 'fold'];
@@ -467,8 +537,17 @@ function resolveVillainAction(handRun) {
     const street = hr.street;
     const villainSeat = hr.seats.find(s => s !== null && !s.isHero);
     if (!villainSeat) return 'fold';
+    const heroLabel = hr.seats[hr.heroSeatIndex].label;
+    const ss = hr.gameState.streetState;
 
     if (street === 'preflop') {
+        if (hr.lane === 'BB_vs_BTN_SRP') {
+            // Villain is BTN: if BTN hasn't acted yet → open-raise;
+            // if BTN is responding to BB's 3bet → fold
+            const villainHasActed = ss.actions.some(a => a.seatLabel === villainSeat.label);
+            return villainHasActed ? 'fold' : 'raise';
+        }
+        // Villain is BB facing hero's open (BTN/CO/SB_vs_BB lanes)
         const rangeData = facingRfiRanges['BB_vs_BTN'];
         if (!rangeData) return 'fold';
         const threeBetRange = rangeData['3-bet'] || [];
@@ -483,14 +562,13 @@ function resolveVillainAction(handRun) {
         return 'fold';
     }
 
-    if (street === 'flop' || street === 'turn') {
-        const ss = hr.gameState.streetState;
-        const heroLabel = hr.seats[hr.heroSeatIndex].label;
+    if (street === 'flop' || street === 'turn' || street === 'river') {
         const heroBet = ss.actions.some(a => a.seatLabel === heroLabel && (a.action === 'bet' || a.action === 'raise'));
 
         if (!heroBet) {
             // Hero checked — villain may bet (OOP probe) or check
-            return Math.random() < 0.25 ? 'bet' : 'check';
+            const betProb = street === 'river' ? 0.20 : 0.25;
+            return Math.random() < betProb ? 'bet' : 'check';
         }
         // Hero bet — villain folds/calls/raises weighted
         const noise = (Math.random() - 0.5) * 0.15;
@@ -533,6 +611,12 @@ function advanceStreet(handRun) {
     }
     const nextStreet = streetOrder[idx + 1];
 
+    const laneFamily = LANE_FAMILY[hr.lane] || 'BTN_vs_BB';
+    const familyFilter = LANE_POSTFLOP_FAMILY[hr.lane] || ['BTN_vs_BB'];
+    const heroLabel = hr.seats[hr.heroSeatIndex].label;
+    const villainSeatForGen = hr.seats.find(s => s !== null && !s.isHero);
+    const villainLabelForGen = villainSeatForGen ? villainSeatForGen.label : 'BB';
+
     if (nextStreet === 'flop') {
         // Step 4: Deal board cards — append to gameState.board[], never replace
         const flopCards = _dealBoardCards(hr, 3);
@@ -541,11 +625,10 @@ function advanceStreet(handRun) {
         // Override pot with canonical SRP value — eliminates preflop rounding drift
         const srpFn = (typeof getSRPPot$ === 'function') ? getSRPPot$ : function() { return 16.5; };
         const bbFn  = (typeof getBigBlind$ === 'function') ? getBigBlind$ : function() { return 3; };
-        gs.potBB = parseFloat((srpFn('BTN_vs_BB') / bbFn()).toFixed(2));
+        gs.potBB = parseFloat((srpFn(laneFamily) / bbFn()).toFixed(2));
 
         // Generate postflop spot for strategy lookup only — spot.flopCards never used for display
-        const spot = generatePostflopSpot(20, ['BTN_vs_BB']);
-        hr.postflopSpot = spot;
+        hr.postflopSpot = generatePostflopSpot(20, familyFilter);
 
     } else if (nextStreet === 'turn') {
         // Step 4: Deal one turn card and append
@@ -553,25 +636,33 @@ function advanceStreet(handRun) {
         for (const c of turnCards) gs.board.push(c);
 
         // Pick turn generator from flop history
-        const genName = _simResolveTurnGenerator(gs);
+        const genName = _simResolveTurnGenerator(gs, heroLabel, villainLabelForGen);
         let turnGenFn;
         if (genName === 'generateDelayedTurnSpot' && typeof generateDelayedTurnSpot === 'function') {
             turnGenFn = generateDelayedTurnSpot;
-        } else if (genName === 'generateTurnDefendSpot') {
+        } else if (genName === 'generateTurnDefendSpot' && typeof generateTurnDefendSpot === 'function') {
             turnGenFn = generateTurnDefendSpot;
         } else {
-            turnGenFn = generateTurnCBetSpot;
+            turnGenFn = (typeof generateTurnCBetSpot === 'function') ? generateTurnCBetSpot : null;
         }
-        hr.postflopSpot = turnGenFn(20, ['BTN_vs_BB']);
+        if (turnGenFn) hr.postflopSpot = turnGenFn(20, familyFilter);
 
     } else if (nextStreet === 'river') {
-        // Pass 2.5: no river spot generators — go straight to showdown
-        // EXTENSION Pass 3: river street — call generateRiverCBetSpot / generateRiverDefendSpot
-        hr.street = 'showdown';
-        hr.nodeType = 'terminal';
-        hr.terminal = true;
-        _resolveOutcome(hr);
-        return hr;
+        // Step 4: Deal one river card and append
+        const riverCards = _dealBoardCards(hr, 1);
+        for (const c of riverCards) gs.board.push(c);
+
+        // Pick river generator from flop+turn history
+        const riverGenName = _simResolveRiverGenerator(gs, heroLabel, villainLabelForGen);
+        const riverGenMap = {
+            'generateRiverCBetSpot':         typeof generateRiverCBetSpot         === 'function' ? generateRiverCBetSpot         : null,
+            'generateRiverDefendSpot':        typeof generateRiverDefendSpot        === 'function' ? generateRiverDefendSpot        : null,
+            'generateRiverDelayedCBetSpot':   typeof generateRiverDelayedCBetSpot   === 'function' ? generateRiverDelayedCBetSpot   : null,
+            'generateRiverTurnCheckCBetSpot': typeof generateRiverTurnCheckCBetSpot === 'function' ? generateRiverTurnCheckCBetSpot : null,
+            'generateRiverProbeSpot':         typeof generateRiverProbeSpot         === 'function' ? generateRiverProbeSpot         : null
+        };
+        const riverGenFn = riverGenMap[riverGenName] || riverGenMap['generateRiverCBetSpot'];
+        if (riverGenFn) hr.postflopSpot = riverGenFn(20, familyFilter);
 
     } else if (nextStreet === 'showdown') {
         hr.street = 'showdown';
@@ -581,11 +672,13 @@ function advanceStreet(handRun) {
         return hr;
     }
 
-    // Step 5: Determine firstToActIndex — OOP seat acts first postflop
-    // For BTN_vs_BB_SRP: BB is always OOP → acts first
+    // Step 5: Determine firstToActIndex — OOP player acts first postflop
+    // IP hero (BTN/CO) → villain (OOP) acts first; OOP hero (BB/SB) → hero acts first
+    const heroActsFirst = !_heroIsIP(hr);
     const villainSeat = hr.seats.find(s => s !== null && !s.isHero && !s.folded && !s.allIn);
-    const firstActIdx = villainSeat ? villainSeat.index : hr.heroSeatIndex;
-    const heroActsFirst = (firstActIdx === hr.heroSeatIndex);
+    const firstActIdx = heroActsFirst
+        ? hr.heroSeatIndex
+        : (villainSeat ? villainSeat.index : hr.heroSeatIndex);
 
     // Step 6: Reset streetState completely
     gs.streetState = {
@@ -724,6 +817,9 @@ function applyVillainAction(handRun) {
         const tbFn = (typeof get3betSize$ === 'function') ? get3betSize$ : function() { return 22.5; };
         const bbFn = (typeof getBigBlind$ === 'function') ? getBigBlind$ : function() { return 3; };
         sizingBB = parseFloat((tbFn('BB', 'BTN') / bbFn()).toFixed(2));
+    } else if (action === 'raise' && street === 'preflop') {
+        // Villain opening preflop (e.g. BTN in BB_vs_BTN_SRP)
+        sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
     } else if (action === 'call') {
         if (street === 'preflop') {
             sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
@@ -840,7 +936,8 @@ function getHandSummary(handRun) {
     const mistakeCount = nodes.filter(n => n.grade === 'error').length;
 
     // Build line from actual streetHistory per spec Part 4
-    const heroLine = getPlayerLine(handRun, 'BTN');
+    const heroLabelForLine = handRun.seats[handRun.heroSeatIndex].label;
+    const heroLine = getPlayerLine(handRun, heroLabelForLine);
     const lineParts = ['preflop', 'flop', 'turn', 'river']
         .filter(s => heroLine[s] && heroLine[s].length > 0)
         .map(function(s) {
@@ -856,15 +953,22 @@ function getHandSummary(handRun) {
         lineStr = 'Hand complete';
     }
 
+    const laneLabel = {
+        'BTN_vs_BB_SRP': 'BTN vs BB',
+        'BB_vs_BTN_SRP': 'BB vs BTN',
+        'CO_vs_BB_SRP':  'CO vs BB',
+        'SB_vs_BB_SRP':  'SB vs BB'
+    }[handRun.lane] || handRun.lane;
+
     let lineAssessment;
     if (mistakeCount === 0) {
-        lineAssessment = lineStr + ' \u2014 no errors.';
+        lineAssessment = '[' + laneLabel + '] ' + lineStr + ' \u2014 no errors.';
     } else if (mistakeCount === 1) {
         const mistake = nodes.find(n => n.grade === 'error');
-        lineAssessment = lineStr + ' \u2014 1 error ('
+        lineAssessment = '[' + laneLabel + '] ' + lineStr + ' \u2014 1 error ('
             + (mistake ? mistake.explanation || ('wrong action on ' + mistake.street) : 'mistake detected') + ').';
     } else {
-        lineAssessment = lineStr + ' \u2014 ' + mistakeCount + ' errors.';
+        lineAssessment = '[' + laneLabel + '] ' + lineStr + ' \u2014 ' + mistakeCount + ' errors.';
     }
 
     return { streetSummaries, mistakeCount, lineAssessment };
@@ -875,30 +979,64 @@ function getHandSummary(handRun) {
 // ---------------------------------------------------------------------------
 
 function createHandRun(config) {
-    // EXTENSION Pass 3: add BB defense lane, CO_vs_BB, additional families
     // EXTENSION Pass 5: multiway pots — committedBB and streetHistory already support N players
     const lane = config && config.lane;
-    if (lane !== 'BTN_vs_BB_SRP') {
+    if (!SIM_SUPPORTED_LANES.includes(lane)) {
         throw new Error('Lane not supported: ' + lane);
     }
 
     const holeCards = _dealHeroCards();
 
-    // 9-max ready; Pass 2.5 only seats[0] (BTN/hero) and seats[1] (BB/villain)
+    // Build seats per lane — seats[0] = hero for opener lanes; seats[1] = hero for BB_vs_BTN
     // EXTENSION Pass 5: populate seats[2–8] for full 9-max
-    const seats = [
-        { index: 0, label: 'BTN', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
-        { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
-        null, null, null, null, null, null, null
-    ];
+    let seats, heroSeatIndex, firstToActPreflopIndex;
+
+    if (lane === 'BB_vs_BTN_SRP') {
+        // Hero is BB (seat 1), villain is BTN (seat 0). BTN acts first preflop (opens).
+        seats = [
+            { index: 0, label: 'BTN', isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 1;
+        firstToActPreflopIndex = 0; // BTN opens
+    } else if (lane === 'CO_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'CO', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB', isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // CO opens
+    } else if (lane === 'SB_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'SB', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB', isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // SB opens
+    } else {
+        // BTN_vs_BB_SRP (default)
+        seats = [
+            { index: 0, label: 'BTN', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // BTN opens
+    }
+
+    // BB_vs_BTN starts as villain_response (BTN opens); all others start as hero_decision
+    const initialNodeType = (lane === 'BB_vs_BTN_SRP') ? 'villain_response' : 'hero_decision';
 
     const hr = {
         id: 'hand_' + Date.now(),
-        lane: 'BTN_vs_BB_SRP',
+        lane,
         seats,
-        heroSeatIndex: 0,
-        street: 'preflop',   // mirror of gameState.streetState.street
-        nodeType: 'hero_decision',
+        heroSeatIndex,
+        street: 'preflop',
+        nodeType: initialNodeType,
         terminal: false,
         outcome: null,
         decisionNodes: [],
@@ -918,8 +1056,8 @@ function createHandRun(config) {
 
             streetState: {      // reset completely on every advanceStreet()
                 street: 'preflop',
-                actingIndex: 0,         // BTN acts first preflop
-                firstToActIndex: 0,
+                actingIndex: firstToActPreflopIndex,
+                firstToActIndex: firstToActPreflopIndex,
                 betMadeThisStreet: false,
                 raiseMadeThisStreet: false,
                 committedBB: _buildCommittedBB(seats),
@@ -928,7 +1066,8 @@ function createHandRun(config) {
         }
     };
 
-    resolveDecisionNode(hr);
+    // Only resolve initial decision node for hero_decision starts (not BB_vs_BTN which starts villain_response)
+    if (initialNodeType === 'hero_decision') resolveDecisionNode(hr);
     return hr;
 }
 
@@ -959,9 +1098,14 @@ if (typeof window === 'undefined') {
             strategy: { actions: { bet33: 0.70, check: 0.30 }, reasoning: 'Bet for value.' }
         };
     };
-    global.generateTurnCBetSpot    = global.generatePostflopSpot;
-    global.generateTurnDefendSpot  = global.generatePostflopSpot;
-    global.generateDelayedTurnSpot = global.generatePostflopSpot;
+    global.generateTurnCBetSpot          = global.generatePostflopSpot;
+    global.generateTurnDefendSpot        = global.generatePostflopSpot;
+    global.generateDelayedTurnSpot       = global.generatePostflopSpot;
+    global.generateRiverCBetSpot         = global.generatePostflopSpot;
+    global.generateRiverDefendSpot       = global.generatePostflopSpot;
+    global.generateRiverDelayedCBetSpot  = global.generatePostflopSpot;
+    global.generateRiverTurnCheckCBetSpot = global.generatePostflopSpot;
+    global.generateRiverProbeSpot        = global.generatePostflopSpot;
 
     // --- Basic structure tests ---
     const h0 = createHandRun({ lane: 'BTN_vs_BB_SRP' });
@@ -1022,6 +1166,73 @@ if (typeof window === 'undefined') {
     console.assert(line.preflop && line.preflop.includes('raise'),
         'getPlayerLine not reading streetHistory correctly');
 
+    // --- Lane expansion tests ---
+    const lanesOK = SIM_SUPPORTED_LANES.every(function(l) {
+        try { const h = createHandRun({ lane: l }); return !!h.gameState; }
+        catch(e) { console.error('Lane failed:', l, e.message); return false; }
+    });
+    console.assert(lanesOK, 'Not all supported lanes initialize correctly');
+
+    // --- BB defense OOP test ---
+    const hBB = createHandRun({ lane: 'BB_vs_BTN_SRP' });
+    console.assert(!_heroIsIP(hBB), 'BB hero should be OOP');
+    console.assert(hBB.seats[hBB.heroSeatIndex].label === 'BB', 'Hero should be BB seat');
+    console.assert(hBB.nodeType === 'villain_response', 'BB_vs_BTN should start with villain_response');
+
+    // --- River generator test ---
+    const mockGameState = {
+        streetHistory: {
+            flop: [
+                { seatLabel: 'BTN', action: 'bet', sizingBB: 1 },
+                { seatLabel: 'BB', action: 'call', sizingBB: 1 }
+            ],
+            turn: [
+                { seatLabel: 'BB', action: 'check', sizingBB: 0 },
+                { seatLabel: 'BTN', action: 'check', sizingBB: 0 }
+            ]
+        }
+    };
+    console.assert(
+        _simResolveRiverGenerator(mockGameState, 'BTN', 'BB') === 'generateRiverTurnCheckCBetSpot',
+        'River generator not resolving correctly from street history'
+    );
+
+    // --- River street transition test ---
+    const h4r = _deepCopy(h4);
+    // Simulate BB check, BTN bet on flop → street_advance
+    h4r.gameState.streetState.actions = [
+        { seatLabel: 'BB', action: 'check', sizingBB: 0 },
+        { seatLabel: 'BTN', action: 'bet', sizingBB: 2 },
+        { seatLabel: 'BB', action: 'call', sizingBB: 2 }
+    ];
+    h4r.gameState.streetState.committedBB['BTN'] = 2;
+    h4r.gameState.streetState.committedBB['BB'] = 2;
+    h4r.gameState.streetState.betMadeThisStreet = true;
+    h4r.nodeType = 'street_advance';
+    const h4t = advanceStreet(h4r);
+    console.assert(h4t.street === 'turn', 'Should advance to turn');
+    console.assert(h4t.gameState.board.length === 4, 'Turn card should be dealt');
+
+    const h4tadv = _deepCopy(h4t);
+    h4tadv.gameState.streetState.actions = [
+        { seatLabel: 'BB', action: 'check', sizingBB: 0 },
+        { seatLabel: 'BTN', action: 'bet', sizingBB: 3 },
+        { seatLabel: 'BB', action: 'call', sizingBB: 3 }
+    ];
+    h4tadv.gameState.streetState.committedBB['BTN'] = 3;
+    h4tadv.gameState.streetState.committedBB['BB'] = 3;
+    h4tadv.gameState.streetState.betMadeThisStreet = true;
+    h4tadv.nodeType = 'street_advance';
+    const h4rv = advanceStreet(h4tadv);
+    console.assert(h4rv.street === 'river', 'Should advance to river');
+    console.assert(h4rv.gameState.board.length === 5, 'River card should be dealt');
+
     console.log('GameState self-test passed');
+    console.log('Pass 3 self-test passed');
     console.log('sim.js self-test passed');
+
+    // EXTENSION Pass 3.5: sizing buckets — hero chooses small/medium/large before bet action
+    // EXTENSION Pass 4: villain archetypes replace range-weighted sampling
+    // EXTENSION Pass 4: add 3BP lanes (BTN_3BP_vs_CO, BB_3BP_vs_BTN etc.)
+    // EXTENSION Pass 5: populate remaining seats for full 9-max multiway
 }

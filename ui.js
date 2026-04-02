@@ -3007,14 +3007,15 @@ function _simShowRecapDrawer(h) {
 // ---------------------------------------------------------------------------
 // startSimulator — entry point; also called by "Play Another Hand"
 // ---------------------------------------------------------------------------
-function startSimulator() {
+function startSimulator(lane) {
+    lane = lane || (_simRun && _simRun.lane) || 'BTN_vs_BB_SRP';
     try { __clearNextTimer(); __endResolve(); } catch(_) {}
     try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
     _simTableInitialized = false;
     _simRenderedBoardLen = 0;
     _simLastStreet = '';
-    _simRun = createHandRun({ lane: 'BTN_vs_BB_SRP' });
+    _simRun = createHandRun({ lane: lane });
 
     hideAllScreens();
     document.getElementById('trainer-screen').classList.remove('hidden');
@@ -3030,8 +3031,12 @@ function startSimulator() {
 
     try { clearCommunityCards(); } catch(_) {}
 
-    state.currentPos = 'BTN';
-    state.oppPos = 'BB';
+    const simHeroLabel = _simRun.seats[_simRun.heroSeatIndex].label;
+    const simVillainSeat = _simRun.seats.find(function(s) { return s && !s.isHero; });
+    const simVillainLabel = simVillainSeat ? simVillainSeat.label : 'BB';
+
+    state.currentPos = simHeroLabel;
+    state.oppPos = simVillainLabel;
     state.scenario = 'FACING_RFI';
     state.villainOpenSize = getOpenSize$();
 
@@ -3043,7 +3048,7 @@ function startSimulator() {
         if (btnDiv) { btnDiv.classList.remove('action-buttons-revealed'); btnDiv.classList.add('action-buttons-hidden'); }
     } catch(_) {}
 
-    runTableAnimation('BTN', 'BB', 'FACING_RFI', function() {
+    runTableAnimation(simHeroLabel, simVillainLabel, 'FACING_RFI', function() {
         const heroSeat = _simRun.seats[_simRun.heroSeatIndex];
         if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
             renderHand({
@@ -3162,20 +3167,24 @@ function _simRenderActionArea(h) {
 
             // Read villain's action from streetState.actions (last BB entry)
             const villainActions = _simRun.gameState.streetState.actions;
-            const lastAct = [...villainActions].reverse().find(function(a) { return a.seatLabel === 'BB'; });
+            const _villainLabelForAct = (_simRun.seats.find(function(s) { return s && !s.isHero; }) || {}).label || 'BB';
+            const lastAct = [...villainActions].reverse().find(function(a) { return a.seatLabel === _villainLabelForAct; });
             const villainAction = lastAct ? lastAct.action : '';
             const actLabel = simActionLabel(villainAction);
 
-            // Villain animations per spec Part 9
+            // Villain animations per spec Part 9 — use dynamic seat labels
             try {
+                const _animHeroLabel = _simRun.seats[_simRun.heroSeatIndex].label;
+                const _animVillainSeat = _simRun.seats.find(function(s) { return s && !s.isHero; });
+                const _animVillainLabel = _animVillainSeat ? _animVillainSeat.label : 'BB';
                 const betsLayer = document.getElementById('bets-layer');
-                const villainSeatEl = document.getElementById('seat-BB');
+                const villainSeatEl = document.getElementById('seat-' + _animVillainLabel);
                 if (villainAction === 'check') {
-                    if (betsLayer) renderVillainCheck(betsLayer, 'BTN', 'BB');
+                    if (betsLayer) renderVillainCheck(betsLayer, _animHeroLabel, _animVillainLabel);
                     if (villainSeatEl) showActionBadge(villainSeatEl, 'CHECK', 'badge-call', 700);
                 } else if (villainAction === 'bet') {
                     const betAmt$ = Math.round(_simRun.gameState.potBB * 0.33 * getBigBlind$());
-                    if (betsLayer) renderVillainBet(betsLayer, 'BTN', 'BB', betAmt$);
+                    if (betsLayer) renderVillainBet(betsLayer, _animHeroLabel, _animVillainLabel, betAmt$);
                     if (villainSeatEl) showActionBadge(villainSeatEl, 'BET ' + formatAmt(betAmt$), 'badge-raise', 700);
                 } else if (villainAction === 'fold') {
                     if (villainSeatEl) showActionBadge(villainSeatEl, 'FOLD', 'badge-fold', 700);
@@ -3183,6 +3192,10 @@ function _simRenderActionArea(h) {
                     if (villainSeatEl) showActionBadge(villainSeatEl, 'CALL', 'badge-call', 1000);
                 } else if (villainAction === '3bet') {
                     if (villainSeatEl) showActionBadge(villainSeatEl, '3-BET', 'badge-raise', 1000);
+                } else if (villainAction === 'raise') {
+                    const raiseAmt$ = getOpenSize$();
+                    if (betsLayer) renderVillainBet(betsLayer, _animHeroLabel, _animVillainLabel, raiseAmt$);
+                    if (villainSeatEl) showActionBadge(villainSeatEl, 'RAISE ' + formatAmt(raiseAmt$), 'badge-raise', 1000);
                 }
             } catch(_) {}
 
@@ -3276,7 +3289,8 @@ function handleSimAction(action) {
     }
 
     try {
-        const heroEl = document.getElementById('seat-BTN');
+        const _heroLabel = _simRun ? _simRun.seats[_simRun.heroSeatIndex].label : 'BTN';
+        const heroEl = document.getElementById('seat-' + _heroLabel);
         if (heroEl) {
             const bc = isBet ? 'badge-raise' : action === 'fold' ? 'badge-fold' : 'badge-call';
             showActionBadge(heroEl, simActionLabel(action).toUpperCase(), bc, 700);
