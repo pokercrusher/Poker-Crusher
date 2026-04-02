@@ -2824,7 +2824,182 @@ function _simRestoreLayout() {
         if (ccs) ccs.classList.remove('hidden');
         const pcd = document.getElementById('postflop-card-divider');
         if (pcd) pcd.classList.remove('hidden');
+        // Remove recap drawer if present
+        try { const d = document.getElementById('sim-recap-drawer'); if (d) d.remove(); } catch(_) {}
     } catch(_) {}
+}
+
+// ---------------------------------------------------------------------------
+// _simEnsureVillainCards — deal 2 hole cards to villain if not already dealt
+// ---------------------------------------------------------------------------
+function _simEnsureVillainCards(h) {
+    const villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
+    if (!villainSeat || (villainSeat.holeCards && villainSeat.holeCards.length >= 2)) return;
+    const heroSeat = h.seats[h.heroSeatIndex];
+    const exclude = new Set();
+    if (heroSeat && heroSeat.holeCards) {
+        heroSeat.holeCards.forEach(function(c) { exclude.add(typeof c === 'string' ? c : c.rank + c.suit); });
+    }
+    ((h.gameState && h.gameState.board) || []).forEach(function(c) { exclude.add(typeof c === 'string' ? c : c.rank + c.suit); });
+    const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
+    const suits = ['h','d','c','s'];
+    const deck = [];
+    for (var ri = 0; ri < ranks.length; ri++) {
+        for (var si = 0; si < suits.length; si++) {
+            var cc = ranks[ri] + suits[si];
+            if (!exclude.has(cc)) deck.push(cc);
+        }
+    }
+    for (var i = deck.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = deck[i]; deck[i] = deck[j]; deck[j] = tmp;
+    }
+    villainSeat.holeCards = [deck[0], deck[1]];
+}
+
+// ---------------------------------------------------------------------------
+// _simRenderShowdownHands — appends villain cards (face-down) to #hand-display
+// ---------------------------------------------------------------------------
+function _simRenderShowdownHands(h) {
+    const hd = document.getElementById('hand-display');
+    if (!hd) return;
+    const villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
+    if (!villainSeat || !villainSeat.holeCards || villainSeat.holeCards.length < 2) return;
+
+    const SUIT_MAP = { s: '♠', h: '♥', c: '♣', d: '♦' };
+    const colorClass = function(s) { return (s === '♥' || s === '♦') ? 'text-rose-600' : 'text-slate-900'; };
+
+    function villainCardHtml(cardStr) {
+        const raw = typeof cardStr === 'string' ? cardStr : (cardStr.rank + cardStr.suit);
+        const r = raw.slice(0, -1);
+        const rawSuit = raw.slice(-1);
+        const s = SUIT_MAP[rawSuit] || rawSuit;
+        const cc = colorClass(s);
+        return '<div class="hero-card-wrapper sim-villain-card" style="width:var(--hero-card-w,64px);height:var(--hero-card-h,96px);">' +
+            '<div class="hero-card-inner" style="width:100%;height:100%;">' +
+            '<div class="hero-card-back-face"></div>' +
+            '<div class="hero-card-front card-display flex flex-col items-center" style="width:100%;height:100%;">' +
+            '<div class="h-1/2 w-full flex items-end justify-center pb-1"><span class="font-black leading-none ' + cc + '" style="font-size:var(--hero-rank-size,32px);">' + r + '</span></div>' +
+            '<div class="h-1/2 w-full flex items-start justify-center pt-1"><span class="leading-none ' + cc + '" style="font-size:var(--hero-suit-size,28px);">' + s + '</span></div>' +
+            '</div></div></div>';
+    }
+
+    const vsHtml = '<div class="flex items-center px-1" style="color:#64748b;font-weight:900;font-size:var(--btn-font,14px);">vs</div>';
+    const villainHtml = villainSeat.holeCards.map(villainCardHtml).join('');
+    hd.innerHTML = hd.innerHTML + vsHtml + villainHtml;
+}
+
+// ---------------------------------------------------------------------------
+// _simFlipVillainCards — reveal villain cards with staggered flip
+// ---------------------------------------------------------------------------
+function _simFlipVillainCards() {
+    const cards = document.querySelectorAll('#hand-display .sim-villain-card .hero-card-inner');
+    cards.forEach(function(c, i) {
+        setTimeout(function() { c.classList.add('flipped'); }, i * 120);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// _simShowRecapDrawer — slide-up bottom sheet: accuracy + street recap + CTAs
+// ---------------------------------------------------------------------------
+function _simShowRecapDrawer(h) {
+    // Remove any stale drawer first
+    try { const old = document.getElementById('sim-recap-drawer'); if (old) old.remove(); } catch(_) {}
+
+    const summary = getHandSummary(h);
+    const btnStyle = 'style="padding:var(--btn-pad,14px) 0;font-size:var(--btn-font,14px);"';
+
+    // Accuracy chip
+    const total = summary.streetSummaries.filter(function(r) { return r.heroAction; }).length;
+    const correct = summary.streetSummaries.filter(function(r) { return r.grade === 'correct'; }).length;
+    let chipHtml = '';
+    if (total > 0) {
+        const pct = Math.round((correct / total) * 100);
+        const chipColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+        chipHtml = '<div style="display:flex;justify-content:center;margin-bottom:12px;">' +
+            '<div style="background:' + chipColor + '22;border:1.5px solid ' + chipColor + ';border-radius:999px;padding:4px 16px;display:flex;align-items:center;gap:6px;">' +
+            '<span style="font-size:18px;font-weight:900;color:' + chipColor + ';">' + pct + '%</span>' +
+            '<span style="font-size:12px;color:#94a3b8;font-weight:700;">accuracy</span>' +
+            '</div></div>';
+    }
+
+    // Outcome line
+    const heroSeat = h.seats[h.heroSeatIndex];
+    const outcome = h.outcome;
+    let outcomeLine = '';
+    if (outcome) {
+        const villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
+        const prefix = outcome.showdownReached ? 'Showdown' :
+            (villainSeat && villainSeat.folded) ? 'Villain folded' :
+            (heroSeat && heroSeat.folded) ? 'Hero folded' : '';
+        let resultStr;
+        if (outcome.heroNetBB > 0)
+            resultStr = '<span style="color:#34d399;font-weight:900;">+' + outcome.heroNetBB.toFixed(1) + 'bb</span>';
+        else if (outcome.heroNetBB < 0)
+            resultStr = '<span style="color:#f87171;font-weight:900;">' + outcome.heroNetBB.toFixed(1) + 'bb</span>';
+        else
+            resultStr = '<span style="color:#94a3b8;font-weight:900;">0bb</span>';
+        outcomeLine = '<div style="text-align:center;font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">' +
+            (prefix ? prefix + ' \u2014 ' : '') + resultStr + '</div>';
+    }
+
+    // Street rows
+    const gradeIcon  = { correct: '✓', error: '✗', mixed: '≈' };
+    const gradeColor = { correct: '#34d399', error: '#f87171', mixed: '#fbbf24' };
+    const streetColor = { preflop: '#818cf8', flop: '#fcd34d', turn: '#fb923c', river: '#f87171' };
+
+    const rowsHtml = summary.streetSummaries.map(function(row) {
+        if (!row.heroAction) return '';
+        const gc = gradeColor[row.grade] || '#94a3b8';
+        const gi = gradeIcon[row.grade] || '?';
+        const sc = streetColor[row.street] || '#94a3b8';
+        const corrLine = (row.grade === 'error')
+            ? '<div style="font-size:11px;color:#94a3b8;margin-top:2px;padding-left:4px;">\u2192 should be <span style="color:#e2e8f0;font-weight:700;">' + simActionLabel(row.correctAction) + '</span></div>'
+            : '';
+        return '<div style="display:flex;flex-direction:column;padding:10px 0;border-bottom:1px solid #1e293b;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;color:' + sc + ';background:' + sc + '22;border-radius:4px;padding:2px 7px;">' + row.street + '</span>' +
+            '<span style="flex:1;font-size:14px;font-weight:700;color:#e2e8f0;">' + simActionLabel(row.heroAction) + '</span>' +
+            '<span style="font-size:18px;font-weight:900;color:' + gc + ';">' + gi + '</span>' +
+            '</div>' + corrLine + '</div>';
+    }).filter(Boolean).join('');
+
+    const rowsBlock = rowsHtml
+        ? '<div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:0 12px;margin-bottom:14px;">' + rowsHtml + '</div>'
+        : '';
+
+    const assessLine = summary.lineAssessment
+        ? '<div style="font-size:12px;color:#64748b;font-style:italic;text-align:center;margin-bottom:14px;">' + summary.lineAssessment + '</div>'
+        : '';
+
+    const drawer = document.createElement('div');
+    drawer.id = 'sim-recap-drawer';
+    drawer.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;' +
+        'background:#1e293b;border-top:1.5px solid #334155;border-radius:20px 20px 0 0;' +
+        'padding:16px 16px 24px;max-height:75vh;overflow-y:auto;' +
+        'transform:translateY(100%);transition:transform 0.38s cubic-bezier(0.34,1.1,0.64,1);' +
+        'box-shadow:0 -8px 32px rgba(0,0,0,0.5);';
+
+    drawer.innerHTML =
+        '<div style="width:40px;height:4px;background:#334155;border-radius:2px;margin:0 auto 14px;"></div>' +
+        '<div style="max-width:360px;margin:0 auto;">' +
+        chipHtml +
+        outcomeLine +
+        rowsBlock +
+        assessLine +
+        '<div style="display:flex;flex-direction:column;gap:10px;">' +
+        '<button onclick="startSimulator()" ' + btnStyle + ' class="pc-btn pc-btn-primary w-full">Play Another Hand</button>' +
+        '<button onclick="_simExitToMenu()" ' + btnStyle + ' class="pc-btn pc-btn-fold w-full">Back to Menu</button>' +
+        '</div></div>';
+
+    document.body.appendChild(drawer);
+
+    // Trigger slide-up
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            drawer.style.transform = 'translateY(0)';
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2927,32 +3102,32 @@ function _simRenderActionArea(h) {
 
     const btnStyle = 'style="padding:var(--btn-pad,14px) 0;font-size:var(--btn-font,14px);"';
 
-    // ---- Terminal: collapse table, expand #turn-context-line for review ----
+    // ---- Terminal: keep table visible, reveal villain cards, slide-up recap ----
     if (isTerminal(h)) {
-        try { const ab = document.getElementById('action-buttons'); if (ab) { ab.style.minHeight = ''; ab._simMinHeightLocked = false; } } catch(_) {}
-        try { document.getElementById('table-wrapper').classList.add('hidden'); } catch(_) {}
-        try { document.getElementById('hero-area').classList.add('hidden'); } catch(_) {}
-        try { document.getElementById('community-cards-strip').classList.add('hidden'); } catch(_) {}
-        try { document.getElementById('postflop-card-divider').classList.add('hidden'); } catch(_) {}
+        try { const ab = document.getElementById('action-buttons'); if (ab) { ab.style.minHeight = ''; ab._simMinHeightLocked = false; ab.innerHTML = ''; } } catch(_) {}
+        try { const tcl = document.getElementById('turn-context-line'); if (tcl) { tcl.style.minHeight = '0'; tcl.innerHTML = ''; } } catch(_) {}
+        // Remove any stale drawer from a previous hand
+        try { const d = document.getElementById('sim-recap-drawer'); if (d) d.remove(); } catch(_) {}
 
-        const tcl = document.getElementById('turn-context-line');
-        if (tcl) {
-            tcl.classList.remove('hidden');
-            tcl.style.flex = '1';
-            tcl.style.overflowY = 'auto';
-            tcl.style.minHeight = '0';
-            tcl.style.padding = '8px 0';
-            tcl.style.justifyContent = 'flex-start';
-            tcl.style.alignItems = 'stretch';
-            try { tcl.innerHTML = _simBuildReviewHtml(h); } catch(_) { tcl.innerHTML = ''; }
-        }
-
-        container.innerHTML =
-            '<div class="flex flex-col gap-3 w-full action-buttons-revealed">' +
-            '<button onclick="startSimulator()" ' + btnStyle + ' class="pc-btn pc-btn-primary w-full">Play Another Hand</button>' +
-            '<button onclick="_simExitToMenu()" ' + btnStyle + ' class="pc-btn pc-btn-fold w-full">Back to Menu</button>' +
-            '</div>';
         _simSetScenarioHint('Hand Complete');
+
+        // Deal villain hole cards from remaining deck, append face-down to hand-display
+        _simEnsureVillainCards(h);
+        _simRenderShowdownHands(h);
+
+        // Guard: if _simRun changes (new hand started) abort pending callbacks
+        const handRef = h;
+
+        // After short delay: flip villain cards up
+        setTimeout(function() {
+            if (_simRun !== handRef) return;
+            _simFlipVillainCards();
+            // After flip settles: slide up recap drawer
+            setTimeout(function() {
+                if (_simRun !== handRef) return;
+                _simShowRecapDrawer(handRef);
+            }, 500);
+        }, 350);
         return;
     }
 
