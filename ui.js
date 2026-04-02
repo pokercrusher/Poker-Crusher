@@ -2635,6 +2635,9 @@ function drilldownSpot(spotKey) {
         for (const entry of entries) {
             const wW = entry.contentRect.width;
             const wH = entry.contentRect.height;
+            // Skip when table-wrapper is hidden (terminal state) — a 0×0 rect would
+            // set --btn-max-w:0 and collapse the action-buttons container.
+            if (wW === 0 && wH === 0) continue;
             // Snap to integer pixels to prevent sub-pixel oscillation
             const ratio = (window.innerWidth < 600) ? 2.0 : 2.4;
             const newFeltW = Math.round(Math.min(wW, wH * ratio));
