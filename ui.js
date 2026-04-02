@@ -2768,9 +2768,15 @@ let _simTableInitialized = false;   // guard: only set up table/cards once per h
 // ---------------------------------------------------------------------------
 function simActionLabel(action) {
     const map = {
-        'fold': 'Fold', 'call': 'Call', 'check': 'Check',
-        'raise_2.5bb': 'Raise 2.5bb', 'raise_3bb': 'Raise 3bb', 'raise_4bb': 'Raise 4bb',
-        '3bet_9bb': '3-Bet 9bb', 'bet_33pct': 'Bet 33%', 'raise_2.5x': 'Raise 2.5x'
+        'fold':  'FOLD',
+        'call':  'CALL',
+        'check': 'CHECK',
+        'raise': 'RAISE TO ' + (typeof formatAmt === 'function' && typeof getOpenSize$ === 'function' ? formatAmt(getOpenSize$()) : '2.5bb'),
+        'bet':   'BET ' + (typeof formatAmt === 'function' && typeof getBigBlind$ === 'function'
+                     ? formatAmt(Math.round((_simRun ? _simRun.gameState.potBB * 0.33 : 1) * getBigBlind$()))
+                     : '33%'),
+        '3bet':  '3-BET',
+        'raise_2.5x': 'RAISE 2.5\u00d7'
     };
     return map[action] || action;
 }
@@ -2816,7 +2822,6 @@ function startSimulator() {
     try { __clearNextTimer(); __endResolve(); } catch(_) {}
     try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
-
     _simTableInitialized = false;
     _simRun = createHandRun({ lane: 'BTN_vs_BB_SRP' });
 
@@ -2824,31 +2829,33 @@ function startSimulator() {
     document.getElementById('trainer-screen').classList.remove('hidden');
     if (typeof window._trainerLayoutBoot === 'function') window._trainerLayoutBoot();
     try { ensureTableLayers(true); } catch(_) {}
-
-    // Restore layout (clears any terminal-state overrides from the previous hand)
     _simRestoreLayout();
 
-    // Hide trainer chrome that doesn't apply here
+    // Hide trainer chrome that doesn't apply to simulator
     ['dr-round-counter', 'drill-counter', 'streak-best-block',
      'stack-bb-badge', 'flop-info-line'].forEach(function(id) {
         try { document.getElementById(id).classList.add('hidden'); } catch(_) {}
     });
 
+    try { clearCommunityCards(); } catch(_) {}
+
     state.currentPos = 'BTN';
     state.oppPos = 'BB';
+    state.scenario = 'FACING_RFI';
+    state.villainOpenSize = getOpenSize$();
 
-    _simRenderRound();
-
-    // Lock #action-buttons to its initial rendered height so when content changes
-    // (villain thinking, etc.) the table/cards above never resize.
-    requestAnimationFrame(function() {
-        requestAnimationFrame(function() {
-            var ab = document.getElementById('action-buttons');
-            if (ab && !ab._simMinHeightLocked) {
-                ab._simMinHeightLocked = true;
-                ab.style.minHeight = ab.offsetHeight + 'px';
-            }
-        });
+    runTableAnimation('BTN', 'BB', 'FACING_RFI', function() {
+        const heroSeat = _simRun.seats[_simRun.heroSeatIndex];
+        if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
+            renderHand({
+                cards: heroSeat.holeCards.map(function(c) {
+                    return typeof c === 'string' ? { rank: c[0], suit: c[1] } : c;
+                })
+            });
+            setTimeout(flipHeroCards, 50);
+        }
+        _simTableInitialized = true;
+        _simRenderActionArea(_simRun);
     });
 }
 
@@ -2859,36 +2866,33 @@ function _simRenderRound() {
     if (!_simRun) return;
     const h = _simRun;
 
-    // One-time per hand: set up table layout and deal/flip hero cards
+    // One-time per hand: set up table seats (cards dealt once in startSimulator)
     if (!_simTableInitialized) {
         _simTableInitialized = true;
         updateTable('BTN', 'BB');
-
-        const heroSeat = h.seats[h.heroSeatIndex];
-        if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
-            renderHand({
-                cards: heroSeat.holeCards.map(function(c) {
-                    return typeof c === 'string' ? { rank: c[0], suit: c[1] } : c;
-                })
-            });
-            setTimeout(flipHeroCards, 80);
-        }
+    } else {
+        // Refresh seat positions on every state update
+        try { updateTable('BTN', 'BB'); } catch(_) {}
     }
 
-    // Board: update on every render (cards appear as streets advance)
-    if (h.board && h.board.length > 0) {
-        renderCommunityCards(h.board);
+    // Board: read exclusively from gameState.board — never from spot internal arrays
+    const board = h.gameState.board;
+    if (board && board.length > 0) {
+        renderCommunityCards(board);
     } else {
         clearCommunityCards();
     }
 
-    // Pot badge: update in-place so bets-layer card-backs survive
+    // Pot badge: preflop shows blind total since potBB starts at 0
     try {
         const betsLayer = document.getElementById('bets-layer');
         if (betsLayer) {
             const existing = document.getElementById('pot-badge');
             if (existing) existing.remove();
-            renderPotBadge(betsLayer, h.potBB * getBigBlind$());
+            const potAmt = h.gameState.potBB > 0
+                ? h.gameState.potBB * getBigBlind$()
+                : (h.street === 'preflop' ? getBlindTotal$() : 0);
+            renderPotBadge(betsLayer, potAmt);
         }
     } catch(_) {}
 
@@ -2939,24 +2943,38 @@ function _simRenderActionArea(h) {
         _simPendingTimeout = setTimeout(function() {
             _simPendingTimeout = null;
             _simRun = applyVillainAction(_simRun);
-            const lastAct = _simRun.actionHistory[_simRun.actionHistory.length - 1];
-            const actLabel = lastAct ? simActionLabel(lastAct.action) : '';
 
-            // Show villain action on their seat badge
+            // Read villain's action from streetState.actions (last BB entry)
+            const villainActions = _simRun.gameState.streetState.actions;
+            const lastAct = [...villainActions].reverse().find(function(a) { return a.seatLabel === 'BB'; });
+            const villainAction = lastAct ? lastAct.action : '';
+            const actLabel = simActionLabel(villainAction);
+
+            // Villain animations per spec Part 9
             try {
-                const bbEl = document.getElementById('seat-BB');
-                if (bbEl && lastAct) {
-                    const bc = lastAct.action === 'fold' ? 'badge-fold'
-                        : lastAct.action === 'call' ? 'badge-call' : 'badge-raise';
-                    showActionBadge(bbEl, actLabel.toUpperCase(), bc, 1000);
+                const betsLayer = document.getElementById('bets-layer');
+                const villainSeatEl = document.getElementById('seat-BB');
+                if (villainAction === 'check') {
+                    if (betsLayer) renderVillainCheck(betsLayer, 'BTN', 'BB');
+                    if (villainSeatEl) showActionBadge(villainSeatEl, 'CHECK', 'badge-call', 700);
+                } else if (villainAction === 'bet') {
+                    const betAmt$ = Math.round(_simRun.gameState.potBB * 0.33 * getBigBlind$());
+                    if (betsLayer) renderVillainBet(betsLayer, 'BTN', 'BB', betAmt$);
+                    if (villainSeatEl) showActionBadge(villainSeatEl, 'BET ' + formatAmt(betAmt$), 'badge-raise', 700);
+                } else if (villainAction === 'fold') {
+                    if (villainSeatEl) showActionBadge(villainSeatEl, 'FOLD', 'badge-fold', 700);
+                } else if (villainAction === 'call') {
+                    if (villainSeatEl) showActionBadge(villainSeatEl, 'CALL', 'badge-call', 1000);
+                } else if (villainAction === '3bet') {
+                    if (villainSeatEl) showActionBadge(villainSeatEl, '3-BET', 'badge-raise', 1000);
                 }
             } catch(_) {}
 
             // Show inline for 1.1s so player can read it before buttons appear
             if (container && actLabel) {
-                const badgeColor = lastAct.action === 'fold' ? 'text-rose-400'
-                    : lastAct.action === 'call' ? 'text-emerald-400'
-                    : 'text-amber-400';
+                const badgeColor = villainAction === 'fold' ? 'text-rose-400'
+                    : (villainAction === 'bet' || villainAction === 'raise' || villainAction === '3bet') ? 'text-amber-400'
+                    : 'text-emerald-400';
                 container.innerHTML =
                     '<div class="text-center py-3">' +
                     '<span class="text-slate-400 font-bold" style="font-size:var(--btn-font,14px);">Villain: </span>' +
@@ -2985,9 +3003,10 @@ function _simRenderActionArea(h) {
         const node = [...h.decisionNodes].reverse().find(function(n) { return n.heroAction === null; });
         const math = node ? node.mathContext : null;
 
-        // Street + board context in scenario-hint
-        const boardStr = (h.board && h.board.length > 0)
-            ? ' \u00b7 ' + h.board.map(function(c) {
+        // Street + board context in scenario-hint — read from gameState.board only
+        const gsBoard = h.gameState.board;
+        const boardStr = (gsBoard && gsBoard.length > 0)
+            ? ' \u00b7 ' + gsBoard.map(function(c) {
                 return typeof c === 'string' ? c : (c.rank + c.suit);
               }).join(' ')
             : '';
@@ -3029,11 +3048,14 @@ function handleSimAction(action) {
     if (!_simRun || isTerminal(_simRun)) return;
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
 
-    const isBet = action.startsWith('raise') || action.startsWith('bet') || action.startsWith('3bet');
+    const isBet = action === 'bet' || action === 'raise';
     if (isBet) {
         try {
-            const m = action.match(/([\d.]+)bb/);
-            animateHeroBetDollars((m ? parseFloat(m[1]) : 2.5) * getBigBlind$());
+            if (action === 'bet') {
+                animateHeroBetDollars(_simRun.gameState.potBB * 0.33 * getBigBlind$());
+            } else {
+                animateHeroBetDollars(getOpenSize$());
+            }
         } catch(_) {}
     }
 
@@ -3105,9 +3127,10 @@ function _simBuildReviewHtml(h) {
         ? '<div class="flex justify-center gap-2 mb-1">' + holeCards.map(_simReviewCardHtml).join('') + '</div>'
         : '';
 
-    // Board cards
-    const boardHtml = (h.board && h.board.length > 0)
-        ? '<div class="flex justify-center gap-1.5 mb-1">' + h.board.map(_simReviewCardHtml).join('') + '</div>'
+    // Board cards — read exclusively from gameState.board
+    const gsBoard = h.gameState && h.gameState.board;
+    const boardHtml = (gsBoard && gsBoard.length > 0)
+        ? '<div class="flex justify-center gap-1.5 mb-1">' + gsBoard.map(_simReviewCardHtml).join('') + '</div>'
         : '';
 
     // Outcome line
