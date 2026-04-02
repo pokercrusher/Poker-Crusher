@@ -2767,6 +2767,8 @@ function hideUserStats() {
 let _simRun = null;
 let _simPendingTimeout = null;
 let _simTableInitialized = false;   // guard: only set up table/cards once per hand
+let _simRenderedBoardLen = 0;       // guard: only call renderCommunityCards when board grows
+let _simLastStreet = '';            // guard: detect street transitions to sweep stale bets
 
 // ---------------------------------------------------------------------------
 // simActionLabel
@@ -3010,6 +3012,8 @@ function startSimulator() {
     try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
     _simTableInitialized = false;
+    _simRenderedBoardLen = 0;
+    _simLastStreet = '';
     _simRun = createHandRun({ lane: 'BTN_vs_BB_SRP' });
 
     hideAllScreens();
@@ -3068,13 +3072,30 @@ function _simRenderRound() {
         updateTable('BTN', 'BB');
     }
 
-    // Board: read exclusively from gameState.board — never from spot internal arrays
+    // Board: only re-render when new cards have been added — prevents ccDeal re-animation
     const board = h.gameState.board;
     if (board && board.length > 0) {
-        renderCommunityCards(board);
+        if (board.length > _simRenderedBoardLen) {
+            renderCommunityCards(board);
+            _simRenderedBoardLen = board.length;
+        }
     } else {
-        clearCommunityCards();
+        if (_simRenderedBoardLen > 0) {
+            clearCommunityCards();
+            _simRenderedBoardLen = 0;
+        }
     }
+
+    // Detect street transition — sweep stale bet chips off the felt, keep pot badge
+    try {
+        const betsLayer = document.getElementById('bets-layer');
+        if (betsLayer && _simLastStreet !== '' && h.street !== _simLastStreet) {
+            Array.from(betsLayer.children).forEach(function(child) {
+                if (child.id !== 'pot-badge') child.remove();
+            });
+        }
+    } catch(_) {}
+    _simLastStreet = h.street;
 
     // Pot badge: preflop shows blind total since potBB starts at 0
     try {
