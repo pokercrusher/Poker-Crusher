@@ -4097,9 +4097,9 @@ function showPostflopFeedback(spot, result) {
 }
 function closePostflopFeedback(){
     const m = document.getElementById('postflop-feedback-modal');
-    if (m) m.classList.add('hidden');
-    // Advance to next round now that the user has dismissed feedback
-    if (!checkDrillComplete() && !checkDailyRunComplete()) { __endResolve(); safeGenerateNextRound(); }
+    const logReview = m && m.dataset.logReview === '1';
+    if (m) { delete m.dataset.logReview; m.classList.add('hidden'); }
+    if (!logReview && !checkDrillComplete() && !checkDailyRunComplete()) { __endResolve(); safeGenerateNextRound(); }
 }
 // ============================================================
 // TURN TRAINING — BUTTONS, HANDLERS, FEEDBACK

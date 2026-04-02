@@ -2188,6 +2188,8 @@ function logRowChart(idx) {
         } else {
             showPostflopFeedback(logSpot, logResult, e.correct);
         }
+        // Mark modal as log-review so closing it doesn't advance the game state
+        try { const m = document.getElementById('postflop-feedback-modal'); if (m) m.dataset.logReview = '1'; } catch(_) {}
         return;
     }
     _chartIsReview = true;
