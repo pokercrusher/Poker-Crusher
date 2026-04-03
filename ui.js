@@ -2972,6 +2972,45 @@ function _simShowRecapDrawer(h) {
         ? '<div style="font-size:12px;color:#64748b;font-style:italic;text-align:center;margin-bottom:14px;">' + summary.lineAssessment + '</div>'
         : '';
 
+    // Cards display
+    function _recapMiniCard(cardStr) {
+        if (!cardStr || cardStr.length < 2) return '';
+        var rank = cardStr.slice(0, -1);
+        var suit = cardStr.slice(-1);
+        var suitSym = { h: '\u2665', d: '\u2666', c: '\u2663', s: '\u2660' }[suit] || suit;
+        var color = (suit === 'h' || suit === 'd') ? '#ef4444' : '#1e293b';
+        return '<div style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;' +
+            'width:30px;height:42px;background:#fff;border-radius:5px;border:1px solid #475569;' +
+            'color:' + color + ';font-weight:900;font-size:12px;line-height:1;gap:1px;flex-shrink:0;">' +
+            '<span>' + rank + '</span><span style="font-size:10px;">' + suitSym + '</span>' +
+            '</div>';
+    }
+    var _rcVillainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
+    var _rcBoard = (h.gameState && h.gameState.board) ? h.gameState.board : [];
+    var cardsBlock = '';
+    if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
+        var _rcHeroHtml = heroSeat.holeCards.map(_recapMiniCard).join('');
+        var _rcVillainHtml = (_rcVillainSeat && _rcVillainSeat.holeCards && _rcVillainSeat.holeCards.length >= 2)
+            ? _rcVillainSeat.holeCards.map(_recapMiniCard).join('') : '';
+        var _rcBoardHtml = _rcBoard.length ? _rcBoard.map(_recapMiniCard).join('') : '';
+        var _rcParts = '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">' +
+            '<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Hero</span>' +
+            '<div style="display:flex;gap:4px;">' + _rcHeroHtml + '</div></div>';
+        if (_rcBoardHtml) {
+            _rcParts += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">' +
+                '<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Board</span>' +
+                '<div style="display:flex;gap:4px;">' + _rcBoardHtml + '</div></div>';
+        }
+        if (_rcVillainHtml) {
+            _rcParts += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">' +
+                '<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;">Villain</span>' +
+                '<div style="display:flex;gap:4px;">' + _rcVillainHtml + '</div></div>';
+        }
+        cardsBlock = '<div style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:12px;margin-bottom:14px;">' +
+            '<div style="display:flex;align-items:flex-end;justify-content:center;gap:16px;flex-wrap:wrap;">' +
+            _rcParts + '</div></div>';
+    }
+
     const drawer = document.createElement('div');
     drawer.id = 'sim-recap-drawer';
     drawer.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;' +
@@ -2985,6 +3024,7 @@ function _simShowRecapDrawer(h) {
         '<div style="max-width:360px;margin:0 auto;">' +
         chipHtml +
         outcomeLine +
+        cardsBlock +
         rowsBlock +
         assessLine +
         '<div style="display:flex;flex-direction:column;gap:10px;">' +
@@ -3055,7 +3095,8 @@ function startSimulator(lane) {
 
     state.currentPos = simHeroLabel;
     state.oppPos = simVillainLabel;
-    state.scenario = 'FACING_RFI';
+    const simScenario = (_simRun.lane === 'BB_vs_BTN_SRP') ? 'FACING_RFI' : 'RFI';
+    state.scenario = simScenario;
     state.villainOpenSize = getOpenSize$();
 
     // Show card backs + greyed-out buttons before animation (matches trainer UX)
@@ -3066,7 +3107,7 @@ function startSimulator(lane) {
         if (btnDiv) { btnDiv.classList.remove('action-buttons-revealed'); btnDiv.classList.add('action-buttons-hidden'); }
     } catch(_) {}
 
-    runTableAnimation(simHeroLabel, simVillainLabel, 'FACING_RFI', function() {
+    runTableAnimation(simHeroLabel, simVillainLabel, simScenario, function() {
         const heroSeat = _simRun.seats[_simRun.heroSeatIndex];
         if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
             renderHand({

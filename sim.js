@@ -458,7 +458,13 @@ function resolveDecisionNode(handRun) {
             position = _heroIsIP(hr) ? 'IP' : 'OOP';
             availableActions = getAvailableActions(hr);
 
-            if (spot && spot.strategy) {
+            if (!isPFR) {
+                // OOP hero acting first (probe decision) — no dedicated flop probe data yet.
+                // Checking is correct GTO default for BB on the flop vs IP opener.
+                correctAction = 'check';
+                mixFrequency = null;
+                explanation = 'OOP on the ' + streetLabel + ' \u2014 check is the correct default. Probe bet frequencies added in a future pass.';
+            } else if (spot && spot.strategy) {
                 const bet33Freq = spot.strategy.actions && spot.strategy.actions.bet33 !== undefined
                     ? spot.strategy.actions.bet33 : null;
                 const checkFreq = spot.strategy.actions && spot.strategy.actions.check !== undefined
@@ -645,6 +651,12 @@ function advanceStreet(handRun) {
 
         // Generate postflop spot for strategy lookup only — spot.flopCards never used for display
         hr.postflopSpot = generatePostflopSpot(20, familyFilter);
+        // For OOP hero (BB defending), override heroRole so resolveDecisionNode
+        // uses the correct branch. The strategy field is PFR-sourced but heroRole
+        // gates the branch selection — corrected probe data comes in Pass 3.5b.
+        if (!_heroIsIP(hr) && hr.postflopSpot) {
+            hr.postflopSpot.heroRole = 'DEFENDER';
+        }
 
     } else if (nextStreet === 'turn') {
         // Step 4: Deal one turn card and append
