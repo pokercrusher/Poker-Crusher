@@ -3089,10 +3089,15 @@ function _simRenderRound() {
     const h = _simRun;
 
     // One-time per hand: set up table seats
-    // Cards and table animation are handled by startSimulator → runTableAnimation
+    // Cards and table animation are handled by startSimulator → runTableAnimation.
+    // This fallback fires when _simRenderRound is called before the animation completes
+    // (e.g. BB_vs_BTN_SRP villain_response fires ~1600ms, animation takes ~2350ms).
+    // Use actual seat labels so non-BTN/BB lanes render correctly.
     if (!_simTableInitialized) {
         _simTableInitialized = true;
-        updateTable('BTN', 'BB');
+        const _fbHero = (h.seats && h.seats[h.heroSeatIndex]) ? h.seats[h.heroSeatIndex].label : 'BTN';
+        const _fbVillain = h.seats ? h.seats.find(function(s) { return s && !s.isHero; }) : null;
+        updateTable(_fbHero, _fbVillain ? _fbVillain.label : 'BB');
     }
 
     // Board: only re-render when new cards have been added — prevents ccDeal re-animation
