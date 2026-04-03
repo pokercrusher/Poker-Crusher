@@ -88,13 +88,23 @@ const STAKE_PRESETS = {
 // ============================================================
 // UNIFIED SESSION BUILDER STATE
 // ============================================================
+const FULL_HAND_ALL_LANES = ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
+const FULL_HAND_LANE_LABELS = {
+    'BTN_vs_BB_SRP': 'BTN vs BB',
+    'CO_vs_BB_SRP':  'CO vs BB',
+    'SB_vs_BB_SRP':  'SB vs BB',
+    'BB_vs_BTN_SRP': 'BB vs BTN'
+};
+
 let sessionBuilder = {
     module: 'PREFLOP',  // legacy compat — derived from active families
     families: ['OPEN', 'DEFEND', 'VS_3BET', 'LIMPERS', 'SQUEEZE'],  // can span PREFLOP + POSTFLOP
     sessionLength: 'ENDLESS',  // 'ENDLESS' | 10 | 25 | 50
     stakeId: '1/3',            // key into STAKE_PRESETS
     displayMode: 'dollars',    // 'dollars' | 'bb'
-    pfStacks: [5,8,10,13,15,20] // active push/fold stack depths
+    pfStacks: [5,8,10,13,15,20], // active push/fold stack depths
+    fullHandMode: false,       // true = Full Hand mode (mutually exclusive with pre/post families)
+    fullHandLanes: [...FULL_HAND_ALL_LANES] // active lanes for Full Hand mode
 };
 
 // Which modules currently have at least one active family?
@@ -854,6 +864,16 @@ function medalRank(m) { return { gold: 3, silver: 2, bronze: 1, none: 0 }[m] || 
 // --- Module header toggle (both can be active simultaneously) ---
 function setSessionModule(mod) {
     if (!FAMILY_MODEL[mod]) return;
+    // Exiting full hand mode: select all families in this module
+    if (sessionBuilder.fullHandMode) {
+        sessionBuilder.fullHandMode = false;
+        sessionBuilder.families = FAMILY_MODEL[mod].map(f => f.id);
+        sessionBuilder.module = mod;
+        syncSessionToConfig();
+        renderSessionBuilderUI();
+        saveSessionConfig();
+        return;
+    }
     const modIds = FAMILY_MODEL[mod].map(f => f.id);
     const isActive = getActiveModules().includes(mod);
 
@@ -876,6 +896,21 @@ function setSessionModule(mod) {
 
 // --- Family chip toggling ---
 function toggleFamily(familyId) {
+    // Exiting full hand mode: select only this family (or module) and exit
+    if (sessionBuilder.fullHandMode) {
+        sessionBuilder.fullHandMode = false;
+        if (familyId.startsWith('MIXED_')) {
+            const mod = familyId.replace('MIXED_', '');
+            sessionBuilder.families = (FAMILY_MODEL[mod] || []).map(f => f.id);
+        } else {
+            sessionBuilder.families = [familyId];
+        }
+        sessionBuilder.module = getActiveModules()[0] || 'PREFLOP';
+        syncSessionToConfig();
+        renderSessionBuilderUI();
+        saveSessionConfig();
+        return;
+    }
     if (familyId.startsWith('MIXED_')) {
         // Per-module "All" toggle, e.g. MIXED_PREFLOP
         const mod = familyId.replace('MIXED_', '');
@@ -999,7 +1034,9 @@ function saveSessionConfig() {
             sessionLength: sessionBuilder.sessionLength,
             stakeId: sessionBuilder.stakeId,
             displayMode: sessionBuilder.displayMode,
-            pfStacks: sessionBuilder.pfStacks
+            pfStacks: sessionBuilder.pfStacks,
+            fullHandMode: sessionBuilder.fullHandMode,
+            fullHandLanes: sessionBuilder.fullHandLanes
         }));
     } catch(e) {}
 }
@@ -1014,6 +1051,11 @@ function loadSessionConfig() {
             if (c.stakeId && STAKE_PRESETS[c.stakeId]) sessionBuilder.stakeId = c.stakeId;
             if (c.displayMode === 'dollars' || c.displayMode === 'bb') sessionBuilder.displayMode = c.displayMode;
             if (Array.isArray(c.pfStacks) && c.pfStacks.length) sessionBuilder.pfStacks = c.pfStacks;
+            if (c.fullHandMode === true) sessionBuilder.fullHandMode = true;
+            if (Array.isArray(c.fullHandLanes) && c.fullHandLanes.length) {
+                const valid = c.fullHandLanes.filter(l => FULL_HAND_ALL_LANES.includes(l));
+                if (valid.length) sessionBuilder.fullHandLanes = valid;
+            }
         }
     } catch(e) {}
     // Sync openSize to match stake preset's defaultOpen
@@ -1047,8 +1089,8 @@ function renderFamilyChips() {
     for (const mod of Object.keys(FAMILY_MODEL)) {
         const families = FAMILY_MODEL[mod];
         const modIds = families.map(f => f.id);
-        const anySelected = modIds.some(id => sessionBuilder.families.includes(id));
-        const allSelected = modIds.every(id => sessionBuilder.families.includes(id));
+        const anySelected = !sessionBuilder.fullHandMode && modIds.some(id => sessionBuilder.families.includes(id));
+        const allSelected = !sessionBuilder.fullHandMode && modIds.every(id => sessionBuilder.families.includes(id));
 
         // Module header row with label + divider
         const header = document.createElement('div');
@@ -1061,7 +1103,7 @@ function renderFamilyChips() {
         row.className = 'flex flex-wrap gap-2';
 
         for (const fam of families) {
-            const isSel = sessionBuilder.families.includes(fam.id);
+            const isSel = !sessionBuilder.fullHandMode && sessionBuilder.families.includes(fam.id);
             const btn = document.createElement('button');
             btn.onclick = () => toggleFamily(fam.id);
             btn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${isSel ? 'selected' : ''}`;
@@ -1105,6 +1147,13 @@ function renderSessionLengthUI() {
 }
 
 function renderDynamicFilters() {
+    if (sessionBuilder.fullHandMode) {
+        const limperEl = document.getElementById('filter-limper-mix');
+        if (limperEl) limperEl.classList.add('hidden');
+        const pfStackEl = document.getElementById('filter-pf-stacks');
+        if (pfStackEl) pfStackEl.classList.add('hidden');
+        return;
+    }
     const hasLimpers = sessionBuilder.families.includes('LIMPERS');
     const limperEl = document.getElementById('filter-limper-mix');
     if (limperEl) limperEl.classList.toggle('hidden', !hasLimpers);
@@ -1118,6 +1167,63 @@ function renderDynamicFilters() {
     const pfStackEl = document.getElementById('filter-pf-stacks');
     if (pfStackEl) pfStackEl.classList.toggle('hidden', !hasPushFold);
     if (hasPushFold) renderPFStackChips();
+}
+
+function renderFullHandChips() {
+    const container = document.getElementById('full-hand-chips');
+    if (!container) return;
+    container.innerHTML = '';
+    const isActive = sessionBuilder.fullHandMode;
+    for (const lane of FULL_HAND_ALL_LANES) {
+        const isSel = isActive && sessionBuilder.fullHandLanes.includes(lane);
+        const btn = document.createElement('button');
+        btn.onclick = () => toggleFullHandLane(lane);
+        btn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${isSel ? 'selected' : ''}`;
+        btn.textContent = FULL_HAND_LANE_LABELS[lane];
+        container.appendChild(btn);
+    }
+    const allSel = isActive && FULL_HAND_ALL_LANES.every(l => sessionBuilder.fullHandLanes.includes(l));
+    const allBtn = document.createElement('button');
+    allBtn.onclick = () => toggleFullHandLane('ALL');
+    allBtn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${allSel ? 'selected-gold' : ''}`;
+    allBtn.textContent = 'All';
+    container.appendChild(allBtn);
+}
+
+function toggleFullHandLane(lane) {
+    if (lane === 'ALL') {
+        const alreadyAll = sessionBuilder.fullHandMode &&
+            FULL_HAND_ALL_LANES.every(l => sessionBuilder.fullHandLanes.includes(l));
+        if (alreadyAll) {
+            // Toggle All off = exit full hand mode entirely
+            sessionBuilder.fullHandMode = false;
+            sessionBuilder.fullHandLanes = [...FULL_HAND_ALL_LANES];
+        } else {
+            sessionBuilder.fullHandMode = true;
+            sessionBuilder.fullHandLanes = [...FULL_HAND_ALL_LANES];
+        }
+    } else {
+        if (!sessionBuilder.fullHandMode) {
+            // First lane click: enter full hand mode with just this lane
+            sessionBuilder.fullHandMode = true;
+            sessionBuilder.fullHandLanes = [lane];
+        } else {
+            const idx = sessionBuilder.fullHandLanes.indexOf(lane);
+            if (idx > -1) {
+                if (sessionBuilder.fullHandLanes.length > 1) {
+                    sessionBuilder.fullHandLanes.splice(idx, 1);
+                } else {
+                    // Deselecting the last lane — exit full hand mode
+                    sessionBuilder.fullHandMode = false;
+                    sessionBuilder.fullHandLanes = [...FULL_HAND_ALL_LANES];
+                }
+            } else {
+                sessionBuilder.fullHandLanes.push(lane);
+            }
+        }
+    }
+    renderSessionBuilderUI();
+    saveSessionConfig();
 }
 
 function renderPFStackChips() {
@@ -1148,6 +1254,13 @@ function validatePool() {
     const startBtn = document.getElementById('cfg-start-btn');
     if (!msgEl || !startBtn) return;
 
+    if (sessionBuilder.fullHandMode) {
+        msgEl.classList.add('hidden');
+        startBtn.disabled = false;
+        startBtn.classList.remove('opacity-40');
+        return;
+    }
+
     const scenarios = allFamiliesToScenarios(sessionBuilder.families);
     if (scenarios.length === 0) {
         msgEl.textContent = 'Select at least one spot family.';
@@ -1164,8 +1277,9 @@ function validatePool() {
 function renderSessionBuilderUI() {
     // Module buttons removed — families are now grouped in the Spots section
     renderFamilyChips();
-    // Hero position filter shows when any preflop family is active
-    const hasPreflop = getActiveModules().includes('PREFLOP');
+    renderFullHandChips();
+    // Hero position filter shows when any preflop family is active AND not in full hand mode
+    const hasPreflop = !sessionBuilder.fullHandMode && getActiveModules().includes('PREFLOP');
     const posBlock = document.getElementById('filter-hero-position');
     if (posBlock) posBlock.classList.toggle('hidden', !hasPreflop);
     renderPositionChips();
@@ -1174,6 +1288,9 @@ function renderSessionBuilderUI() {
     // Stake + Display controls
     const sdBlock = document.getElementById('filter-stake-display');
     if (sdBlock) renderStakeDisplayUI(sdBlock);
+    // CTA button label
+    const startBtn = document.getElementById('cfg-start-btn');
+    if (startBtn) startBtn.textContent = sessionBuilder.fullHandMode ? 'PLAY FULL HAND' : 'START TRAINING';
     validatePool();
 }
 

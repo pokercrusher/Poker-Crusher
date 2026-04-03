@@ -581,27 +581,6 @@
             </button>
             <!-- Prescription card: populated by updateMenuUI() -->
             <div id="menu-prescription-card" class="w-full bg-slate-900/60 border border-slate-700/40 rounded-2xl p-4 text-left"></div>
-            <!-- Lane selector -->
-            <div class="w-full bg-slate-900 border border-slate-700 rounded-2xl p-4">
-                <div class="flex items-center gap-2 mb-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-400"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-                    <span class="font-black text-slate-200 text-sm tracking-wide">PLAY A HAND</span>
-                </div>
-                <div class="mb-2">
-                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Play as opener</div>
-                    <div class="flex gap-2">
-                        <button onclick="startSimulator('BTN_vs_BB_SRP')" class="flex-1 py-2.5 bg-slate-800 border border-slate-700 hover:border-amber-500/60 active:scale-[0.97] rounded-xl font-black text-slate-200 text-sm transition-all">BTN vs BB</button>
-                        <button onclick="startSimulator('CO_vs_BB_SRP')"  class="flex-1 py-2.5 bg-slate-800 border border-slate-700 hover:border-amber-500/60 active:scale-[0.97] rounded-xl font-black text-slate-200 text-sm transition-all">CO vs BB</button>
-                        <button onclick="startSimulator('SB_vs_BB_SRP')"  class="flex-1 py-2.5 bg-slate-800 border border-slate-700 hover:border-amber-500/60 active:scale-[0.97] rounded-xl font-black text-slate-200 text-sm transition-all">SB vs BB</button>
-                    </div>
-                </div>
-                <div>
-                    <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Play as defender</div>
-                    <div class="flex gap-2">
-                        <button onclick="startSimulator('BB_vs_BTN_SRP')" class="flex-1 py-2.5 bg-slate-800 border border-indigo-700/60 hover:border-indigo-500/80 active:scale-[0.97] rounded-xl font-black text-slate-200 text-sm transition-all">BB vs BTN</button>
-                    </div>
-                </div>
-            </div>
             <button onclick="showMathDrillMenu()" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                 MATH DRILLS
@@ -883,6 +862,14 @@
                 <div id="family-chips" class="flex flex-col gap-3">
                     <!-- Injected by renderFamilyChips() — grouped by module -->
                 </div>
+                <!-- Full Hand section -->
+                <div class="w-full flex items-center gap-2 mt-3">
+                    <span class="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-500">Full Hand</span>
+                    <div class="flex-1 border-t border-slate-800"></div>
+                </div>
+                <div id="full-hand-chips" class="flex flex-wrap gap-2 mt-2">
+                    <!-- Injected by renderFullHandChips() -->
+                </div>
             </div>
 
             <!-- Section 3: Dynamic Filters -->
@@ -937,7 +924,7 @@
 
             <!-- CTA -->
             <div class="flex flex-col gap-3 mt-1">
-                <button onclick="startConfiguredTraining()" id="cfg-start-btn" class="w-full py-5 pc-btn-primary transition-all shadow-lg">START TRAINING</button>
+                <button onclick="launchConfiguredSession()" id="cfg-start-btn" class="w-full py-5 pc-btn-primary transition-all shadow-lg">START TRAINING</button>
                 <button onclick="hideConfigMenu()" class="w-full py-3 pc-btn-utility font-bold text-sm">Back</button>
             </div>
         </div>

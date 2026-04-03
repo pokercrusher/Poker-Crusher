@@ -1595,8 +1595,7 @@ function exitToMenu() {
         showSessionSummary();
     } else {
         document.getElementById('trainer-screen').classList.add('hidden');
-        document.getElementById('menu-screen').classList.remove('hidden');
-        updateMenuUI();
+        showConfigMenu();
     }
 }
 
@@ -1687,7 +1686,7 @@ function showSessionSummary() {
     }).join('') : '<div class="text-slate-600 text-xs italic">Not enough data yet</div>';
 
     const el = document.getElementById('session-summary-screen');
-    if (!el) { document.getElementById('trainer-screen').classList.add('hidden'); document.getElementById('menu-screen').classList.remove('hidden'); updateMenuUI(); return; }
+    if (!el) { document.getElementById('trainer-screen').classList.add('hidden'); showConfigMenu(); return; }
 
     el.querySelector('#ss-hands').textContent = total;
     el.querySelector('#ss-accuracy').textContent = acc + '%';
@@ -1702,8 +1701,7 @@ function showSessionSummary() {
 function closeSessionSummary() {
     const el = document.getElementById('session-summary-screen');
     if (el) el.classList.add('hidden');
-    document.getElementById('menu-screen').classList.remove('hidden');
-    updateMenuUI();
+    showConfigMenu();
 }
 function saveProgress() { localStorage.setItem(profileKey('gto_rfi_stats_v2'), JSON.stringify(state.global)); SR.save(); markCloudDirty(); }
 function loadProgress() { const s = localStorage.getItem(profileKey('gto_rfi_stats_v2')); if (s) state.global = JSON.parse(s); if (!state.global.byScenario) state.global.byScenario = {}; if (!state.global.byPos) state.global.byPos = {}; if (!state.global.byPosGroup) state.global.byPosGroup = {}; if (!state.global.bestStreak) state.global.bestStreak = 0; if (!state.global.bySpot) state.global.bySpot = {}; if (!state.global.byHand) state.global.byHand = {}; loadConfig(); loadLimperMix(); SR.load(); try { if(typeof loadPostflopStats==='function') loadPostflopStats(); } catch(_) {} updateMenuUI(); if (window.RANGE_VALIDATE) { validateAndNormalizeRanges(facingRfiRanges); validateAndNormalizeRanges(rfiVs3BetRanges); validateAndNormalizeRanges(allFacingLimps); } }
@@ -3007,8 +3005,28 @@ function _simShowRecapDrawer(h) {
 // ---------------------------------------------------------------------------
 // startSimulator — entry point; also called by "Play Another Hand"
 // ---------------------------------------------------------------------------
+function launchConfiguredSession() {
+    if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode) {
+        const lanes = (sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length)
+            ? sessionBuilder.fullHandLanes
+            : ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
+        const lane = lanes[Math.floor(Math.random() * lanes.length)];
+        startSimulator(lane);
+    } else {
+        startConfiguredTraining();
+    }
+}
+
 function startSimulator(lane) {
-    lane = lane || (_simRun && _simRun.lane) || 'BTN_vs_BB_SRP';
+    if (!lane) {
+        if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode &&
+                sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length) {
+            const lanes = sessionBuilder.fullHandLanes;
+            lane = lanes[Math.floor(Math.random() * lanes.length)];
+        } else {
+            lane = (_simRun && _simRun.lane) || 'BTN_vs_BB_SRP';
+        }
+    }
     try { __clearNextTimer(); __endResolve(); } catch(_) {}
     try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
