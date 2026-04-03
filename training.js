@@ -88,12 +88,22 @@ const STAKE_PRESETS = {
 // ============================================================
 // UNIFIED SESSION BUILDER STATE
 // ============================================================
-const FULL_HAND_ALL_LANES = ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
+const FULL_HAND_ALL_LANES = [
+    'UTG_vs_BB_SRP', 'UTG1_vs_BB_SRP', 'UTG2_vs_BB_SRP',
+    'LJ_vs_BB_SRP', 'HJ_vs_BB_SRP', 'CO_vs_BB_SRP',
+    'BTN_vs_BB_SRP', 'SB_vs_BB_SRP',
+    'BB_vs_BTN_SRP'
+];
 const FULL_HAND_LANE_LABELS = {
-    'BTN_vs_BB_SRP': 'BTN vs BB',
-    'CO_vs_BB_SRP':  'CO vs BB',
-    'SB_vs_BB_SRP':  'SB vs BB',
-    'BB_vs_BTN_SRP': 'BB vs BTN'
+    'UTG_vs_BB_SRP':  'UTG',
+    'UTG1_vs_BB_SRP': 'UTG1',
+    'UTG2_vs_BB_SRP': 'UTG2',
+    'LJ_vs_BB_SRP':   'LJ',
+    'HJ_vs_BB_SRP':   'HJ',
+    'CO_vs_BB_SRP':   'CO',
+    'BTN_vs_BB_SRP':  'BTN',
+    'SB_vs_BB_SRP':   'SB',
+    'BB_vs_BTN_SRP':  'BB def'
 };
 
 let sessionBuilder = {

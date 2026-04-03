@@ -17,23 +17,38 @@ const SIM_SUPPORTED_LANES = [
     'BTN_vs_BB_SRP',
     'BB_vs_BTN_SRP',
     'CO_vs_BB_SRP',
-    'SB_vs_BB_SRP'
+    'SB_vs_BB_SRP',
+    'HJ_vs_BB_SRP',
+    'LJ_vs_BB_SRP',
+    'UTG_vs_BB_SRP',
+    'UTG1_vs_BB_SRP',
+    'UTG2_vs_BB_SRP'
 ];
 
 // Maps lane → preflopFamily key used by getSRPPot$ and postflop generators
 const LANE_FAMILY = {
-    'BTN_vs_BB_SRP': 'BTN_vs_BB',
-    'BB_vs_BTN_SRP': 'BTN_vs_BB',
-    'CO_vs_BB_SRP':  'CO_vs_BB',
-    'SB_vs_BB_SRP':  'SB_vs_BB'
+    'BTN_vs_BB_SRP':  'BTN_vs_BB',
+    'BB_vs_BTN_SRP':  'BTN_vs_BB',
+    'CO_vs_BB_SRP':   'CO_vs_BB',
+    'SB_vs_BB_SRP':   'SB_vs_BB',
+    'HJ_vs_BB_SRP':   'HJ_vs_BB',
+    'LJ_vs_BB_SRP':   'LJ_vs_BB',
+    'UTG_vs_BB_SRP':  'UTG_vs_BB',
+    'UTG1_vs_BB_SRP': 'UTG_vs_BB',  // proxy: no distinct UTG1 postflop family
+    'UTG2_vs_BB_SRP': 'LJ_vs_BB'    // proxy: UTG2 opens similar to LJ
 };
 
 // Maps lane → familyFilter array passed to all postflop generators
 const LANE_POSTFLOP_FAMILY = {
-    'BTN_vs_BB_SRP': ['BTN_vs_BB'],
-    'BB_vs_BTN_SRP': ['BTN_vs_BB'],
-    'CO_vs_BB_SRP':  ['CO_vs_BB'],
-    'SB_vs_BB_SRP':  ['SB_vs_BB']
+    'BTN_vs_BB_SRP':  ['BTN_vs_BB'],
+    'BB_vs_BTN_SRP':  ['BTN_vs_BB'],
+    'CO_vs_BB_SRP':   ['CO_vs_BB'],
+    'SB_vs_BB_SRP':   ['SB_vs_BB'],
+    'HJ_vs_BB_SRP':   ['HJ_vs_BB'],
+    'LJ_vs_BB_SRP':   ['LJ_vs_BB'],
+    'UTG_vs_BB_SRP':  ['UTG_vs_BB'],
+    'UTG1_vs_BB_SRP': ['UTG_vs_BB'],
+    'UTG2_vs_BB_SRP': ['LJ_vs_BB']
 };
 
 const _SIM_SUITS = ['c', 'd', 'h', 's'];
@@ -547,8 +562,9 @@ function resolveVillainAction(handRun) {
             const villainHasActed = ss.actions.some(a => a.seatLabel === villainSeat.label);
             return villainHasActed ? 'fold' : 'raise';
         }
-        // Villain is BB facing hero's open (BTN/CO/SB_vs_BB lanes)
-        const rangeData = facingRfiRanges['BB_vs_BTN'];
+        // Villain is BB facing hero's open — use the correct facing range for this opener
+        const _bbRangeKey = 'BB_vs_' + heroLabel;
+        const rangeData = facingRfiRanges[_bbRangeKey] || facingRfiRanges['BB_vs_BTN'];
         if (!rangeData) return 'fold';
         const threeBetRange = rangeData['3-bet'] || [];
         const callRange = rangeData['Call'] || [];
@@ -1002,20 +1018,60 @@ function createHandRun(config) {
         firstToActPreflopIndex = 0; // BTN opens
     } else if (lane === 'CO_vs_BB_SRP') {
         seats = [
-            { index: 0, label: 'CO', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
-            { index: 1, label: 'BB', isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            { index: 0, label: 'CO',  isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
             null, null, null, null, null, null, null
         ];
         heroSeatIndex = 0;
         firstToActPreflopIndex = 0; // CO opens
     } else if (lane === 'SB_vs_BB_SRP') {
         seats = [
-            { index: 0, label: 'SB', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
-            { index: 1, label: 'BB', isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            { index: 0, label: 'SB',  isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
             null, null, null, null, null, null, null
         ];
         heroSeatIndex = 0;
         firstToActPreflopIndex = 0; // SB opens
+    } else if (lane === 'HJ_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'HJ',  isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // HJ opens
+    } else if (lane === 'LJ_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'LJ',  isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // LJ opens
+    } else if (lane === 'UTG_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'UTG', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',  isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // UTG opens
+    } else if (lane === 'UTG1_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'UTG1', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',   isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // UTG1 opens
+    } else if (lane === 'UTG2_vs_BB_SRP') {
+        seats = [
+            { index: 0, label: 'UTG2', isHero: true,  stackBB: 100, holeCards: holeCards, folded: false, allIn: false },
+            { index: 1, label: 'BB',   isHero: false, stackBB: 100, holeCards: null,      folded: false, allIn: false },
+            null, null, null, null, null, null, null
+        ];
+        heroSeatIndex = 0;
+        firstToActPreflopIndex = 0; // UTG2 opens
     } else {
         // BTN_vs_BB_SRP (default)
         seats = [
