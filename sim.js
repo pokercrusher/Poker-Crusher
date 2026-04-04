@@ -22,7 +22,8 @@ const SIM_SUPPORTED_LANES = [
     'LJ_vs_BB_SRP',
     'UTG_vs_BB_SRP',
     'UTG1_vs_BB_SRP',
-    'UTG2_vs_BB_SRP'
+    'UTG2_vs_BB_SRP',
+    'FULL_TABLE'
 ];
 
 // Maps lane → preflopFamily key used by getSRPPot$ and postflop generators
@@ -52,6 +53,11 @@ const LANE_POSTFLOP_FAMILY = {
 };
 
 const _SIM_SUITS = ['c', 'd', 'h', 's'];
+
+// Open-raise frequency by position (approximate GTO baseline for full-table simulation)
+const RFI_FREQ = { UTG:0.14, UTG1:0.15, UTG2:0.16, LJ:0.18, HJ:0.22, CO:0.28, BTN:0.45, SB:0.42 };
+// Seat order for full-table preflop action loop (UTG first, BB last)
+const FULL_TABLE_POSITIONS = ['UTG','UTG1','UTG2','LJ','HJ','CO','BTN','SB','BB'];
 
 // Rule of 4/2 outs map — draw categories from spot.heroDraws.primary
 const OUTS_MAP = {
@@ -264,6 +270,97 @@ function _buildCommittedBB(seats) {
         seats.filter(s => s !== null && !s.folded)
              .map(s => [s.label, 0])
     );
+}
+
+// ---------------------------------------------------------------------------
+// _runPreflopTableLoop — Phase 1 full-table preflop simulation
+// Simulates villain actions for all seats before hero, then collapses to 2-player.
+// Sets hr.lane to a derived 2-player lane for postflop engine compatibility.
+// Sets hr.preflopContext for UI display of table action summary.
+// ---------------------------------------------------------------------------
+function _runPreflopTableLoop(hr) {
+    var heroPos = hr.seats[hr.heroSeatIndex].label;
+    var heroOrderIdx = FULL_TABLE_POSITIONS.indexOf(heroPos);
+    var ss = hr.gameState.streetState;
+    var openSizeBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
+    var opener = null; // label of first raiser before hero
+
+    // Simulate each seat that acts before hero in position order
+    for (var i = 0; i < heroOrderIdx; i++) {
+        var seat = hr.seats[i];
+        if (!seat) continue;
+        if (opener === null) {
+            // No open yet: fold or open based on RFI frequency
+            if (Math.random() < (RFI_FREQ[seat.label] || 0.15)) {
+                opener = seat.label;
+                ss.actions.push({ seatLabel: seat.label, action: 'raise', sizingBB: openSizeBB });
+                ss.betMadeThisStreet = true;
+                seat.stackBB = parseFloat((seat.stackBB - openSizeBB).toFixed(2));
+            } else {
+                ss.actions.push({ seatLabel: seat.label, action: 'fold', sizingBB: 0 });
+                seat.folded = true;
+            }
+        } else {
+            // Facing open: fold or occasionally call (3-bets excluded Phase 1 for clarity)
+            var rangeKey = seat.label + '_vs_' + opener;
+            var rangeData = (typeof facingRfiRanges !== 'undefined') ? facingRfiRanges[rangeKey] : null;
+            var callProb = 0.07;
+            if (rangeData) {
+                var callCombos = _roughCombosInRange(rangeData['Call'] || []);
+                callProb = callCombos / (callCombos + 1100); // ~1100 fold-equivalent combos
+            }
+            if (Math.random() < callProb) {
+                ss.actions.push({ seatLabel: seat.label, action: 'call', sizingBB: openSizeBB });
+                seat.stackBB = parseFloat((seat.stackBB - openSizeBB).toFixed(2));
+            } else {
+                ss.actions.push({ seatLabel: seat.label, action: 'fold', sizingBB: 0 });
+                seat.folded = true;
+            }
+        }
+    }
+
+    // Capture table context for UI display before collapsing to 2-player
+    hr.preflopContext = {
+        heroPos: heroPos,
+        opener: opener,
+        tableActions: ss.actions.map(function(a) { return { seatLabel: a.seatLabel, action: a.action }; })
+    };
+
+    // The one villain hero plays against:
+    //   nobody opened → villain is BB (BB will respond to hero's open)
+    //   someone opened → villain is the opener (hero faces their raise)
+    var villainLabel = (opener === null) ? 'BB' : opener;
+
+    // Null out all seats except hero and designated villain → 2-player from here
+    hr.seats = hr.seats.map(function(seat) {
+        if (seat === null) return null;
+        if (seat.isHero) return seat;
+        if (seat.label === villainLabel) return seat;
+        return null;
+    });
+
+    // Derive lane for postflop engine (all downstream functions key off hr.lane)
+    if (opener === null) {
+        // Hero is first to open: heroPos_vs_BB_SRP
+        var openDerived = heroPos + '_vs_BB_SRP';
+        hr.lane = SIM_SUPPORTED_LANES.includes(openDerived) ? openDerived : 'BTN_vs_BB_SRP';
+    } else if (heroPos === 'BB') {
+        // BB defending: standard OOP proxy
+        hr.lane = 'BB_vs_BTN_SRP';
+    } else {
+        // Non-BB hero facing open: heroPos_vs_BB_SRP proxy (hero is IP relative to opener)
+        var defDerived = heroPos + '_vs_BB_SRP';
+        hr.lane = SIM_SUPPORTED_LANES.includes(defDerived) ? defDerived : 'BTN_vs_BB_SRP';
+    }
+
+    // Rebuild committedBB for the two remaining active seats
+    ss.committedBB = _buildCommittedBB(hr.seats);
+    // Restore opener's committed amount and stack so sizing logic is correct
+    if (opener !== null) {
+        ss.committedBB[opener] = openSizeBB;
+        var openerSeat = hr.seats.find(function(s) { return s && s.label === opener; });
+        if (openerSeat) openerSeat.stackBB = parseFloat((100 - openSizeBB).toFixed(2));
+    }
 }
 
 // Street is complete when all active players have resolved per spec Part 5
@@ -498,16 +595,35 @@ function resolveDecisionNode(handRun) {
 
         } else if (heroLabel === 'BB') {
             // BB defense — hero faces villain's preflop raise
-            nodeId = 'preflop_defend_BB';
+            // Use actual opener from streetState (works for both existing lanes and FULL_TABLE)
+            const _bbOpenerAct = ss.actions.find(function(a) { return a.action === 'raise'; });
+            const _bbOpener = _bbOpenerAct ? _bbOpenerAct.seatLabel : 'BTN';
+            nodeId = 'preflop_defend_BB_vs_' + _bbOpener;
             spotType = 'FACING_RFI';
             position = 'OOP';
-            const rawAction = computeCorrectAction(heroHandNotation, 'FACING_RFI', 'BB', 'BTN', null);
+            const rawAction = computeCorrectAction(heroHandNotation, 'FACING_RFI', 'BB', _bbOpener, null);
             correctAction = rawAction === 'RAISE' ? '3bet' : (rawAction === 'CALL' ? 'call' : 'fold');
             mixFrequency = null;
-            explanation = 'BB vs BTN: ' + (
+            explanation = 'BB vs ' + _bbOpener + ': ' + (
                 correctAction === '3bet'  ? 'hand is in 3-bet range.' :
                 correctAction === 'call'  ? 'hand is in calling range.' :
                 'hand is outside defending range \u2014 fold.'
+            );
+        } else if (ss.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === 'raise'; })) {
+            // Non-BB hero facing a villain open (FULL_TABLE: opener pre-populated in streetState)
+            const _openAct = ss.actions.find(function(a) { return a.action === 'raise'; });
+            const _openerLabel = _openAct ? _openAct.seatLabel : 'BTN';
+            nodeId = 'preflop_facing_open_' + heroLabel + '_vs_' + _openerLabel;
+            spotType = 'FACING_RFI';
+            position = 'IP';
+            const _rawFacing = computeCorrectAction(heroHandNotation, 'FACING_RFI', heroLabel, _openerLabel, null);
+            correctAction = _rawFacing === 'RAISE' ? '3bet' : (_rawFacing === 'CALL' ? 'call' : 'fold');
+            mixFrequency = null;
+            callAmountBB = _openAct ? _openAct.sizingBB : 0;
+            explanation = heroLabel + ' vs ' + _openerLabel + ' open: ' + (
+                correctAction === '3bet' ? 'hand is in 3-bet range.' :
+                correctAction === 'call' ? 'hand is in calling range.' :
+                'hand is outside continuing range \u2014 fold.'
             );
         } else {
             // RFI opener (BTN / CO / SB)
@@ -639,10 +755,13 @@ function getAvailableActions(handRun) {
     if (street === 'preflop') {
         // BB defense lane: hero faces villain's open
         if (heroLabel === 'BB') return ['fold', 'call', '3bet'];
-        // RFI opener facing a villain 3bet
         const _pfSS = hr.gameState.streetState;
+        // RFI opener facing a villain 3bet
         const _facing3bet = _pfSS.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === '3bet'; });
         if (_facing3bet) return ['fold', 'call', '4bet'];
+        // Non-BB hero facing a villain open (FULL_TABLE: opener's raise pre-populated in actions)
+        const _facingOpen = _pfSS.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === 'raise'; });
+        if (_facingOpen) return ['fold', 'call', '3bet'];
         // RFI opener — open or fold
         return ['fold', 'raise'];
     }
@@ -1246,6 +1365,25 @@ function createHandRun(config) {
         ];
         heroSeatIndex = 0;
         firstToActPreflopIndex = 0; // UTG2 opens
+    } else if (lane === 'FULL_TABLE') {
+        // Pick hero position randomly; full 9-seat table built here.
+        // _runPreflopTableLoop (called below after hr is created) simulates preflop
+        // villain actions, nulls out irrelevant seats, and derives the 2-player lane.
+        var heroPos = FULL_TABLE_POSITIONS[Math.floor(Math.random() * FULL_TABLE_POSITIONS.length)];
+        var heroIdx = FULL_TABLE_POSITIONS.indexOf(heroPos);
+        seats = FULL_TABLE_POSITIONS.map(function(pos, i) {
+            return {
+                index: i,
+                label: pos,
+                isHero: (pos === heroPos),
+                stackBB: 100,
+                holeCards: (pos === heroPos) ? holeCards : null,
+                folded: false,
+                allIn: false
+            };
+        });
+        heroSeatIndex = heroIdx;
+        firstToActPreflopIndex = heroIdx;
     } else {
         // BTN_vs_BB_SRP (default)
         seats = [
@@ -1295,6 +1433,13 @@ function createHandRun(config) {
             }
         }
     };
+
+    // FULL_TABLE: run preflop simulation loop now that hr.gameState is fully initialized.
+    // This nulls irrelevant seats, sets hr.lane to derived 2-player lane, and populates
+    // hr.preflopContext for UI display. Must run before resolveDecisionNode.
+    if (config && config.lane === 'FULL_TABLE') {
+        _runPreflopTableLoop(hr);
+    }
 
     // Only resolve initial decision node for hero_decision starts (not BB_vs_BTN which starts villain_response)
     if (initialNodeType === 'hero_decision') resolveDecisionNode(hr);

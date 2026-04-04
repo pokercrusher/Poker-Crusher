@@ -3149,7 +3149,8 @@ function startSimulator(lane) {
 
     state.currentPos = simHeroLabel;
     state.oppPos = simVillainLabel;
-    const simScenario = (_simRun.lane === 'BB_vs_BTN_SRP') ? 'FACING_RFI' : 'RFI';
+    const simScenario = (_simRun.lane === 'BB_vs_BTN_SRP' ||
+        (_simRun.preflopContext && _simRun.preflopContext.opener)) ? 'FACING_RFI' : 'RFI';
     state.scenario = simScenario;
     state.villainOpenSize = getOpenSize$();
 
@@ -3489,10 +3490,28 @@ function _simRenderActionArea(h) {
         }
 
         // Reset flex centering used by transient states, restore normal block flow
+        // Preflop context banner (FULL_TABLE): show table action summary above buttons
+        var preflopContextHtml = '';
+        if (h.preflopContext && h.street === 'preflop') {
+            var _ctx = h.preflopContext;
+            var _ctxText;
+            if (!_ctx.opener) {
+                _ctxText = 'Folds to ' + _ctx.heroPos + ' \u00b7 First to act';
+            } else {
+                var _foldCount = _ctx.tableActions.filter(function(a) { return a.action === 'fold'; }).length;
+                var _callerCount = _ctx.tableActions.filter(function(a) { return a.action === 'call'; }).length;
+                _ctxText = (_foldCount > 0 ? _foldCount + ' fold' + (_foldCount > 1 ? 's' : '') + ' \u00b7 ' : '') +
+                    _ctx.opener + ' opens' +
+                    (_callerCount > 0 ? ' \u00b7 ' + _callerCount + ' caller' + (_callerCount > 1 ? 's' : '') : '') +
+                    ' \u00b7 action on ' + _ctx.heroPos;
+            }
+            preflopContextHtml = '<div class="text-slate-500 text-center font-bold mb-2" style="font-size:11px;letter-spacing:0.05em;">' + _ctxText + '</div>';
+        }
+
         container.style.display = '';
         container.style.alignItems = '';
         container.style.justifyContent = '';
-        container.innerHTML = buttonsHtml + mathHtml;
+        container.innerHTML = preflopContextHtml + buttonsHtml + mathHtml;
         // Lock container height after first render so transient states don't resize the table
         if (!container._simMinHeightLocked) {
             requestAnimationFrame(function() {

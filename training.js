@@ -92,7 +92,8 @@ const FULL_HAND_ALL_LANES = [
     'UTG_vs_BB_SRP', 'UTG1_vs_BB_SRP', 'UTG2_vs_BB_SRP',
     'LJ_vs_BB_SRP', 'HJ_vs_BB_SRP', 'CO_vs_BB_SRP',
     'BTN_vs_BB_SRP', 'SB_vs_BB_SRP',
-    'BB_vs_BTN_SRP'
+    'BB_vs_BTN_SRP',
+    'FULL_TABLE'
 ];
 const FULL_HAND_LANE_LABELS = {
     'UTG_vs_BB_SRP':  'UTG',
@@ -103,7 +104,8 @@ const FULL_HAND_LANE_LABELS = {
     'CO_vs_BB_SRP':   'CO',
     'BTN_vs_BB_SRP':  'BTN',
     'SB_vs_BB_SRP':   'SB',
-    'BB_vs_BTN_SRP':  'BB def'
+    'BB_vs_BTN_SRP':  'BB def',
+    'FULL_TABLE':     'Live Table'
 };
 
 // Clockwise table rotation: BTN → CO → HJ → LJ → UTG2 → UTG1 → UTG → BB → SB → repeat
