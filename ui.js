@@ -1515,6 +1515,7 @@ function startConfiguredTraining() {
     const ch = document.getElementById('challenge-screen');
     if (ch) ch.classList.add('hidden');
     try { document.getElementById('sim-session-hud').style.display = 'none'; } catch(_) {}
+    try { if (typeof simSession !== 'undefined' && simSession.active) { simSession.active = false; } } catch(_) {}
     document.getElementById('trainer-screen').classList.remove('hidden');
     // Start layout observer — must be called after trainer screen is visible.
     if (typeof window._trainerLayoutBoot === 'function') window._trainerLayoutBoot();
@@ -3601,10 +3602,17 @@ function showSessionLog() {
     var old = document.getElementById('sim-session-log-drawer');
     if (old) { old.remove(); return; } // toggle
 
-    var _logMiniCard = function(cardStr) {
-        if (!cardStr || cardStr.length < 2) return '';
-        var rank = cardStr.slice(0, -1);
-        var suit = cardStr.slice(-1);
+    var _logMiniCard = function(card) {
+        if (!card) return '';
+        var rank, suit;
+        if (typeof card === 'string') {
+            if (card.length < 2) return '';
+            rank = card.slice(0, -1);
+            suit = card.slice(-1);
+        } else {
+            rank = card.rank || '';
+            suit = card.suit || '';
+        }
         var sym = { h:'\u2665', d:'\u2666', c:'\u2663', s:'\u2660' }[suit] || suit;
         var color = (suit === 'h' || suit === 'd') ? '#ef4444' : '#1e293b';
         return '<span style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:22px;height:30px;background:#fff;border-radius:3px;font-weight:900;font-size:9px;color:' + color + ';line-height:1;gap:1px;flex-shrink:0;">' +
