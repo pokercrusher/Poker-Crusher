@@ -282,7 +282,7 @@ function _isStreetComplete(hr) {
     let lastAggrIdx = -1;
     for (let i = ss.actions.length - 1; i >= 0; i--) {
         const act = ss.actions[i].action;
-        if (act === 'bet' || act === 'raise' || act === '3bet') { lastAggrIdx = i; break; }
+        if (act === 'bet' || act === 'raise' || act === '3bet' || act === '4bet') { lastAggrIdx = i; break; }
     }
     if (lastAggrIdx === -1) return false;
     const aggrLabel = ss.actions[lastAggrIdx].seatLabel;
@@ -477,7 +477,25 @@ function resolveDecisionNode(handRun) {
         boardTexture = null;
         availableActions = getAvailableActions(hr);
 
-        if (heroLabel === 'BB') {
+        // Hero (opener) facing villain's 3bet
+        const _facing3bet = ss.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === '3bet'; });
+        if (_facing3bet && heroLabel !== 'BB') {
+            nodeId = 'preflop_vs3bet_' + heroLabel;
+            spotType = 'RFI_VS_3BET';
+            position = 'IP';
+            const rawAction = computeCorrectAction(heroHandNotation, 'RFI_VS_3BET', heroLabel,
+                villainSeat ? villainSeat.label : 'BB', null);
+            correctAction = rawAction === 'RAISE' ? '4bet' : rawAction === 'CALL' ? 'call' : 'fold';
+            const _3betEntry = [...ss.actions].reverse().find(function(a) { return a.action === '3bet'; });
+            callAmountBB = _3betEntry ? _3betEntry.sizingBB : 0;
+            mixFrequency = null;
+            explanation = heroLabel + ' vs 3-bet: ' + (
+                correctAction === '4bet' ? 'hand is in 4-bet range.' :
+                correctAction === 'call' ? 'hand is in calling range vs 3-bet.' :
+                'hand is outside continuing range \u2014 fold.'
+            );
+
+        } else if (heroLabel === 'BB') {
             // BB defense — hero faces villain's preflop raise
             nodeId = 'preflop_defend_BB';
             spotType = 'FACING_RFI';
@@ -619,7 +637,11 @@ function getAvailableActions(handRun) {
     if (street === 'preflop') {
         // BB defense lane: hero faces villain's open
         if (heroLabel === 'BB') return ['fold', 'call', '3bet'];
-        // RFI opener (BTN / CO / SB) — single raise sizing
+        // RFI opener facing a villain 3bet
+        const _pfSS = hr.gameState.streetState;
+        const _facing3bet = _pfSS.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === '3bet'; });
+        if (_facing3bet) return ['fold', 'call', '4bet'];
+        // RFI opener — open or fold
         return ['fold', 'raise'];
     }
 
@@ -654,6 +676,9 @@ function resolveVillainAction(handRun) {
             const villainHasActed = ss.actions.some(a => a.seatLabel === villainSeat.label);
             return villainHasActed ? 'fold' : 'raise';
         }
+        // Villain (BB) facing hero's 4bet — fold ~65%, call ~35% (no 5bet this pass)
+        const _heroFourbet = ss.actions.some(a => a.seatLabel === heroLabel && a.action === '4bet');
+        if (_heroFourbet) return Math.random() < 0.65 ? 'fold' : 'call';
         // Villain is BB facing hero's open — use the correct facing range for this opener
         const _bbRangeKey = 'BB_vs_' + heroLabel;
         const rangeData = facingRfiRanges[_bbRangeKey] || facingRfiRanges['BB_vs_BTN'];
@@ -865,6 +890,9 @@ function applyHeroAction(handRun, action, heroSizingBB) {
         // Raise villain's bet: 2.5× villain bet
         const villainBet = [...ss.actions].reverse().find(a => a.seatLabel !== heroSeat.label && (a.action === 'bet' || a.action === 'raise'));
         sizingBB = villainBet ? Math.round(villainBet.sizingBB * 2.5 * 10) / 10 : Math.round(gs.potBB * 0.33 * 2.5 * 10) / 10;
+    } else if (action === '4bet') {
+        const _3betEntry = [...ss.actions].reverse().find(a => a.action === '3bet');
+        sizingBB = _3betEntry ? Math.round(_3betEntry.sizingBB * 2.2 * 10) / 10 : 22;
     } else if (action === 'call') {
         const villainAggr = [...ss.actions].reverse().find(a => a.seatLabel !== heroSeat.label && (a.action === 'bet' || a.action === 'raise' || a.action === '3bet'));
         sizingBB = villainAggr ? villainAggr.sizingBB : 0;
@@ -952,7 +980,12 @@ function applyVillainAction(handRun) {
         sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
     } else if (action === 'call') {
         if (street === 'preflop') {
-            sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
+            // Match the last hero aggression — covers open raise and 4bet
+            const _heroAggr = [...ss.actions].reverse().find(a =>
+                a.seatLabel !== villainSeat.label && (a.action === 'raise' || a.action === '4bet')
+            );
+            sizingBB = _heroAggr ? _heroAggr.sizingBB
+                : (typeof getOpenSizeBB === 'function' ? getOpenSizeBB() : 2.5);
         } else {
             const heroBet = [...ss.actions].reverse().find(a => a.seatLabel !== villainSeat.label && (a.action === 'bet' || a.action === 'raise'));
             sizingBB = heroBet ? heroBet.sizingBB : 0;
@@ -987,12 +1020,11 @@ function applyVillainAction(handRun) {
         return hr;
     }
 
-    // Pass 2.5: 3-bet terminates hand (hero folds assumed for simplicity)
+    // Villain 3bet — hero gets to respond (fold / call / 4bet)
     if (action === '3bet') {
-        heroSeat.folded = true;
-        hr.terminal = true;
-        hr.nodeType = 'terminal';
-        _resolveOutcome(hr);
+        ss.actingIndex = hr.heroSeatIndex;
+        hr.nodeType = 'hero_decision';
+        resolveDecisionNode(hr);
         return hr;
     }
 

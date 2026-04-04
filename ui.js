@@ -2781,6 +2781,7 @@ function simActionLabel(action) {
                      ? formatAmt(Math.round((_simRun ? _simRun.gameState.potBB * 0.33 : 1) * getBigBlind$()))
                      : '33%'),
         '3bet':  '3-BET',
+        '4bet':  '4-BET',
         'raise_2.5x': 'RAISE 2.5\u00d7'
     };
     return map[action] || action;
@@ -3395,7 +3396,7 @@ function handleSimAction(action, heroSizingBB) {
     if (!_simRun || isTerminal(_simRun)) return;
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
 
-    const isBet = action === 'bet' || action === 'raise';
+    const isBet = action === 'bet' || action === 'raise' || action === '4bet';
     if (isBet) {
         try {
             if (action === 'bet') {
@@ -3403,6 +3404,11 @@ function handleSimAction(action, heroSizingBB) {
                     ? heroSizingBB
                     : _simRun.gameState.potBB * 0.33;
                 animateHeroBetDollars(betBB * getBigBlind$());
+            } else if (action === '4bet') {
+                const _3betEntry = _simRun.gameState.streetState.actions
+                    .slice().reverse().find(function(a) { return a.action === '3bet'; });
+                const fourBetBB = _3betEntry ? Math.round(_3betEntry.sizingBB * 2.2 * 10) / 10 : 22;
+                animateHeroBetDollars(fourBetBB * getBigBlind$());
             } else {
                 animateHeroBetDollars(getOpenSize$());
             }
