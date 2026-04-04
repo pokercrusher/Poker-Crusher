@@ -764,10 +764,9 @@ function advanceStreet(handRun) {
 
         // Generate postflop spot for strategy lookup only — spot.flopCards never used for display
         hr.postflopSpot = generatePostflopSpot(20, familyFilter);
-        // For OOP hero (BB defending), override heroRole so resolveDecisionNode
-        // uses the correct branch. The strategy field is PFR-sourced but heroRole
-        // gates the branch selection — corrected probe data comes in Pass 3.5b.
-        if (!_heroIsIP(hr) && hr.postflopSpot) {
+        // For BB_vs_BTN_SRP (hero is BB defending), override heroRole so resolveDecisionNode
+        // uses the defender branch. SB_vs_BB_SRP is also OOP but SB is the PFR — keep PFR role.
+        if (hr.lane === 'BB_vs_BTN_SRP' && hr.postflopSpot) {
             hr.postflopSpot.heroRole = 'DEFENDER';
         }
 
