@@ -672,9 +672,10 @@ function resolveVillainAction(handRun) {
     if (street === 'preflop') {
         if (hr.lane === 'BB_vs_BTN_SRP') {
             // Villain is BTN: if BTN hasn't acted yet → open-raise;
-            // if BTN is responding to BB's 3bet → fold
+            // if BTN is responding to BB's 3bet → fold ~60%, call ~40%
             const villainHasActed = ss.actions.some(a => a.seatLabel === villainSeat.label);
-            return villainHasActed ? 'fold' : 'raise';
+            if (!villainHasActed) return 'raise';
+            return Math.random() < 0.60 ? 'fold' : 'call';
         }
         // Villain (BB) facing hero's 4bet — fold ~65%, call ~35% (no 5bet this pass)
         const _heroFourbet = ss.actions.some(a => a.seatLabel === heroLabel && a.action === '4bet');
