@@ -3005,7 +3005,7 @@ function _simShowRecapDrawer(h) {
     var cardsBlock = '';
     if (heroSeat && heroSeat.holeCards && heroSeat.holeCards.length >= 2) {
         var _rcHeroHtml = heroSeat.holeCards.map(_recapMiniCard).join('');
-        var _rcVillainHtml = (_rcVillainSeat && _rcVillainSeat.holeCards && _rcVillainSeat.holeCards.length >= 2)
+        var _rcVillainHtml = (summary.showdownReached && _rcVillainSeat && _rcVillainSeat.holeCards && _rcVillainSeat.holeCards.length >= 2)
             ? _rcVillainSeat.holeCards.map(_recapMiniCard).join('') : '';
         var _rcBoardHtml = _rcBoard.length ? _rcBoard.map(_recapMiniCard).join('') : '';
         var _rcParts = '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">' +
@@ -3257,8 +3257,8 @@ function _simRenderActionArea(h) {
         const outcome = (typeof getHandSummary === 'function') ? getHandSummary(h) : null;
         const isShowdown = outcome && outcome.showdownReached;
 
-        // Only deal/show villain cards at showdown, or in recap mode (non-session)
-        if (isShowdown || !isSessionActive) {
+        // Only deal/show villain cards at showdown
+        if (isShowdown) {
             _simEnsureVillainCards(h);
             _simRenderShowdownHands(h);
         }
@@ -3284,14 +3284,14 @@ function _simRenderActionArea(h) {
                 }, isShowdown ? 800 : 400);
             }, 350);
         } else {
-            // Single-hand mode: always flip villain cards, then show recap
+            // Single-hand mode: flip villain cards only at showdown, then show recap
             setTimeout(function() {
                 if (_simRun !== handRef) return;
-                _simFlipVillainCards();
+                if (isShowdown) _simFlipVillainCards();
                 setTimeout(function() {
                     if (_simRun !== handRef) return;
                     _simShowRecapDrawer(handRef);
-                }, 800);
+                }, isShowdown ? 800 : 300);
             }, 350);
         }
         return;
