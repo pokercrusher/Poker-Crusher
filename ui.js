@@ -3415,8 +3415,19 @@ function _simRenderActionArea(h) {
             buttonsHtml = '<div class="grid grid-cols-4 gap-3 action-buttons-revealed">' + passBtn + sizingBtns + '</div>';
         } else {
             const cols = actions.length <= 2 ? 2 : 3;
+            // Precompute postflop raise size (2.5× villain bet) for button label
+            const _postflopRaiseLabel = (function() {
+                if (h.street === 'preflop') return null;
+                const _heroLbl = h.seats[h.heroSeatIndex].label;
+                const _vBet = [...h.gameState.streetState.actions].reverse()
+                    .find(function(a) { return a.seatLabel !== _heroLbl && (a.action === 'bet' || a.action === 'raise'); });
+                if (!_vBet) return null;
+                const _raiseBB = Math.round(_vBet.sizingBB * 2.5 * 10) / 10;
+                const _raise$ = Math.round(_raiseBB * getBigBlind$());
+                return 'RAISE TO $' + _raise$;
+            })();
             const btns = actions.map(function(action) {
-                const label = simActionLabel(action);
+                const label = (action === 'raise' && _postflopRaiseLabel) ? _postflopRaiseLabel : simActionLabel(action);
                 const isFold = action === 'fold';
                 const isAggr = action.startsWith('raise') || action.startsWith('3bet') || action.startsWith('bet');
                 const cls = isFold ? 'pc-btn pc-btn-fold'
