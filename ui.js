@@ -3034,17 +3034,43 @@ function _simShowRecapDrawer(h) {
         'transform:translateY(100%);transition:transform 0.38s cubic-bezier(0.34,1.1,0.64,1);' +
         'box-shadow:0 -8px 32px rgba(0,0,0,0.5);';
 
+    // Session strip — only when session active
+    var sessionStrip = '';
+    if (typeof simSession !== 'undefined' && simSession.active && simSession.handsPlayed > 0) {
+        var _sNetBB = parseFloat((simSession.currentStack - simSession.startStack).toFixed(1));
+        var _sNetStr = _sNetBB >= 0 ? '+' + _sNetBB : '' + _sNetBB;
+        var _sNetColor = _sNetBB > 0 ? '#34d399' : _sNetBB < 0 ? '#f87171' : '#94a3b8';
+        var _sAccPct = simSession.totalDecisions > 0
+            ? Math.round((simSession.correctDecisions / simSession.totalDecisions) * 100) + '%' : '--';
+        sessionStrip =
+            '<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">' +
+            '<div style="display:flex;flex-direction:column;gap:2px;">' +
+            '<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#475569;">Session · Hand ' + simSession.handsPlayed + '</span>' +
+            '<span style="font-size:13px;font-weight:800;color:#e2e8f0;">' + simSession.currentStack + 'bb <span style="color:' + _sNetColor + ';font-size:11px;">(' + _sNetStr + ')</span></span>' +
+            '</div>' +
+            '<div style="text-align:right;">' +
+            '<span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#475569;">Session acc</span><br>' +
+            '<span style="font-size:13px;font-weight:800;color:#e2e8f0;">' + _sAccPct + '</span>' +
+            '</div></div>';
+    }
+
+    var isSession = typeof simSession !== 'undefined' && simSession.active;
+    var nextHandLabel = isSession ? 'Next Hand' : 'Play Another Hand';
+    var exitLabel = isSession ? 'End Session' : 'Back to Menu';
+    var exitOnclick = isSession ? '_simEndSessionAndSummary()' : '_simExitToMenu()';
+
     drawer.innerHTML =
         '<div style="width:40px;height:4px;background:#334155;border-radius:2px;margin:0 auto 14px;"></div>' +
         '<div style="max-width:360px;margin:0 auto;">' +
         chipHtml +
         outcomeLine +
+        sessionStrip +
         cardsBlock +
         rowsBlock +
         assessLine +
         '<div style="display:flex;flex-direction:column;gap:10px;">' +
-        '<button onclick="startSimulator()" ' + btnStyle + ' class="pc-btn pc-btn-primary w-full">Play Another Hand</button>' +
-        '<button onclick="_simExitToMenu()" ' + btnStyle + ' class="pc-btn pc-btn-fold w-full">Back to Menu</button>' +
+        '<button onclick="startSimulator()" ' + btnStyle + ' class="pc-btn pc-btn-primary w-full">' + nextHandLabel + '</button>' +
+        '<button onclick="' + exitOnclick + '" ' + btnStyle + ' class="pc-btn pc-btn-fold w-full">' + exitLabel + '</button>' +
         '</div></div>';
 
     document.body.appendChild(drawer);
@@ -3062,6 +3088,9 @@ function _simShowRecapDrawer(h) {
 // ---------------------------------------------------------------------------
 function launchConfiguredSession() {
     if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode) {
+        if (sessionBuilder.sessionMode && typeof startSimSession === 'function') {
+            startSimSession(sessionBuilder.sessionStack || 100);
+        }
         const lanes = (sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length)
             ? sessionBuilder.fullHandLanes
             : ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
@@ -3102,6 +3131,7 @@ function startSimulator(lane) {
         try { document.getElementById(id).classList.add('hidden'); } catch(_) {}
     });
 
+    _simUpdateSessionHud();
     try { clearCommunityCards(); } catch(_) {}
 
     const simHeroLabel = _simRun.seats[_simRun.heroSeatIndex].label;
@@ -3219,6 +3249,12 @@ function _simRenderActionArea(h) {
         // Deal villain hole cards from remaining deck, append face-down to hand-display
         _simEnsureVillainCards(h);
         _simRenderShowdownHands(h);
+
+        // Record hand to session after villain cards are ensured
+        if (typeof _simRecordHandToSession === 'function') {
+            _simRecordHandToSession(h);
+            _simUpdateSessionHud();
+        }
 
         // Guard: if _simRun changes (new hand started) abort pending callbacks
         const handRef = h;
@@ -3444,6 +3480,198 @@ function _simRunningAccuracy(h) {
 }
 
 // ---------------------------------------------------------------------------
+// _simUpdateSessionHud — refreshes the session strip above the table
+// ---------------------------------------------------------------------------
+function _simUpdateSessionHud() {
+    var hud = document.getElementById('sim-session-hud');
+    if (!hud) return;
+    if (typeof simSession === 'undefined' || !simSession.active) {
+        hud.style.display = 'none';
+        return;
+    }
+    hud.style.display = 'flex';
+    var netBB = parseFloat((simSession.currentStack - simSession.startStack).toFixed(1));
+    var netStr = netBB >= 0 ? '+' + netBB : '' + netBB;
+    var netColor = netBB > 0 ? '#34d399' : netBB < 0 ? '#f87171' : '#94a3b8';
+    var accPct = simSession.totalDecisions > 0
+        ? Math.round((simSession.correctDecisions / simSession.totalDecisions) * 100) + '%' : '--';
+    var _hudLaneMap = {
+        'BTN_vs_BB_SRP':'BTN vs BB','BB_vs_BTN_SRP':'BB vs BTN','CO_vs_BB_SRP':'CO vs BB',
+        'SB_vs_BB_SRP':'SB vs BB','HJ_vs_BB_SRP':'HJ vs BB','LJ_vs_BB_SRP':'LJ vs BB',
+        'UTG_vs_BB_SRP':'UTG vs BB','UTG1_vs_BB_SRP':'UTG1 vs BB','UTG2_vs_BB_SRP':'UTG2 vs BB'
+    };
+    var laneLabel = (_simRun && _hudLaneMap[_simRun.lane]) ? _hudLaneMap[_simRun.lane] : '';
+    hud.innerHTML =
+        (laneLabel ? '<span style="font-size:10px;font-weight:800;color:#818cf8;">' + laneLabel + '</span><span style="color:#334155;">·</span>' : '') +
+        '<span style="font-size:10px;font-weight:700;color:#e2e8f0;">Stack: ' + simSession.currentStack + 'bb</span>' +
+        '<span style="font-size:10px;font-weight:700;color:' + netColor + ';">(' + netStr + ')</span>' +
+        '<span style="color:#334155;">·</span>' +
+        '<span style="font-size:10px;color:#64748b;">Hand ' + simSession.handsPlayed + '</span>' +
+        '<span style="color:#334155;">·</span>' +
+        '<span style="font-size:10px;color:#64748b;">' + accPct + ' acc</span>';
+}
+
+// ---------------------------------------------------------------------------
+// showSessionLog — slide-up log drawer (called by [Log] button in header)
+// ---------------------------------------------------------------------------
+function showSessionLog() {
+    if (typeof simSession === 'undefined' || !simSession.active || simSession.handLog.length === 0) {
+        return; // nothing to show yet
+    }
+    var old = document.getElementById('sim-session-log-drawer');
+    if (old) { old.remove(); return; } // toggle
+
+    var _logMiniCard = function(cardStr) {
+        if (!cardStr || cardStr.length < 2) return '';
+        var rank = cardStr.slice(0, -1);
+        var suit = cardStr.slice(-1);
+        var sym = { h:'\u2665', d:'\u2666', c:'\u2663', s:'\u2660' }[suit] || suit;
+        var color = (suit === 'h' || suit === 'd') ? '#ef4444' : '#1e293b';
+        return '<span style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:22px;height:30px;background:#fff;border-radius:3px;font-weight:900;font-size:9px;color:' + color + ';line-height:1;gap:1px;flex-shrink:0;">' +
+            '<span>' + rank + '</span><span style="font-size:8px;">' + sym + '</span></span>';
+    };
+
+    var _gradeIcon = { correct: '<span style="color:#34d399;">✓</span>', error: '<span style="color:#f87171;">✗</span>', mixed: '<span style="color:#fbbf24;">≈</span>' };
+    var _laneLabel = { 'BTN_vs_BB_SRP':'BTN vs BB','BB_vs_BTN_SRP':'BB vs BTN','CO_vs_BB_SRP':'CO vs BB','SB_vs_BB_SRP':'SB vs BB','HJ_vs_BB_SRP':'HJ vs BB','LJ_vs_BB_SRP':'LJ vs BB','UTG_vs_BB_SRP':'UTG vs BB','UTG1_vs_BB_SRP':'UTG1 vs BB','UTG2_vs_BB_SRP':'UTG2 vs BB' };
+    var _streetColor = { preflop:'#818cf8', flop:'#fcd34d', turn:'#fb923c', river:'#f87171' };
+
+    var entriesHtml = simSession.handLog.map(function(entry) {
+        var gradeIcons = entry.decisions.map(function(d) { return (_gradeIcon[d.grade] || ''); }).join('');
+        var netStr = entry.netBB >= 0 ? '+' + entry.netBB + 'bb' : entry.netBB + 'bb';
+        var netColor = entry.netBB > 0 ? '#34d399' : entry.netBB < 0 ? '#f87171' : '#94a3b8';
+        var heroCardsHtml = entry.heroCards.map(_logMiniCard).join('');
+        var boardHtml = entry.board.slice(0, 3).map(_logMiniCard).join(''); // show flop only in log
+
+        var decisionRows = entry.decisions.map(function(d) {
+            var sc = _streetColor[d.street] || '#94a3b8';
+            var gi = _gradeIcon[d.grade] || '';
+            var corrLine = d.grade === 'error'
+                ? '<div style="font-size:10px;color:#94a3b8;padding-left:4px;">\u2192 should be <span style="color:#e2e8f0;font-weight:700;">' + d.correctAction + '</span></div>' : '';
+            var szLine = (d.sizeGrade && d.sizeGrade !== 'correct' && d.chosenSizingBucket)
+                ? '<div style="font-size:10px;color:' + (d.sizeGrade === 'error' ? '#fbbf24' : '#64748b') + ';padding-left:4px;">\u2192 size: should be ' + d.correctSizingBucket + ' (chose ' + d.chosenSizingBucket + ')</div>' : '';
+            return '<div style="display:flex;flex-direction:column;padding:5px 0;border-top:1px solid #1e293b;">' +
+                '<div style="display:flex;align-items:center;gap:6px;">' +
+                '<span style="font-size:9px;font-weight:900;text-transform:uppercase;color:' + sc + ';background:' + sc + '22;border-radius:3px;padding:1px 5px;">' + d.street + '</span>' +
+                '<span style="flex:1;font-size:12px;font-weight:700;color:#e2e8f0;">' + d.heroAction + '</span>' +
+                gi + '</div>' + corrLine + szLine + '</div>';
+        }).join('');
+
+        var entryId = 'log-entry-' + entry.handNum;
+        return '<div style="border-bottom:1px solid #1e293b;padding:10px 0;">' +
+            '<div onclick="var d=document.getElementById(\'' + entryId + '\');d.style.display=d.style.display===\'none\'?\'block\':\'none\';" ' +
+            'style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
+            '<span style="font-size:10px;color:#475569;font-weight:700;flex-shrink:0;">H' + entry.handNum + '</span>' +
+            '<span style="font-size:10px;color:#64748b;flex-shrink:0;">' + (_laneLabel[entry.lane] || entry.lane) + '</span>' +
+            '<div style="display:flex;gap:2px;">' + heroCardsHtml + '</div>' +
+            (boardHtml ? '<div style="display:flex;gap:2px;">' + boardHtml + '</div>' : '') +
+            '<span style="font-size:11px;font-weight:800;color:' + netColor + ';margin-left:auto;">' + netStr + '</span>' +
+            '<span style="font-size:11px;">' + gradeIcons + '</span>' +
+            '</div>' +
+            '<div id="' + entryId + '" style="display:none;padding-top:4px;">' + decisionRows + '</div>' +
+            '</div>';
+    }).join('');
+
+    var drawer = document.createElement('div');
+    drawer.id = 'sim-session-log-drawer';
+    drawer.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#1e293b;border-top:1.5px solid #334155;border-radius:20px 20px 0 0;padding:16px 16px 32px;max-height:80vh;overflow-y:auto;transform:translateY(100%);transition:transform 0.35s cubic-bezier(0.34,1.1,0.64,1);box-shadow:0 -8px 32px rgba(0,0,0,0.5);';
+    drawer.innerHTML =
+        '<div style="width:40px;height:4px;background:#334155;border-radius:2px;margin:0 auto 12px;"></div>' +
+        '<div style="max-width:360px;margin:0 auto;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+        '<span style="font-size:13px;font-weight:900;color:#e2e8f0;">Session Log · ' + simSession.handsPlayed + ' hands</span>' +
+        '<button onclick="document.getElementById(\'sim-session-log-drawer\').remove();" style="font-size:11px;color:#64748b;font-weight:700;background:none;border:none;cursor:pointer;">Close</button>' +
+        '</div>' +
+        entriesHtml +
+        '</div>';
+    document.body.appendChild(drawer);
+    requestAnimationFrame(function() { requestAnimationFrame(function() { drawer.style.transform = 'translateY(0)'; }); });
+}
+
+// ---------------------------------------------------------------------------
+// _simShowSessionEndSummary — full summary overlay after ending session
+// ---------------------------------------------------------------------------
+function _simShowSessionEndSummary() {
+    var old = document.getElementById('sim-session-end');
+    if (old) old.remove();
+
+    var netBB = parseFloat((simSession.currentStack - simSession.startStack).toFixed(1));
+    var netStr = netBB >= 0 ? '+' + netBB + 'bb' : netBB + 'bb';
+    var netColor = netBB > 0 ? '#34d399' : netBB < 0 ? '#f87171' : '#94a3b8';
+    var accPct = simSession.totalDecisions > 0
+        ? Math.round((simSession.correctDecisions / simSession.totalDecisions) * 100) : 0;
+
+    // Accuracy by street
+    var byStreet = { preflop:{c:0,t:0}, flop:{c:0,t:0}, turn:{c:0,t:0}, river:{c:0,t:0} };
+    simSession.handLog.forEach(function(entry) {
+        entry.decisions.forEach(function(d) {
+            if (byStreet[d.street]) {
+                byStreet[d.street].t++;
+                if (d.grade === 'correct') byStreet[d.street].c++;
+            }
+        });
+    });
+    var streetRows = ['preflop','flop','turn','river'].map(function(s) {
+        var st = byStreet[s];
+        if (!st.t) return '';
+        var pct = Math.round((st.c / st.t) * 100);
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0;">' +
+            '<span style="font-size:12px;color:#94a3b8;text-transform:capitalize;">' + s + '</span>' +
+            '<span style="font-size:12px;font-weight:700;color:#e2e8f0;">' + st.c + '/' + st.t + ' (' + pct + '%)</span></div>';
+    }).join('');
+
+    var overlay = document.createElement('div');
+    overlay.id = 'sim-session-end';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#0f172a;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;';
+    overlay.innerHTML =
+        '<div style="width:100%;max-width:360px;">' +
+        '<div style="text-align:center;margin-bottom:20px;">' +
+        '<div style="font-size:22px;font-weight:900;color:#e2e8f0;margin-bottom:4px;">Session Complete</div>' +
+        '<div style="font-size:13px;color:#64748b;">' + simSession.handsPlayed + ' hands played</div>' +
+        '</div>' +
+        '<div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:14px;">' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:8px;">' +
+        '<span style="font-size:12px;color:#64748b;">Stack</span>' +
+        '<span style="font-size:13px;font-weight:800;color:' + netColor + ';">' + simSession.startStack + 'bb \u2192 ' + simSession.currentStack + 'bb (' + netStr + ')</span>' +
+        '</div>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">' +
+        '<span style="font-size:12px;color:#64748b;">Peak</span>' +
+        '<span style="font-size:12px;font-weight:700;color:#34d399;">' + simSession.peakStack + 'bb</span>' +
+        '</div>' +
+        '<div style="display:flex;justify-content:space-between;">' +
+        '<span style="font-size:12px;color:#64748b;">Trough</span>' +
+        '<span style="font-size:12px;font-weight:700;color:#f87171;">' + simSession.troughStack + 'bb</span>' +
+        '</div>' +
+        '</div>' +
+        '<div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:14px;">' +
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#475569;margin-bottom:8px;">Accuracy</div>' +
+        '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">' +
+        '<span style="font-size:12px;color:#64748b;">Overall</span>' +
+        '<span style="font-size:14px;font-weight:900;color:' + (accPct >= 80 ? '#34d399' : accPct >= 60 ? '#fbbf24' : '#f87171') + ';">' + accPct + '%</span>' +
+        '</div>' + streetRows +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:10px;">' +
+        '<button onclick="_simSessionEndNewSession()" style="width:100%;padding:14px 0;font-size:14px;font-weight:900;" class="pc-btn pc-btn-primary">New Session</button>' +
+        '<button onclick="showSessionLog();document.getElementById(\'sim-session-end\').remove();" style="width:100%;padding:12px 0;font-size:14px;font-weight:700;" class="pc-btn pc-btn-passive">Review Log</button>' +
+        '<button onclick="_simSessionEndExit()" style="width:100%;padding:12px 0;font-size:14px;font-weight:700;" class="pc-btn pc-btn-fold">Back to Menu</button>' +
+        '</div></div>';
+    document.body.appendChild(overlay);
+}
+
+function _simSessionEndNewSession() {
+    var old = document.getElementById('sim-session-end');
+    if (old) old.remove();
+    if (typeof endSimSession === 'function') endSimSession();
+    showConfigMenu();
+}
+
+function _simSessionEndExit() {
+    var old = document.getElementById('sim-session-end');
+    if (old) old.remove();
+    if (typeof endSimSession === 'function') endSimSession();
+    _simExitToMenu();
+}
+
+// ---------------------------------------------------------------------------
 // toggleSimMath — DOM-only toggle of math hint row
 // ---------------------------------------------------------------------------
 function toggleSimMath() {
@@ -3457,7 +3685,18 @@ function toggleSimMath() {
 // ---------------------------------------------------------------------------
 // _simExitToMenu — clean teardown back to main menu
 // ---------------------------------------------------------------------------
+function _simEndSessionAndSummary() {
+    // Close recap drawer
+    try { var d = document.getElementById('sim-recap-drawer'); if (d) d.remove(); } catch(_) {}
+    _simShowSessionEndSummary();
+}
+
 function _simExitToMenu() {
+    if (typeof endSimSession === 'function' && typeof simSession !== 'undefined' && simSession.active) {
+        endSimSession();
+    }
+    var hudEl = document.getElementById('sim-session-hud');
+    if (hudEl) hudEl.style.display = 'none';
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
     _simRun = null;
     _simTableInitialized = false;

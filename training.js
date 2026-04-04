@@ -114,8 +114,143 @@ let sessionBuilder = {
     displayMode: 'dollars',    // 'dollars' | 'bb'
     pfStacks: [5,8,10,13,15,20], // active push/fold stack depths
     fullHandMode: false,       // true = Full Hand mode (mutually exclusive with pre/post families)
-    fullHandLanes: [...FULL_HAND_ALL_LANES] // active lanes for Full Hand mode
+    fullHandLanes: [...FULL_HAND_ALL_LANES], // active lanes for Full Hand mode
+    sessionMode: false,        // true = persistent stack session across hands
+    sessionStack: 100          // starting stack in bb for session mode
 };
+
+// ============================================================
+// SIM SESSION — persistent hand-to-hand state
+// EXTENSION Pass 5: villainArchetype, tableSize, rebuys
+// ============================================================
+let simSession = {
+    active: false,
+    startStack: 100,
+    currentStack: 100,
+    peakStack: 100,
+    troughStack: 100,
+    handsPlayed: 0,
+    totalDecisions: 0,
+    correctDecisions: 0,
+    handLog: []   // newest first; each entry = { handNum, lane, heroCards, villainCards, board, netBB, stackAfter, decisions, handAccuracy }
+};
+
+function startSimSession(stackBB) {
+    var stack = (stackBB && stackBB > 0) ? stackBB : (sessionBuilder.sessionStack || 100);
+    simSession = {
+        active: true,
+        startStack: stack,
+        currentStack: stack,
+        peakStack: stack,
+        troughStack: stack,
+        handsPlayed: 0,
+        totalDecisions: 0,
+        correctDecisions: 0,
+        handLog: []
+    };
+    try { localStorage.setItem('gto_sim_session_active_v1', JSON.stringify(simSession)); } catch(e) {}
+}
+
+function endSimSession() {
+    if (!simSession.active) return;
+    simSession.active = false;
+    var summary = {
+        date: new Date().toISOString().slice(0, 10),
+        handsPlayed: simSession.handsPlayed,
+        startStack: simSession.startStack,
+        endStack: simSession.currentStack,
+        netBB: parseFloat((simSession.currentStack - simSession.startStack).toFixed(1)),
+        overallAccuracy: simSession.totalDecisions > 0
+            ? Math.round((simSession.correctDecisions / simSession.totalDecisions) * 100) : 0
+    };
+    try {
+        var hist = JSON.parse(localStorage.getItem('gto_sim_history_v1') || '[]');
+        hist.unshift(summary);
+        if (hist.length > 20) hist.length = 20;
+        localStorage.setItem('gto_sim_history_v1', JSON.stringify(hist));
+        localStorage.removeItem('gto_sim_session_active_v1');
+    } catch(e) {}
+}
+
+function _simRecordHandToSession(h) {
+    if (!simSession.active || !h) return;
+    var heroSeat = h.seats[h.heroSeatIndex];
+    var villainSeat = h.seats.find(function(s) { return s !== null && !s.isHero; });
+    var outcome = h.outcome;
+    var netBB = outcome ? parseFloat(outcome.heroNetBB.toFixed(1)) : 0;
+
+    simSession.currentStack = parseFloat((simSession.currentStack + netBB).toFixed(1));
+    simSession.peakStack = Math.max(simSession.peakStack, simSession.currentStack);
+    simSession.troughStack = Math.min(simSession.troughStack, simSession.currentStack);
+    simSession.handsPlayed++;
+
+    var decisions = h.decisionNodes.filter(function(n) { return n.heroAction !== null; }).map(function(n) {
+        return {
+            street: n.street,
+            heroAction: n.heroAction,
+            correctAction: n.correctAction,
+            grade: n.grade,
+            chosenSizingBucket: n.chosenSizingBucket || null,
+            correctSizingBucket: n.correctSizingBucket || null,
+            sizeGrade: n.sizeGrade || null,
+            explanation: n.explanation || ''
+        };
+    });
+
+    var correct = decisions.filter(function(d) { return d.grade === 'correct'; }).length;
+    simSession.totalDecisions += decisions.length;
+    simSession.correctDecisions += correct;
+
+    simSession.handLog.unshift({
+        handNum: simSession.handsPlayed,
+        lane: h.lane,
+        heroCards: heroSeat ? (heroSeat.holeCards || []) : [],
+        villainCards: villainSeat ? (villainSeat.holeCards || []) : [],
+        board: (h.gameState && h.gameState.board) ? h.gameState.board : [],
+        netBB: netBB,
+        stackAfter: simSession.currentStack,
+        decisions: decisions,
+        handAccuracy: decisions.length > 0 ? correct / decisions.length : 1
+    });
+
+    try { localStorage.setItem('gto_sim_session_active_v1', JSON.stringify(simSession)); } catch(e) {}
+}
+
+function toggleSessionMode() {
+    sessionBuilder.sessionMode = !sessionBuilder.sessionMode;
+    saveSessionConfig();
+    renderSessionBuilderUI();
+}
+
+function setSessionStack(val) {
+    var n = parseInt(val, 10);
+    if (!isNaN(n) && n >= 10 && n <= 999) {
+        sessionBuilder.sessionStack = n;
+        saveSessionConfig();
+    }
+}
+
+function renderSessionModeUI() {
+    var container = document.getElementById('session-mode-config');
+    if (!container) return;
+    if (!sessionBuilder.fullHandMode) { container.classList.add('hidden'); return; }
+    container.classList.remove('hidden');
+    var on = sessionBuilder.sessionMode;
+    container.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;">' +
+        '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#64748b;">Session mode</span>' +
+        '<button onclick="toggleSessionMode()" style="position:relative;width:44px;height:24px;border-radius:999px;border:none;cursor:pointer;background:' + (on ? '#6366f1' : '#334155') + ';transition:background 0.2s;flex-shrink:0;">' +
+        '<span style="position:absolute;top:3px;left:' + (on ? '23px' : '3px') + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;display:block;"></span>' +
+        '</button></div>' +
+        (on ?
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">' +
+        '<span style="font-size:11px;color:#64748b;font-weight:600;">Starting stack</span>' +
+        '<input type="number" min="10" max="999" value="' + (sessionBuilder.sessionStack || 100) + '" ' +
+        'onchange="setSessionStack(this.value)" ' +
+        'style="width:64px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-weight:700;font-size:13px;padding:4px 8px;text-align:center;">' +
+        '<span style="font-size:11px;color:#64748b;">bb</span>' +
+        '</div>' : '');
+}
 
 // Which modules currently have at least one active family?
 function getActiveModules() {
@@ -1046,7 +1181,9 @@ function saveSessionConfig() {
             displayMode: sessionBuilder.displayMode,
             pfStacks: sessionBuilder.pfStacks,
             fullHandMode: sessionBuilder.fullHandMode,
-            fullHandLanes: sessionBuilder.fullHandLanes
+            fullHandLanes: sessionBuilder.fullHandLanes,
+            sessionMode: sessionBuilder.sessionMode,
+            sessionStack: sessionBuilder.sessionStack
         }));
     } catch(e) {}
 }
@@ -1062,6 +1199,8 @@ function loadSessionConfig() {
             if (c.displayMode === 'dollars' || c.displayMode === 'bb') sessionBuilder.displayMode = c.displayMode;
             if (Array.isArray(c.pfStacks) && c.pfStacks.length) sessionBuilder.pfStacks = c.pfStacks;
             if (c.fullHandMode === true) sessionBuilder.fullHandMode = true;
+            if (c.sessionMode === true) sessionBuilder.sessionMode = true;
+            if (c.sessionStack && Number.isFinite(c.sessionStack) && c.sessionStack >= 10) sessionBuilder.sessionStack = c.sessionStack;
             if (Array.isArray(c.fullHandLanes) && c.fullHandLanes.length) {
                 const valid = c.fullHandLanes.filter(l => FULL_HAND_ALL_LANES.includes(l));
                 if (valid.length) sessionBuilder.fullHandLanes = valid;
@@ -1198,6 +1337,7 @@ function renderFullHandChips() {
     allBtn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${allSel ? 'selected-gold' : ''}`;
     allBtn.textContent = 'All';
     container.appendChild(allBtn);
+    renderSessionModeUI();
 }
 
 function toggleFullHandLane(lane) {
@@ -1300,7 +1440,9 @@ function renderSessionBuilderUI() {
     if (sdBlock) renderStakeDisplayUI(sdBlock);
     // CTA button label
     const startBtn = document.getElementById('cfg-start-btn');
-    if (startBtn) startBtn.textContent = sessionBuilder.fullHandMode ? 'PLAY FULL HAND' : 'START TRAINING';
+    if (startBtn) startBtn.textContent = sessionBuilder.fullHandMode
+        ? (sessionBuilder.sessionMode ? 'START SESSION' : 'PLAY FULL HAND')
+        : 'START TRAINING';
     validatePool();
 }
 
