@@ -1514,6 +1514,7 @@ function startConfiguredTraining() {
     // Safety: if Challenge overlay is open, close it
     const ch = document.getElementById('challenge-screen');
     if (ch) ch.classList.add('hidden');
+    try { document.getElementById('sim-session-hud').style.display = 'none'; } catch(_) {}
     document.getElementById('trainer-screen').classList.remove('hidden');
     // Start layout observer — must be called after trainer screen is visible.
     if (typeof window._trainerLayoutBoot === 'function') window._trainerLayoutBoot();
@@ -2806,8 +2807,7 @@ function _simRestoreLayout() {
         if (ha) ha.classList.remove('hidden');
         const ab = document.getElementById('action-buttons');
         if (ab) {
-            ab.style.minHeight = '';
-            ab._simMinHeightLocked = false;
+            // preserve minHeight lock across hands so the table doesn't resize
         }
         const tcl = document.getElementById('turn-context-line');
         if (tcl) {
@@ -3274,7 +3274,7 @@ function _simRenderActionArea(h) {
 
     // ---- Terminal: keep table visible, reveal villain cards, slide-up recap ----
     if (isTerminal(h)) {
-        try { const ab = document.getElementById('action-buttons'); if (ab) { ab.style.minHeight = ''; ab._simMinHeightLocked = false; ab.innerHTML = ''; } } catch(_) {}
+        try { const ab = document.getElementById('action-buttons'); if (ab) { ab.innerHTML = ''; } } catch(_) {}
         try { const tcl = document.getElementById('turn-context-line'); if (tcl) { tcl.style.minHeight = '0'; tcl.innerHTML = ''; } } catch(_) {}
         // Remove any stale drawer from a previous hand
         try { const d = document.getElementById('sim-recap-drawer'); if (d) d.remove(); } catch(_) {}

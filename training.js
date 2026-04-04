@@ -4085,29 +4085,16 @@ function _renderSpotHeader(eyebrow, contextLine, accentColor) {
     try {
         const color = accentColor || '#818cf8';
 
-        // Split eyebrow into category badge + spot title
-        // e.g. "Open · BTN" → badge="OPEN", title="BTN"
-        // e.g. "Flop C-Bet · BTN vs BB" → badge="FLOP C-BET", title="BTN vs BB"
-        // e.g. "TURN · Turn Barrel" → badge="TURN", title="Turn Barrel"
         const dotIdx = eyebrow.indexOf(' · ');
-        let badge, title;
-        if (dotIdx !== -1) {
-            badge = eyebrow.slice(0, dotIdx).toUpperCase();
-            title = eyebrow.slice(dotIdx + 3);
-        } else {
-            badge = eyebrow.toUpperCase();
-            title = '';
-        }
+        const badge = dotIdx !== -1 ? eyebrow.slice(0, dotIdx).toUpperCase() : eyebrow.toUpperCase();
 
-        const badgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:calc(var(--hint-size,14px) * 0.73);font-weight:900;letter-spacing:.08em;white-space:nowrap;">${badge}</span>`;
-        const titleHtml = title
-            ? `<div style="color:#f1f5f9;font-size:var(--hint-size,16px);font-weight:900;letter-spacing:-.01em;line-height:1.2;margin-top:3px;">${title}</div>`
-            : '';
-        const contextHtml = contextLine
-            ? `<div style="color:#64748b;font-size:calc(var(--hint-size,14px) * 0.73);font-weight:600;margin-top:2px;line-height:1.4;">${contextLine}</div>`
+        const badgeHtml = `<span style="display:inline-block;padding:1px 8px;border-radius:9999px;background:${color}1a;border:1px solid ${color}44;color:${color};font-size:11px;font-weight:900;letter-spacing:.08em;white-space:nowrap;">${badge}</span>`;
+        const infoText = contextLine || (dotIdx !== -1 ? eyebrow.slice(dotIdx + 3) : '');
+        const infoHtml = infoText
+            ? `<span style="color:#64748b;font-size:11px;font-weight:600;white-space:nowrap;">${infoText}</span>`
             : '';
 
-        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;">${badgeHtml}</div>${titleHtml}${contextHtml}`;
+        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">${badgeHtml}${infoHtml}</div>`;
         el.classList.remove('hidden');
     } catch(_) {
         el.classList.add('hidden');
@@ -4150,14 +4137,7 @@ function _renderPostflopContext(spot, scenario) {
         const spotLabel = _POSTFLOP_SPOT_LABELS[scenario] || '';
         const eyebrow   = spotLabel ? `${street} · ${spotLabel}` : street;
 
-        // Concise context line: positions + IP/OOP + decision type
-        const heroLabel   = (spot.heroPos   && POS_LABELS[spot.heroPos])    || spot.heroPos    || 'Hero';
-        const villainLabel= (spot.villainPos && POS_LABELS[spot.villainPos]) || spot.villainPos || 'Villain';
-        const posLabel = spot.positionState === 'IP' ? 'IP' : 'OOP';
-        const isAggressive = /CBET|PROBE_BET|PROBE_CALL_BET/.test(scenario);
-        const histLine = `${heroLabel} vs ${villainLabel} · ${posLabel} · ${isAggressive ? 'bet or check?' : 'call, raise, or fold?'}`;
-
-        _renderSpotHeader(eyebrow, histLine, streetColor);
+        _renderSpotHeader(eyebrow, spotLabel, streetColor);
     } catch(_) {
         const el = document.getElementById('turn-context-line');
         if (el) el.classList.add('hidden');
