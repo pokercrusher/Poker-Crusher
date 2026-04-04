@@ -3091,10 +3091,15 @@ function launchConfiguredSession() {
         if (sessionBuilder.sessionMode && typeof startSimSession === 'function') {
             startSimSession(sessionBuilder.sessionStack || 100);
         }
-        const lanes = (sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length)
-            ? sessionBuilder.fullHandLanes
-            : ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
-        const lane = lanes[Math.floor(Math.random() * lanes.length)];
+        var lane;
+        if (sessionBuilder.sessionMode && typeof _simGetCurrentSessionLane === 'function') {
+            lane = _simGetCurrentSessionLane();
+        } else {
+            const lanes = (sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length)
+                ? sessionBuilder.fullHandLanes
+                : ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
+            lane = lanes[Math.floor(Math.random() * lanes.length)];
+        }
         startSimulator(lane);
     } else {
         startConfiguredTraining();
@@ -3103,7 +3108,9 @@ function launchConfiguredSession() {
 
 function startSimulator(lane) {
     if (!lane) {
-        if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode &&
+        if (typeof simSession !== 'undefined' && simSession.active && typeof _simGetCurrentSessionLane === 'function') {
+            lane = _simGetCurrentSessionLane();
+        } else if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode &&
                 sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length) {
             const lanes = sessionBuilder.fullHandLanes;
             lane = lanes[Math.floor(Math.random() * lanes.length)];
@@ -3263,11 +3270,16 @@ function _simRenderActionArea(h) {
         setTimeout(function() {
             if (_simRun !== handRef) return;
             _simFlipVillainCards();
-            // After flip settles: slide up recap drawer
+            // After flip settles: recap drawer OR session auto-advance
             setTimeout(function() {
                 if (_simRun !== handRef) return;
-                _simShowRecapDrawer(handRef);
-            }, 500);
+                if (typeof simSession !== 'undefined' && simSession.active) {
+                    _simAdvanceSessionLane();
+                    startSimulator();
+                } else {
+                    _simShowRecapDrawer(handRef);
+                }
+            }, 800);
         }, 350);
         return;
     }

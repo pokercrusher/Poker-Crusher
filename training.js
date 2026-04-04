@@ -106,6 +106,27 @@ const FULL_HAND_LANE_LABELS = {
     'BB_vs_BTN_SRP':  'BB def'
 };
 
+// Clockwise table rotation: BTN → CO → HJ → LJ → UTG2 → UTG1 → UTG → SB → BB def → repeat
+const FULL_HAND_ROTATION_ORDER = [
+    'BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'HJ_vs_BB_SRP', 'LJ_vs_BB_SRP',
+    'UTG2_vs_BB_SRP', 'UTG1_vs_BB_SRP', 'UTG_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'
+];
+
+function _simGetCurrentSessionLane() {
+    var active = FULL_HAND_ROTATION_ORDER.filter(function(l) {
+        return sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.includes(l);
+    });
+    if (!active.length) return 'BTN_vs_BB_SRP';
+    return active[(simSession.currentLaneIndex || 0) % active.length];
+}
+
+function _simAdvanceSessionLane() {
+    var active = FULL_HAND_ROTATION_ORDER.filter(function(l) {
+        return sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.includes(l);
+    });
+    simSession.currentLaneIndex = ((simSession.currentLaneIndex || 0) + 1) % Math.max(1, active.length);
+}
+
 let sessionBuilder = {
     module: 'PREFLOP',  // legacy compat — derived from active families
     families: ['OPEN', 'DEFEND', 'VS_3BET', 'LIMPERS', 'SQUEEZE'],  // can span PREFLOP + POSTFLOP
@@ -132,6 +153,7 @@ let simSession = {
     handsPlayed: 0,
     totalDecisions: 0,
     correctDecisions: 0,
+    currentLaneIndex: 0,
     handLog: []   // newest first; each entry = { handNum, lane, heroCards, villainCards, board, netBB, stackAfter, decisions, handAccuracy }
 };
 
@@ -146,6 +168,7 @@ function startSimSession(stackBB) {
         handsPlayed: 0,
         totalDecisions: 0,
         correctDecisions: 0,
+        currentLaneIndex: 0,
         handLog: []
     };
     try { localStorage.setItem('gto_sim_session_active_v1', JSON.stringify(simSession)); } catch(e) {}
