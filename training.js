@@ -106,11 +106,11 @@ const FULL_HAND_LANE_LABELS = {
     'BB_vs_BTN_SRP':  'BB def'
 };
 
-// Clockwise table rotation: BTN → SB → BB → UTG → UTG1 → UTG2 → LJ → HJ → CO → repeat
+// Clockwise table rotation: BTN → CO → HJ → LJ → UTG2 → UTG1 → UTG → BB → SB → repeat
 const FULL_HAND_ROTATION_ORDER = [
-    'BTN_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP',
-    'UTG_vs_BB_SRP', 'UTG1_vs_BB_SRP', 'UTG2_vs_BB_SRP',
-    'LJ_vs_BB_SRP', 'HJ_vs_BB_SRP', 'CO_vs_BB_SRP'
+    'BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'HJ_vs_BB_SRP',
+    'LJ_vs_BB_SRP', 'UTG2_vs_BB_SRP', 'UTG1_vs_BB_SRP',
+    'UTG_vs_BB_SRP', 'BB_vs_BTN_SRP', 'SB_vs_BB_SRP'
 ];
 
 function _simGetCurrentSessionLane() {
