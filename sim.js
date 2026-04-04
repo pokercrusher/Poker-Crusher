@@ -758,7 +758,7 @@ function isTerminal(handRun) {
 // applyHeroAction
 // ---------------------------------------------------------------------------
 
-function applyHeroAction(handRun, action) {
+function applyHeroAction(handRun, action, heroSizingBB) {
     const hr = _deepCopy(handRun);
     const heroSeat = hr.seats[hr.heroSeatIndex];
     const villainSeat = hr.seats.find(s => s !== null && !s.isHero);
@@ -771,8 +771,10 @@ function applyHeroAction(handRun, action) {
     if (action === 'raise' && street === 'preflop') {
         sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
     } else if (action === 'bet') {
-        // C-bet: 33% of pot per spec Part 7
-        sizingBB = Math.round(gs.potBB * 0.33 * 10) / 10;
+        // Use hero's chosen size (Pass 3.5a) if provided, else default to 33%
+        sizingBB = (heroSizingBB !== undefined && heroSizingBB !== null)
+            ? Math.round(heroSizingBB * 10) / 10
+            : Math.round(gs.potBB * 0.33 * 10) / 10;
     } else if (action === 'raise' && (street === 'flop' || street === 'turn' || street === 'river')) {
         // Raise villain's bet: 2.5× villain bet
         const villainBet = [...ss.actions].reverse().find(a => a.seatLabel !== heroSeat.label && (a.action === 'bet' || a.action === 'raise'));
@@ -799,6 +801,7 @@ function applyHeroAction(handRun, action) {
     const pendingNode = [...hr.decisionNodes].reverse().find(n => n.heroAction === null && n.street === street);
     if (pendingNode) {
         pendingNode.heroAction = action;
+        pendingNode.chosenSizingBB = (action === 'bet' || action === 'raise') ? sizingBB : null;
         pendingNode.grade = (action === pendingNode.correctAction) ? 'correct'
             : (pendingNode.mixFrequency && pendingNode.mixFrequency[action] !== undefined) ? 'mixed'
             : 'error';
@@ -959,7 +962,8 @@ function getHandSummary(handRun) {
         heroAction: n.heroAction,
         correctAction: n.correctAction,
         grade: n.grade,
-        explanation: n.explanation
+        explanation: n.explanation,
+        chosenSizingBB: n.chosenSizingBB || null
     }));
     const mistakeCount = nodes.filter(n => n.grade === 'error').length;
 

@@ -2948,6 +2948,7 @@ function _simShowRecapDrawer(h) {
     const gradeColor = { correct: '#34d399', error: '#f87171', mixed: '#fbbf24' };
     const streetColor = { preflop: '#818cf8', flop: '#fcd34d', turn: '#fb923c', river: '#f87171' };
 
+    const _rcBbDollars = (typeof getBigBlind$ === 'function') ? getBigBlind$() : 3;
     const rowsHtml = summary.streetSummaries.map(function(row) {
         if (!row.heroAction) return '';
         const gc = gradeColor[row.grade] || '#94a3b8';
@@ -2956,10 +2957,15 @@ function _simShowRecapDrawer(h) {
         const corrLine = (row.grade === 'error')
             ? '<div style="font-size:11px;color:#94a3b8;margin-top:2px;padding-left:4px;">\u2192 should be <span style="color:#e2e8f0;font-weight:700;">' + simActionLabel(row.correctAction) + '</span></div>'
             : '';
+        let actionLabel = simActionLabel(row.heroAction);
+        if (row.chosenSizingBB && (row.heroAction === 'bet' || row.heroAction === 'raise')) {
+            const amtDollars = Math.round(row.chosenSizingBB * _rcBbDollars);
+            actionLabel += ' <span style="font-size:11px;color:#64748b;font-weight:600;">($' + amtDollars + ')</span>';
+        }
         return '<div style="display:flex;flex-direction:column;padding:10px 0;border-bottom:1px solid #1e293b;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
             '<span style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;color:' + sc + ';background:' + sc + '22;border-radius:4px;padding:2px 7px;">' + row.street + '</span>' +
-            '<span style="flex:1;font-size:14px;font-weight:700;color:#e2e8f0;">' + simActionLabel(row.heroAction) + '</span>' +
+            '<span style="flex:1;font-size:14px;font-weight:700;color:#e2e8f0;">' + actionLabel + '</span>' +
             '<span style="font-size:18px;font-weight:900;color:' + gc + ';">' + gi + '</span>' +
             '</div>' + corrLine + '</div>';
     }).filter(Boolean).join('');
@@ -3296,25 +3302,66 @@ function _simRenderActionArea(h) {
         const node = [...h.decisionNodes].reverse().find(function(n) { return n.heroAction === null; });
         const math = node ? node.mathContext : null;
 
-        // Street + board context in scenario-hint — read from gameState.board only
+        // Street + board context + running accuracy in scenario-hint
         const gsBoard = h.gameState.board;
         const boardStr = (gsBoard && gsBoard.length > 0)
             ? ' \u00b7 ' + gsBoard.map(function(c) {
                 return typeof c === 'string' ? c : (c.rank + c.suit);
               }).join(' ')
             : '';
-        _simSetScenarioHint(h.street.toUpperCase() + boardStr);
+        const accStr = _simRunningAccuracy(h);
+        _simSetScenarioHint(h.street.toUpperCase() + boardStr + (accStr ? ' \u00b7 ' + accStr : ''));
 
-        const cols = actions.length <= 2 ? 2 : 3;
-        const btns = actions.map(function(action) {
-            const label = simActionLabel(action);
-            const isFold = action === 'fold';
-            const isAggr = action.startsWith('raise') || action.startsWith('3bet') || action.startsWith('bet');
-            const cls = isFold ? 'pc-btn pc-btn-fold'
-                : isAggr ? 'pc-btn pc-btn-aggressive'
-                : 'pc-btn pc-btn-passive';
-            return '<button onclick="handleSimAction(\'' + action + '\')" ' + btnStyle + ' class="' + cls + '">' + label + '</button>';
-        }).join('');
+        // Check if postflop bet is an option — if so, split into action row + sizing row
+        const hasBet = h.street !== 'preflop' && actions.indexOf('bet') !== -1;
+        let buttonsHtml;
+
+        if (hasBet) {
+            // Non-bet actions (fold + check) in a 2-col row
+            const nonBetActions = actions.filter(function(a) { return a !== 'bet'; });
+            const nonBetBtns = nonBetActions.map(function(a) {
+                const isFold = a === 'fold';
+                const cls = isFold ? 'pc-btn pc-btn-fold' : 'pc-btn pc-btn-passive';
+                return '<button onclick="handleSimAction(\'' + a + '\')" ' + btnStyle + ' class="' + cls + '">' + simActionLabel(a) + '</button>';
+            }).join('');
+            const nonBetGrid = '<div class="grid grid-cols-' + nonBetActions.length + ' gap-3 action-buttons-revealed">' + nonBetBtns + '</div>';
+
+            // Sizing row — 3 buckets with pot odds context
+            const potBB = h.gameState.potBB;
+            const bbDollars = (typeof getBigBlind$ === 'function') ? getBigBlind$() : 3;
+            const sizeTiers = [
+                { label: 'Small', pct: 33, fraction: 0.33, breakEven: 20 },
+                { label: 'Medium', pct: 67, fraction: 0.67, breakEven: 29 },
+                { label: 'Pot', pct: 100, fraction: 1.0, breakEven: 33 }
+            ];
+            const sizingBtns = sizeTiers.map(function(sz) {
+                const amtBB = Math.round(potBB * sz.fraction * 10) / 10;
+                const amtDollars = Math.round(potBB * sz.fraction * bbDollars);
+                return '<button onclick="handleSimAction(\'bet\',' + amtBB + ')" ' +
+                    'style="padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:var(--btn-font,14px);" ' +
+                    'class="pc-btn pc-btn-aggressive">' +
+                    '<span style="font-weight:900;">' + sz.label + '</span>' +
+                    '<span style="font-size:11px;opacity:0.85;">' + sz.pct + '% \u00b7 $' + amtDollars + '</span>' +
+                    '<span style="font-size:10px;opacity:0.65;">V needs ' + sz.breakEven + '% eq</span>' +
+                    '</button>';
+            }).join('');
+            const sizingLabel = '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#475569;text-align:center;margin:10px 0 6px;">Bet sizing</div>';
+            const sizingGrid = '<div class="grid grid-cols-3 gap-3 action-buttons-revealed">' + sizingBtns + '</div>';
+
+            buttonsHtml = nonBetGrid + sizingLabel + sizingGrid;
+        } else {
+            const cols = actions.length <= 2 ? 2 : 3;
+            const btns = actions.map(function(action) {
+                const label = simActionLabel(action);
+                const isFold = action === 'fold';
+                const isAggr = action.startsWith('raise') || action.startsWith('3bet') || action.startsWith('bet');
+                const cls = isFold ? 'pc-btn pc-btn-fold'
+                    : isAggr ? 'pc-btn pc-btn-aggressive'
+                    : 'pc-btn pc-btn-passive';
+                return '<button onclick="handleSimAction(\'' + action + '\')" ' + btnStyle + ' class="' + cls + '">' + label + '</button>';
+            }).join('');
+            buttonsHtml = '<div class="grid grid-cols-' + cols + ' gap-3 action-buttons-revealed">' + btns + '</div>';
+        }
 
         let mathHtml = '';
         if (math && (math.potOddsRatio || (math.heroEquityEst !== null && math.heroEquityEst !== undefined))) {
@@ -3328,8 +3375,7 @@ function _simRenderActionArea(h) {
                 '<div class="text-center mt-0.5"><button onclick="toggleSimMath()" class="text-slate-600 hover:text-slate-400 font-bold" style="font-size:11px;">[Show math]</button></div>';
         }
 
-        container.innerHTML =
-            '<div class="grid grid-cols-' + cols + ' gap-3 action-buttons-revealed">' + btns + '</div>' + mathHtml;
+        container.innerHTML = buttonsHtml + mathHtml;
         return;
     }
 }
@@ -3337,7 +3383,7 @@ function _simRenderActionArea(h) {
 // ---------------------------------------------------------------------------
 // handleSimAction — button tap handler
 // ---------------------------------------------------------------------------
-function handleSimAction(action) {
+function handleSimAction(action, heroSizingBB) {
     if (!_simRun || isTerminal(_simRun)) return;
     if (_simPendingTimeout) { clearTimeout(_simPendingTimeout); _simPendingTimeout = null; }
 
@@ -3345,7 +3391,10 @@ function handleSimAction(action) {
     if (isBet) {
         try {
             if (action === 'bet') {
-                animateHeroBetDollars(_simRun.gameState.potBB * 0.33 * getBigBlind$());
+                const betBB = (heroSizingBB !== undefined && heroSizingBB !== null)
+                    ? heroSizingBB
+                    : _simRun.gameState.potBB * 0.33;
+                animateHeroBetDollars(betBB * getBigBlind$());
             } else {
                 animateHeroBetDollars(getOpenSize$());
             }
@@ -3357,12 +3406,27 @@ function handleSimAction(action) {
         const heroEl = document.getElementById('seat-' + _heroLabel);
         if (heroEl) {
             const bc = isBet ? 'badge-raise' : action === 'fold' ? 'badge-fold' : 'badge-call';
-            showActionBadge(heroEl, simActionLabel(action).toUpperCase(), bc, 700);
+            let badgeLabel = simActionLabel(action).toUpperCase();
+            if (action === 'bet' && heroSizingBB !== undefined && heroSizingBB !== null) {
+                badgeLabel = 'BET $' + Math.round(heroSizingBB * getBigBlind$());
+            }
+            showActionBadge(heroEl, badgeLabel, bc, 700);
         }
     } catch(_) {}
 
-    _simRun = applyHeroAction(_simRun, action);
+    _simRun = applyHeroAction(_simRun, action, heroSizingBB);
     _simRenderRound();
+}
+
+// ---------------------------------------------------------------------------
+// _simRunningAccuracy — live accuracy string for scenario hint
+// ---------------------------------------------------------------------------
+function _simRunningAccuracy(h) {
+    if (!h || !h.decisionNodes) return '';
+    var graded = h.decisionNodes.filter(function(n) { return n.heroAction !== null; });
+    if (!graded.length) return '';
+    var correct = graded.filter(function(n) { return n.grade === 'correct'; }).length;
+    return correct + '/' + graded.length + ' \u2713';
 }
 
 // ---------------------------------------------------------------------------
