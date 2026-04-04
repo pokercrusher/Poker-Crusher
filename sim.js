@@ -1048,28 +1048,50 @@ function applyVillainAction(handRun) {
 
 function _resolveOutcome(handRun) {
     const hr = handRun;
-    const heroSeat = hr.seats[hr.heroSeatIndex];
+    const heroSeat  = hr.seats[hr.heroSeatIndex];
     const villainSeat = hr.seats.find(s => s !== null && !s.isHero);
-    const gs = hr.gameState;
-    const startPot = gs.potBB;
+    const gs  = hr.gameState;
+    const ss  = gs.streetState;
+
+    // Current street committed (not yet flushed into gs.potBB by advanceStreet)
+    const streetCommitted = Object.values(ss.committedBB).reduce((s, v) => s + v, 0);
+
+    // Blind amounts that are in the real pot but never reach committedBB:
+    //   - Dead SB (always 0.5BB unless hero IS the SB)
+    //   - BB's blind when BB folded preflop before calling (committedBB['BB'] stays 0)
+    const deadSB = hr.lane === 'SB_vs_BB_SRP' ? 0 : 0.5;
+    const bbLabel = (villainSeat && villainSeat.label === 'BB') ? 'BB'
+                  : (heroSeat   && heroSeat.label   === 'BB') ? 'BB' : null;
+    const bbAlreadyCommitted = bbLabel ? (ss.committedBB[bbLabel] || 0) : 0;
+    const bbBlindMissing = (bbLabel && bbAlreadyCommitted === 0 && hr.street === 'preflop') ? 1 : 0;
+
+    const totalPot = parseFloat((gs.potBB + streetCommitted + deadSB + bbBlindMissing).toFixed(2));
+
+    // Hero's actual investment this hand = chips moved out of hero's starting stack.
+    // stackBB is decremented for every hero bet/call (fold has sizingBB 0 so no change).
+    // Special case: BB folds preflop without having acted — stackBB unchanged but blind was posted.
+    const heroBBBlind = (hr.lane === 'BB_vs_BTN_SRP' && heroSeat && heroSeat.stackBB === 100) ? 1 : 0;
+    const heroInvested = parseFloat(((100 - (heroSeat ? heroSeat.stackBB : 100)) + heroBBBlind).toFixed(2));
 
     let winner, heroNetBB;
     if (heroSeat && heroSeat.folded) {
         winner = villainSeat ? villainSeat.label : 'villain';
-        heroNetBB = -(startPot * 0.5);
+        heroNetBB = -heroInvested;
     } else if (villainSeat && villainSeat.folded) {
-        winner = heroSeat.label;
-        heroNetBB = startPot * 0.5;
+        winner = heroSeat ? heroSeat.label : 'hero';
+        heroNetBB = parseFloat((totalPot - heroInvested).toFixed(2));
     } else {
         // Showdown — rough 50/50 for Pass 2.5
         const heroWins = Math.random() < 0.5;
-        winner = heroWins ? heroSeat.label : (villainSeat ? villainSeat.label : 'villain');
-        heroNetBB = heroWins ? startPot * 0.5 : -(startPot * 0.5);
+        winner = heroWins ? (heroSeat ? heroSeat.label : 'hero') : (villainSeat ? villainSeat.label : 'villain');
+        heroNetBB = heroWins
+            ? parseFloat((totalPot - heroInvested).toFixed(2))
+            : -heroInvested;
     }
 
     hr.outcome = {
         winner,
-        potBB: startPot,
+        potBB: totalPot,
         heroNetBB: parseFloat(heroNetBB.toFixed(2)),
         showdownReached: hr.street === 'showdown'
     };
