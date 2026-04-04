@@ -2957,6 +2957,14 @@ function _simShowRecapDrawer(h) {
         const corrLine = (row.grade === 'error')
             ? '<div style="font-size:11px;color:#94a3b8;margin-top:2px;padding-left:4px;">\u2192 should be <span style="color:#e2e8f0;font-weight:700;">' + simActionLabel(row.correctAction) + '</span></div>'
             : '';
+        var sizeGradeLine = '';
+        if (row.sizeGrade && row.sizeGrade !== 'correct' && row.chosenSizingBucket && row.correctSizingBucket) {
+            var sizeColor = row.sizeGrade === 'error' ? '#fbbf24' : '#94a3b8';
+            var sizeMsg = row.sizeGrade === 'error'
+                ? '\u2192 size: should be <span style="color:#e2e8f0;font-weight:700;">' + row.correctSizingBucket + '</span> (you chose ' + row.chosenSizingBucket + ')'
+                : '\u2192 size: <span style="color:#e2e8f0;font-weight:700;">' + row.correctSizingBucket + '</span> preferred (you chose ' + row.chosenSizingBucket + ')';
+            sizeGradeLine = '<div style="font-size:11px;color:' + sizeColor + ';margin-top:2px;padding-left:4px;">' + sizeMsg + '</div>';
+        }
         let actionLabel = simActionLabel(row.heroAction);
         if (row.chosenSizingBB && (row.heroAction === 'bet' || row.heroAction === 'raise')) {
             const amtDollars = Math.round(row.chosenSizingBB * _rcBbDollars);
@@ -2967,7 +2975,7 @@ function _simShowRecapDrawer(h) {
             '<span style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.05em;color:' + sc + ';background:' + sc + '22;border-radius:4px;padding:2px 7px;">' + row.street + '</span>' +
             '<span style="flex:1;font-size:14px;font-weight:700;color:#e2e8f0;">' + actionLabel + '</span>' +
             '<span style="font-size:18px;font-weight:900;color:' + gc + ';">' + gi + '</span>' +
-            '</div>' + corrLine + '</div>';
+            '</div>' + corrLine + sizeGradeLine + '</div>';
     }).filter(Boolean).join('');
 
     const rowsBlock = rowsHtml

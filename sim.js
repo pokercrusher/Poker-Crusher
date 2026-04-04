@@ -77,6 +77,87 @@ const MADE_HAND_EQUITY = {
     'UNDERPAIR': 28, 'AIR': 15, 'OVERCARDS': 22
 };
 
+// ---------------------------------------------------------------------------
+// Pass 3.5b — Sizing bucket lookup table
+// [texture][spr][handStrength] → 'small' | 'medium' | 'large'
+// ---------------------------------------------------------------------------
+
+const SIZING_BUCKET_TABLE = {
+    dry: {
+        low:  { nut_value:'small',  nutted:'small',  strong:'small',  medium:'small',  thin:'small',  weak:'small',  semi_bluff:'small'  },
+        mid:  { nut_value:'medium', nutted:'medium', strong:'small',  medium:'small',  thin:'small',  weak:'small',  semi_bluff:'medium' },
+        high: { nut_value:'large',  nutted:'medium', strong:'medium', medium:'small',  thin:'small',  weak:'medium', semi_bluff:'medium' }
+    },
+    dynamic: {
+        low:  { nut_value:'medium', nutted:'medium', strong:'medium', medium:'small',  thin:'small',  weak:'small',  semi_bluff:'medium' },
+        mid:  { nut_value:'large',  nutted:'large',  strong:'large',  medium:'medium', thin:'small',  weak:'medium', semi_bluff:'large'  },
+        high: { nut_value:'large',  nutted:'large',  strong:'large',  medium:'medium', thin:'medium', weak:'medium', semi_bluff:'large'  }
+    },
+    paired: {
+        low:  { nut_value:'small',  nutted:'small',  strong:'small',  medium:'small',  thin:'small',  weak:'small',  semi_bluff:'small'  },
+        mid:  { nut_value:'medium', nutted:'medium', strong:'small',  medium:'small',  thin:'small',  weak:'small',  semi_bluff:'small'  },
+        high: { nut_value:'medium', nutted:'medium', strong:'medium', medium:'small',  thin:'small',  weak:'medium', semi_bluff:'small'  }
+    },
+    monotone: {
+        low:  { nut_value:'large',  nutted:'large',  strong:'medium', medium:'small',  thin:'small',  weak:'medium', semi_bluff:'large'  },
+        mid:  { nut_value:'large',  nutted:'large',  strong:'large',  medium:'medium', thin:'small',  weak:'medium', semi_bluff:'large'  },
+        high: { nut_value:'large',  nutted:'large',  strong:'large',  medium:'medium', thin:'medium', weak:'medium', semi_bluff:'large'  }
+    }
+};
+
+// Flop hand class → strength bucket (coarse — TWO_PAIR_PLUS covers 2P through quads)
+// TODO: classifier-alignment pass — split TWO_PAIR_PLUS into FLUSH/STRAIGHT/FULL_HOUSE/QUADS
+const _FLOP_HAND_BUCKETS = {
+    SET:'nutted', TWO_PAIR_PLUS:'nutted',
+    OVERPAIR:'strong',
+    TOP_PAIR:'medium',
+    SECOND_PAIR:'thin',
+    THIRD_PAIR:'weak', UNDERPAIR:'weak', AIR:'weak', OVERCARDS:'weak', ACE_HIGH_BACKDOOR:'weak',
+    FD:'semi_bluff', COMBO_DRAW:'semi_bluff'
+};
+
+// Turn/river hand class → strength bucket (fine-grained)
+const _TURN_HAND_BUCKETS = {
+    STRAIGHT_FLUSH:'nut_value', QUADS:'nut_value', FULL_HOUSE:'nut_value', FLUSH:'nut_value', STRAIGHT:'nut_value',
+    SET:'nutted', TWO_PAIR:'nutted', TRIPS:'nutted',
+    OVERPAIR:'strong', BOARD_TRIPS:'strong',
+    TOP_PAIR:'medium',
+    SECOND_PAIR:'thin', THIRD_PAIR:'thin',
+    UNDERPAIR:'weak', AIR:'weak', OVERCARDS:'weak', ACE_HIGH:'weak', GUTSHOT:'weak',
+    COMBO_DRAW:'semi_bluff', STRONG_DRAW:'semi_bluff', OESD:'semi_bluff', FD:'semi_bluff'
+};
+
+function _simTextureBucket(archetype) {
+    if (!archetype) return 'dry';
+    if (archetype === 'MONOTONE') return 'monotone';
+    if (archetype === 'PAIRED_HIGH' || archetype === 'PAIRED_LOW' || archetype === 'TRIPS') return 'paired';
+    if (archetype === 'A_HIGH_DYNAMIC' || archetype === 'BROADWAY_DYNAMIC' ||
+        archetype === 'MID_CONNECTED'  || archetype === 'LOW_CONNECTED') return 'dynamic';
+    return 'dry';
+}
+
+function _simSprBucket(spr) {
+    if (!spr || spr <= 3) return 'low';
+    if (spr <= 8) return 'mid';
+    return 'high';
+}
+
+function _simHandStrengthBucket(heroHandClass, street) {
+    if (!heroHandClass) return 'medium';
+    const map = (street === 'flop') ? _FLOP_HAND_BUCKETS : _TURN_HAND_BUCKETS;
+    return map[heroHandClass] || 'medium';
+}
+
+function resolveCorrectSizingBucket(spot, spr, street) {
+    if (!spot) return 'medium';
+    const archetype = spot.boardArchetype || spot.turnFamily || null;
+    const texture = _simTextureBucket(archetype);
+    const sprBucket = _simSprBucket(spr);
+    const handBucket = _simHandStrengthBucket(spot.heroHandClass, street || 'flop');
+    const row = SIZING_BUCKET_TABLE[texture] && SIZING_BUCKET_TABLE[texture][sprBucket];
+    return (row && row[handBucket]) ? row[handBucket] : 'medium';
+}
+
 // Line description verbs for getHandSummary lineAssessment
 const _LINE_VERBS = {
     preflop: { raise: 'raised preflop', fold: 'folded preflop', call: 'called preflop' },
@@ -510,10 +591,15 @@ function resolveDecisionNode(handRun) {
         villainStackBB: villainSeat ? villainSeat.stackBB : 0,
         availableActions,
         correctAction,
+        correctSizingBucket: (correctAction === 'bet')
+            ? resolveCorrectSizingBucket(spot, hr.gameState.spr, street)
+            : null,
         mixFrequency,
         explanation,
         mathContext,
         heroAction: null,
+        chosenSizingBucket: null,
+        sizeGrade: null,
         grade: null,
         timestamp: Date.now()
     });
@@ -805,6 +891,19 @@ function applyHeroAction(handRun, action, heroSizingBB) {
         pendingNode.grade = (action === pendingNode.correctAction) ? 'correct'
             : (pendingNode.mixFrequency && pendingNode.mixFrequency[action] !== undefined) ? 'mixed'
             : 'error';
+
+        // Size grading (Pass 3.5b) — only when hero bets and correctSizingBucket was set
+        if (action === 'bet' && pendingNode.correctSizingBucket && gs.potBB > 0) {
+            const ratio = sizingBB / gs.potBB;
+            const chosenBucket = ratio < 0.50 ? 'small' : ratio < 0.85 ? 'medium' : 'large';
+            const bucketOrder = { small: 0, medium: 1, large: 2 };
+            const diff = Math.abs(
+                (bucketOrder[chosenBucket] !== undefined ? bucketOrder[chosenBucket] : 1) -
+                (bucketOrder[pendingNode.correctSizingBucket] !== undefined ? bucketOrder[pendingNode.correctSizingBucket] : 1)
+            );
+            pendingNode.chosenSizingBucket = chosenBucket;
+            pendingNode.sizeGrade = diff === 0 ? 'correct' : diff === 1 ? 'close' : 'error';
+        }
     }
 
     // Fold → terminal
@@ -963,7 +1062,10 @@ function getHandSummary(handRun) {
         correctAction: n.correctAction,
         grade: n.grade,
         explanation: n.explanation,
-        chosenSizingBB: n.chosenSizingBB || null
+        chosenSizingBB: n.chosenSizingBB || null,
+        correctSizingBucket: n.correctSizingBucket || null,
+        chosenSizingBucket:  n.chosenSizingBucket  || null,
+        sizeGrade:           n.sizeGrade           || null
     }));
     const mistakeCount = nodes.filter(n => n.grade === 'error').length;
 
