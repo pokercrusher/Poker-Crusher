@@ -3126,6 +3126,7 @@ function startSimulator(lane) {
     _simRenderedBoardLen = 0;
     _simLastStreet = '';
     _simRun = createHandRun({ lane: lane });
+    _simEnsureVillainCards(_simRun); // deal villain cards upfront so they're available for log
 
     hideAllScreens();
     document.getElementById('trainer-screen').classList.remove('hidden');
@@ -3628,7 +3629,7 @@ function showSessionLog() {
         var netStr = entry.netBB >= 0 ? '+' + entry.netBB + 'bb' : entry.netBB + 'bb';
         var netColor = entry.netBB > 0 ? '#34d399' : entry.netBB < 0 ? '#f87171' : '#94a3b8';
         var heroCardsHtml = entry.heroCards.map(_logMiniCard).join('');
-        var boardHtml = entry.board.slice(0, 3).map(_logMiniCard).join(''); // show flop only in log
+        var boardHtml = entry.board.map(_logMiniCard).join(''); // full board
 
         var decisionRows = entry.decisions.map(function(d) {
             var sc = _streetColor[d.street] || '#94a3b8';
@@ -3637,12 +3638,25 @@ function showSessionLog() {
                 ? '<div style="font-size:10px;color:#94a3b8;padding-left:4px;">\u2192 should be <span style="color:#e2e8f0;font-weight:700;">' + d.correctAction + '</span></div>' : '';
             var szLine = (d.sizeGrade && d.sizeGrade !== 'correct' && d.chosenSizingBucket)
                 ? '<div style="font-size:10px;color:' + (d.sizeGrade === 'error' ? '#fbbf24' : '#64748b') + ';padding-left:4px;">\u2192 size: should be ' + d.correctSizingBucket + ' (chose ' + d.chosenSizingBucket + ')</div>' : '';
+            var hcLabel = d.handClass ? '<span style="font-size:9px;color:#64748b;font-weight:600;margin-left:4px;">' + d.handClass.replace(/_/g,' ') + '</span>' : '';
             return '<div style="display:flex;flex-direction:column;padding:5px 0;border-top:1px solid #1e293b;">' +
-                '<div style="display:flex;align-items:center;gap:6px;">' +
+                '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
                 '<span style="font-size:9px;font-weight:900;text-transform:uppercase;color:' + sc + ';background:' + sc + '22;border-radius:3px;padding:1px 5px;">' + d.street + '</span>' +
                 '<span style="flex:1;font-size:12px;font-weight:700;color:#e2e8f0;">' + d.heroAction + '</span>' +
-                gi + '</div>' + corrLine + szLine + '</div>';
+                hcLabel + gi + '</div>' + corrLine + szLine + '</div>';
         }).join('');
+
+        // Villain cards — always show if available; label as "Showdown" if reached
+        var villainCardsHtml = '';
+        if (entry.villainCards && entry.villainCards.length >= 2) {
+            var vcLabel = entry.showdownReached
+                ? '<span style="font-size:9px;color:#f87171;font-weight:700;">SHOWDOWN</span>'
+                : '<span style="font-size:9px;color:#475569;font-weight:600;">Villain</span>';
+            villainCardsHtml = '<div style="display:flex;align-items:center;gap:4px;margin-top:6px;">' +
+                vcLabel +
+                '<div style="display:flex;gap:2px;margin-left:4px;">' + entry.villainCards.map(_logMiniCard).join('') + '</div>' +
+                '</div>';
+        }
 
         var entryId = 'log-entry-' + entry.handNum;
         return '<div style="border-bottom:1px solid #1e293b;padding:10px 0;">' +
@@ -3651,11 +3665,11 @@ function showSessionLog() {
             '<span style="font-size:10px;color:#475569;font-weight:700;flex-shrink:0;">H' + entry.handNum + '</span>' +
             '<span style="font-size:10px;color:#64748b;flex-shrink:0;">' + (_laneLabel[entry.lane] || entry.lane) + '</span>' +
             '<div style="display:flex;gap:2px;">' + heroCardsHtml + '</div>' +
-            (boardHtml ? '<div style="display:flex;gap:2px;">' + boardHtml + '</div>' : '') +
+            (boardHtml ? '<div style="display:flex;gap:2px;flex-wrap:nowrap;">' + boardHtml + '</div>' : '') +
             '<span style="font-size:11px;font-weight:800;color:' + netColor + ';margin-left:auto;">' + netStr + '</span>' +
             '<span style="font-size:11px;">' + gradeIcons + '</span>' +
             '</div>' +
-            '<div id="' + entryId + '" style="display:none;padding-top:4px;">' + decisionRows + '</div>' +
+            '<div id="' + entryId + '" style="display:none;padding-top:4px;">' + villainCardsHtml + decisionRows + '</div>' +
             '</div>';
     }).join('');
 

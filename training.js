@@ -217,7 +217,8 @@ function _simRecordHandToSession(h) {
             chosenSizingBucket: n.chosenSizingBucket || null,
             correctSizingBucket: n.correctSizingBucket || null,
             sizeGrade: n.sizeGrade || null,
-            explanation: n.explanation || ''
+            explanation: n.explanation || '',
+            handClass: n.heroHandClass || null
         };
     });
 
@@ -231,6 +232,7 @@ function _simRecordHandToSession(h) {
         heroCards: heroSeat ? (heroSeat.holeCards || []) : [],
         villainCards: villainSeat ? (villainSeat.holeCards || []) : [],
         board: (h.gameState && h.gameState.board) ? h.gameState.board : [],
+        showdownReached: h.outcome ? h.outcome.showdownReached : false,
         netBB: netBB,
         stackAfter: simSession.currentStack,
         decisions: decisions,

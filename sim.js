@@ -616,6 +616,7 @@ function resolveDecisionNode(handRun) {
         mixFrequency,
         explanation,
         mathContext,
+        heroHandClass: spot ? (spot.heroHandClass || null) : null,
         heroAction: null,
         chosenSizingBucket: null,
         sizeGrade: null,

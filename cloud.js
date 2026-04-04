@@ -34,7 +34,7 @@ function migrateBaseDataIntoProfile(p) {
     // If user sets a profile for the first time, copy existing Guest keys into profile namespace
     // (so they don’t "lose" progress when switching to username).
     if (!p) return;
-    const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2'];
+    const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
     baseKeys.forEach(k => {
         const namespaced = `${k}__pc_${p}`;
         try {
@@ -98,7 +98,7 @@ function hideSettings() { document.getElementById('settings-screen').classList.a
 
         function exportTrainerData() {
     try {
-        const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2'];
+        const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
         const profile = getProfileName();
         const payload = {
             app: 'PokerCrusher',
@@ -170,7 +170,7 @@ function triggerImport() {
                 } catch(e) {}
             }
 
-            const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2'];
+            const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
             let wrote = 0;
             allowed.forEach(k => {
                 if (payload.data[k] !== undefined && payload.data[k] !== null) {
@@ -399,7 +399,7 @@ function buildTrainerPayloadForSync() {
     // Keep identical to exportTrainerData payload shape, but always read/write
     // the *active profile* namespace via profileKey(...) so Cloud sync matches
     // what the trainer actually uses.
-    const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2'];
+    const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
     const profile = getProfileName(); // '' means Guest
 
     const payload = {
@@ -443,7 +443,7 @@ function applyTrainerPayload(payload) {
     } catch(e) {}
 
     // Write only the known keys into the *active* profile namespace.
-    const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2'];
+    const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
     const data = payload.data;
 
     let wrote = 0;
