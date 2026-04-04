@@ -1994,7 +1994,7 @@ function formatSpotLabel(rawSpotId) {
 const SCENARIO_SHORT = { RFI: 'RFI', FACING_RFI: 'vs RFI', RFI_VS_3BET: 'vs 3Bet', VS_4BET: 'vs 4Bet', VS_LIMP: 'vs Limps', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push/Fold', POSTFLOP_CBET: 'Flop C-Bet', POSTFLOP_DEFEND: 'vs C-Bet', POSTFLOP_TURN_CBET: 'Turn Barrel', POSTFLOP_TURN_DEFEND: 'Turn Defense', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed', POSTFLOP_TURN_PROBE: 'Turn Probe', POSTFLOP_TURN_PROBE_DEFEND: 'Probe Bet', POSTFLOP_RIVER_CBET: 'River Barrel', POSTFLOP_RIVER_DEFEND: 'River Defense', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn D-Defend', POSTFLOP_RIVER_DELAYED_CBET: 'River Delayed', POSTFLOP_RIVER_DELAYED_DEFEND: 'River D-Defend', POSTFLOP_RIVER_PROBE: 'River Probe', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River TCC-Bet', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River TCC-Def', POSTFLOP_RIVER_PROBE_CALL_BET: 'River P2-Bet', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River P2-Def' };
 const ACTION_LABELS = { FOLD: 'Fold', RAISE: 'Raise', CALL: 'Call', '3BET': '3-Bet', '4BET': '4-Bet', '5BET': '5-Bet Shove', ISO: 'Iso Raise', OVERLIMP: 'Overlimp', SQUEEZE: 'Squeeze', SHOVE: 'Shove All-In', CHECK: 'Check', CBET: 'C-Bet' };
 
-function showSessionLog() {
+function _showTrainingSessionLog() {
     const list = document.getElementById('session-log-list');
     if (state.sessionLog.length === 0) {
         list.innerHTML = '<p class="text-slate-600 text-xs text-center py-6">No hands played yet this session.</p>';
@@ -3595,7 +3595,8 @@ function _simUpdateSessionHud() {
 // ---------------------------------------------------------------------------
 function showSessionLog() {
     if (typeof simSession === 'undefined' || !simSession.active || simSession.handLog.length === 0) {
-        return; // nothing to show yet
+        _showTrainingSessionLog();
+        return;
     }
     var old = document.getElementById('sim-session-log-drawer');
     if (old) { old.remove(); return; } // toggle
