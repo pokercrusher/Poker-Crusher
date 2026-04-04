@@ -6,23 +6,34 @@ GTO poker training web app hosted at pokercrusher.github.io. Built in **vanilla 
 ## File Structure & Load Order
 All files loaded via `defer` script tags in this exact order:
 1. `ranges.js` — range data, POSTFLOP_STRATEGY_V2 registry (312 entries), FAMILY_MODEL registry
-2. `cloud.js` — Firebase cloud sync (**high-risk, low-touch**)
-3. `engine.js` — core SR engine, `generateNextRound`, `checkRangeHelper` (canonical home)
-4. `training.js` — training session logic, `drillState` (backward-compat shim)
-5. `challenge.js` — challenge path logic
-6. `ui.js` — UI rendering, animations, one-line `checkRangeHelper` alias
-7. `index.html` — entry point, inline `onclick` wiring, script tags
+2. `scenarios.js` — math drill data (POT_MATH, POT_ODDS, BET_SIZE, OUT_COUNT, etc.) and SR key taxonomy
+3. `cloud.js` — Firebase cloud sync (**high-risk, low-touch**)
+4. `engine.js` — core SR engine, `generateNextRound`, `checkRangeHelper` (canonical home)
+5. `training.js` — training session logic, `sessionBuilder` state, `drillState` (backward-compat shim)
+6. `sim.js` — Full Hand state machine (`createHandRun`), all 9 SRP lanes, street-by-street play
+7. `challenge.js` — challenge path logic, FAMILY_GROUPS, MEDAL_THRESHOLDS
+8. `ui.js` — UI rendering, animations, one-line `checkRangeHelper` alias
+9. `drills.js` — math & decision drill engine (loaded last, depends on all prior files)
+10. `index.html` — entry point, inline `onclick` wiring, script tags
 
 ## Core Training Scenarios
-`RFI`, `FACING_RFI`, `RFI_VS_3BET`, `VS_LIMP` (multi-limper buckets), `SQUEEZE`, `SQUEEZE_2C`, `PUSH_FOLD`, `POSTFLOP_CBET`, `POSTFLOP_DEFEND`
+**Preflop:** `RFI`, `FACING_RFI`, `RFI_VS_3BET`, `VS_LIMP` (multi-limper buckets), `SQUEEZE`, `SQUEEZE_2C`, `PUSH_FOLD`
+
+**Postflop (flop):** `POSTFLOP_CBET`, `POSTFLOP_3BP_CBET`, `POSTFLOP_DEFEND`, `POSTFLOP_3BP_DEFEND`
+
+**Postflop (turn):** `POSTFLOP_TURN_CBET`, `POSTFLOP_TURN_DEFEND`, `POSTFLOP_TURN_DELAYED_CBET`, `POSTFLOP_TURN_DELAYED_DEFEND`, `POSTFLOP_TURN_PROBE`, `POSTFLOP_TURN_PROBE_DEFEND`
+
+**Postflop (river):** `POSTFLOP_RIVER_CBET`, `POSTFLOP_RIVER_DEFEND`, `POSTFLOP_RIVER_DELAYED_CBET`, `POSTFLOP_RIVER_DELAYED_DEFEND`, `POSTFLOP_RIVER_PROBE`, `POSTFLOP_RIVER_PROBE_BET`, `POSTFLOP_RIVER_TURN_CHECK_CBET`, `POSTFLOP_RIVER_TURN_CHECK_DEFEND`, `POSTFLOP_RIVER_PROBE_CALL_BET`, `POSTFLOP_RIVER_PROBE_CALL_DEFEND`
 
 ## Positions
 `UTG / UTG1 / UTG2 / LJ / HJ / CO / BTN / SB / BB`
 
 ## Current State
-- **Session Builder** (unified config screen) is live. State stored in `gto_session_builder_v1` localStorage key, layered on `gto_config_v2`.
+- **Session Builder** (unified config screen) is live. State stored in `gto_session_builder_v1` localStorage key, layered on `gto_config_v2`. Includes family chips (preflop + postflop), position filter, limper mix, push/fold stack depths, session length, and stake/display controls.
+- **Full Hand Mode** — live. Players a full street-by-street SRP hand via `sim.js`. All 9 lanes supported: BTN/CO/HJ/LJ/UTG2/UTG1/UTG vs BB (IP), plus BB vs BTN (OOP) and SB vs BB. Session Mode (persistent stack across hands) also live.
+- **Math & Decision Drills** — live in `drills.js`. Drill types: POT_MATH, POT_ODDS, BET_SIZE, OUT_COUNT, RULE_42, and MIXED. SR-keyed per bucket.
 - **Challenge Path v2** — design complete, implementation not started. 24 nodes, 8 tiers, medal system (pass/silver/gold). Progress schema v2 with v1 migration.
-- **Postflop training** — hero-hand-aware system active for BTN vs BB and CO vs BB SRP IP spots.
+- **Postflop training** — hero-hand-aware system active for BTN vs BB and CO vs BB SRP IP spots. Remaining SRP families (HJ/LJ/UTG2/UTG1/UTG vs BB, OOP spots) not yet hero-hand-aware.
 - **Strategy Library** has Preflop and Postflop tabs (Overview, Matrix, Archetypes views).
 
 ## Key Principles — Follow These Always
@@ -31,8 +42,8 @@ All files loaded via `defer` script tags in this exact order:
 - Do NOT restructure core functions: `generateNextRound`, SR engine, boot flow, inline `onclick` wiring, cloud/storage behavior — unless explicitly scoped.
 - `ranges.js` and `cloud.js` are **high-risk/low-touch**.
 
-### All 7 files must be output together
-Every implementation pass must deliver all seven files to prevent accidental omissions on GitHub Pages deployment.
+### All 9 files + index.html must be output together
+Every implementation pass must deliver all changed files to prevent accidental omissions on GitHub Pages deployment. The full set is: `ranges.js`, `scenarios.js`, `cloud.js`, `engine.js`, `training.js`, `sim.js`, `challenge.js`, `ui.js`, `drills.js`, `index.html`.
 
 ### Syntax validate before delivering
 Run `node --check <file>` on every modified file before considering the task done.
@@ -55,6 +66,6 @@ SR keys must include all relevant context (scenario, position, bucket, hand) to 
 - Browser cache issues are a recurring false "bug" — confirm all files are deployed before debugging.
 
 ## Known Issues / On The Horizon
+- **Challenge Path v2** — primary queued workstream. Design done, implementation not started.
+- **Expand hero-hand-aware postflop** — HJ/LJ/UTG2/UTG1/UTG vs BB and OOP spots (BB vs BTN, SB vs BB) still use non-hero-hand-aware postflop logic.
 - Hardcoded values in `ui.js` animations (bet sizes, chip amounts) — known audit needed.
-- Expand hero-hand-aware postflop coverage beyond BTN vs BB and CO vs BB to remaining SRP families.
-- Challenge Path v2 implementation is the primary queued workstream.
