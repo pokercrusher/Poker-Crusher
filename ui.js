@@ -3175,6 +3175,30 @@ function startSimulator(lane) {
 }
 
 // ---------------------------------------------------------------------------
+// _simAppendCommunityCards — append only newly dealt cards without clearing existing ones
+// Used for turn/river so flop cards don't re-animate
+// ---------------------------------------------------------------------------
+function _simAppendCommunityCards(newCards) {
+    const isMob = typeof SEAT_COORDS !== 'undefined' && typeof SEAT_COORDS_MOBILE !== 'undefined' && SEAT_COORDS === SEAT_COORDS_MOBILE;
+    const cc = isMob
+        ? document.getElementById('community-cards-strip')
+        : document.getElementById('community-cards');
+    if (!cc) return;
+    newCards.forEach(function(c) {
+        const rank = c.rank || (typeof c === 'string' ? c.slice(0, -1) : '?');
+        const suit = c.suit || (typeof c === 'string' ? c.slice(-1) : '?');
+        const color = (typeof flopSuitColor === 'function') ? flopSuitColor(suit) : ((suit === 'h' || suit === 'd') ? '#e11d48' : '#f1f5f9');
+        const sym = (typeof SUIT_SYMBOLS !== 'undefined' && SUIT_SYMBOLS[suit]) ? SUIT_SYMBOLS[suit] : suit;
+        const el = document.createElement('div');
+        el.className = 'card-display';
+        el.style.cssText = 'width:var(--cc-w,42px);height:var(--cc-h,58px);display:flex;flex-direction:column;align-items:center;justify-content:center;animation:ccDeal 0.25s ease-out both;';
+        el.innerHTML = '<div style="font-size:var(--cc-rank-size,16px);font-weight:900;color:' + color + ';line-height:1;">' + rank + '</div>' +
+            '<div style="font-size:var(--cc-suit-size,14px);color:' + color + ';line-height:1;">' + sym + '</div>';
+        cc.appendChild(el);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // _simRenderRound — main render; guards re-initializing table/cards each call
 // ---------------------------------------------------------------------------
 function _simRenderRound() {
@@ -3193,11 +3217,15 @@ function _simRenderRound() {
         updateTable(_fbHero, _fbVillain ? _fbVillain.label : 'BB');
     }
 
-    // Board: only re-render when new cards have been added — prevents ccDeal re-animation
+    // Board: flop → full render; turn/river → append only (no re-animation of existing cards)
     const board = h.gameState.board;
     if (board && board.length > 0) {
         if (board.length > _simRenderedBoardLen) {
-            renderCommunityCards(board);
+            if (_simRenderedBoardLen === 0) {
+                renderCommunityCards(board);
+            } else {
+                _simAppendCommunityCards(board.slice(_simRenderedBoardLen));
+            }
             _simRenderedBoardLen = board.length;
         }
     } else {
@@ -3299,8 +3327,11 @@ function _simRenderActionArea(h) {
 
     // ---- Villain response ----
     if (h.nodeType === 'villain_response') {
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
         container.innerHTML =
-            '<div class="text-center text-slate-400 font-bold py-3" style="font-size:var(--btn-font,14px);">Villain thinking\u2026</div>';
+            '<span class="text-slate-400 font-bold" style="font-size:var(--btn-font,14px);">Villain thinking\u2026</span>';
         _simPendingTimeout = setTimeout(function() {
             _simPendingTimeout = null;
             _simRun = applyVillainAction(_simRun);
@@ -3344,10 +3375,12 @@ function _simRenderActionArea(h) {
                 const badgeColor = villainAction === 'fold' ? 'text-rose-400'
                     : (villainAction === 'bet' || villainAction === 'raise' || villainAction === '3bet') ? 'text-amber-400'
                     : 'text-emerald-400';
+                container.style.display = 'flex';
+                container.style.alignItems = 'center';
+                container.style.justifyContent = 'center';
                 container.innerHTML =
-                    '<div class="text-center py-3">' +
-                    '<span class="text-slate-400 font-bold" style="font-size:var(--btn-font,14px);">Villain: </span>' +
-                    '<span class="font-black ' + badgeColor + '" style="font-size:var(--btn-font,14px);">' + actLabel + '</span></div>';
+                    '<span><span class="text-slate-400 font-bold" style="font-size:var(--btn-font,14px);">Villain: </span>' +
+                    '<span class="font-black ' + badgeColor + '" style="font-size:var(--btn-font,14px);">' + actLabel + '</span></span>';
             }
             setTimeout(function() { _simRenderRound(); }, 1100);
         }, 500);
@@ -3356,8 +3389,11 @@ function _simRenderActionArea(h) {
 
     // ---- Street advance (triggered from _simRenderActionArea, not applyVillainAction) ----
     if (h.nodeType === 'street_advance') {
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
         container.innerHTML =
-            '<div class="text-center text-slate-500 font-bold py-3" style="font-size:var(--btn-font,14px);">Dealing\u2026</div>';
+            '<span class="text-slate-500 font-bold" style="font-size:var(--btn-font,14px);">Dealing\u2026</span>';
         _simPendingTimeout = setTimeout(function() {
             _simPendingTimeout = null;
             _simRun = advanceStreet(_simRun);
@@ -3450,7 +3486,20 @@ function _simRenderActionArea(h) {
                 '<div class="text-center mt-0.5"><button onclick="toggleSimMath()" class="text-slate-600 hover:text-slate-400 font-bold" style="font-size:11px;">[Show math]</button></div>';
         }
 
+        // Reset flex centering used by transient states, restore normal block flow
+        container.style.display = '';
+        container.style.alignItems = '';
+        container.style.justifyContent = '';
         container.innerHTML = buttonsHtml + mathHtml;
+        // Lock container height after first render so transient states don't resize the table
+        if (!container._simMinHeightLocked) {
+            requestAnimationFrame(function() {
+                if (container && !container._simMinHeightLocked) {
+                    container.style.minHeight = container.offsetHeight + 'px';
+                    container._simMinHeightLocked = true;
+                }
+            });
+        }
         return;
     }
 }
