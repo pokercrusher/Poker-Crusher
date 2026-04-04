@@ -3387,38 +3387,32 @@ function _simRenderActionArea(h) {
         let buttonsHtml;
 
         if (hasBet) {
-            // Non-bet actions (fold + check) in a 2-col row
+            // Single 4-col row: [CHECK/FOLD | SMALL | MED | LARGE]
+            // Prefer CHECK over FOLD — fold is dominated when check is free
             const nonBetActions = actions.filter(function(a) { return a !== 'bet'; });
-            const nonBetBtns = nonBetActions.map(function(a) {
-                const isFold = a === 'fold';
-                const cls = isFold ? 'pc-btn pc-btn-fold' : 'pc-btn pc-btn-passive';
-                return '<button onclick="handleSimAction(\'' + a + '\')" ' + btnStyle + ' class="' + cls + '">' + simActionLabel(a) + '</button>';
-            }).join('');
-            const nonBetGrid = '<div class="grid grid-cols-' + nonBetActions.length + ' gap-3 action-buttons-revealed">' + nonBetBtns + '</div>';
+            const passAction = nonBetActions.indexOf('check') !== -1 ? 'check' : 'fold';
+            const passCls = passAction === 'fold' ? 'pc-btn pc-btn-fold' : 'pc-btn pc-btn-passive';
+            const passBtn = '<button onclick="handleSimAction(\'' + passAction + '\')" ' + btnStyle + ' class="' + passCls + '">' + simActionLabel(passAction) + '</button>';
 
-            // Sizing row — 3 buckets with pot odds context
             const potBB = h.gameState.potBB;
             const bbDollars = (typeof getBigBlind$ === 'function') ? getBigBlind$() : 3;
             const sizeTiers = [
-                { label: 'Small', pct: 33, fraction: 0.33, breakEven: 20 },
-                { label: 'Medium', pct: 67, fraction: 0.67, breakEven: 29 },
-                { label: 'Pot', pct: 100, fraction: 1.0, breakEven: 33 }
+                { label: 'Small', pct: 33, fraction: 0.33 },
+                { label: 'Med',   pct: 67, fraction: 0.67 },
+                { label: 'Pot',   pct: 100, fraction: 1.0 }
             ];
             const sizingBtns = sizeTiers.map(function(sz) {
                 const amtBB = Math.round(potBB * sz.fraction * 10) / 10;
                 const amtDollars = Math.round(potBB * sz.fraction * bbDollars);
                 return '<button onclick="handleSimAction(\'bet\',' + amtBB + ')" ' +
-                    'style="padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:var(--btn-font,14px);" ' +
+                    'style="padding:var(--btn-pad,14px) 0;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:var(--btn-font,14px);" ' +
                     'class="pc-btn pc-btn-aggressive">' +
                     '<span style="font-weight:900;">' + sz.label + '</span>' +
-                    '<span style="font-size:11px;opacity:0.85;">' + sz.pct + '% \u00b7 $' + amtDollars + '</span>' +
-                    '<span style="font-size:10px;opacity:0.65;">V needs ' + sz.breakEven + '% eq</span>' +
+                    '<span style="font-size:10px;opacity:0.8;">' + sz.pct + '% \u00b7 $' + amtDollars + '</span>' +
                     '</button>';
             }).join('');
-            const sizingLabel = '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#475569;text-align:center;margin:10px 0 6px;">Bet sizing</div>';
-            const sizingGrid = '<div class="grid grid-cols-3 gap-3 action-buttons-revealed">' + sizingBtns + '</div>';
 
-            buttonsHtml = nonBetGrid + sizingLabel + sizingGrid;
+            buttonsHtml = '<div class="grid grid-cols-4 gap-3 action-buttons-revealed">' + passBtn + sizingBtns + '</div>';
         } else {
             const cols = actions.length <= 2 ? 2 : 3;
             const btns = actions.map(function(action) {
