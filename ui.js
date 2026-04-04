@@ -3253,11 +3253,17 @@ function _simRenderActionArea(h) {
 
         _simSetScenarioHint('Hand Complete');
 
-        // Deal villain hole cards from remaining deck, append face-down to hand-display
-        _simEnsureVillainCards(h);
-        _simRenderShowdownHands(h);
+        const isSessionActive = typeof simSession !== 'undefined' && simSession.active;
+        const outcome = (typeof getHandSummary === 'function') ? getHandSummary(h) : null;
+        const isShowdown = outcome && outcome.showdownReached;
 
-        // Record hand to session after villain cards are ensured
+        // Only deal/show villain cards at showdown, or in recap mode (non-session)
+        if (isShowdown || !isSessionActive) {
+            _simEnsureVillainCards(h);
+            _simRenderShowdownHands(h);
+        }
+
+        // Record hand to session
         if (typeof _simRecordHandToSession === 'function') {
             _simRecordHandToSession(h);
             _simUpdateSessionHud();
@@ -3266,21 +3272,28 @@ function _simRenderActionArea(h) {
         // Guard: if _simRun changes (new hand started) abort pending callbacks
         const handRef = h;
 
-        // After short delay: flip villain cards up
-        setTimeout(function() {
-            if (_simRun !== handRef) return;
-            _simFlipVillainCards();
-            // After flip settles: recap drawer OR session auto-advance
+        if (isSessionActive) {
+            // Session mode: flip villain cards only at showdown, then auto-advance
             setTimeout(function() {
                 if (_simRun !== handRef) return;
-                if (typeof simSession !== 'undefined' && simSession.active) {
+                if (isShowdown) _simFlipVillainCards();
+                setTimeout(function() {
+                    if (_simRun !== handRef) return;
                     _simAdvanceSessionLane();
                     startSimulator();
-                } else {
+                }, isShowdown ? 800 : 400);
+            }, 350);
+        } else {
+            // Single-hand mode: always flip villain cards, then show recap
+            setTimeout(function() {
+                if (_simRun !== handRef) return;
+                _simFlipVillainCards();
+                setTimeout(function() {
+                    if (_simRun !== handRef) return;
                     _simShowRecapDrawer(handRef);
-                }
-            }, 800);
-        }, 350);
+                }, 800);
+            }, 350);
+        }
         return;
     }
 
