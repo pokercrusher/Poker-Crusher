@@ -298,8 +298,9 @@ function _isStreetComplete(hr) {
 
 function _heroIsIP(handRun) {
     // IP lanes: hero is opener and acts last postflop
-    return ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP'].includes(handRun.lane);
-    // EXTENSION Pass 5: generalize for all position matchups
+    // SB_vs_BB_SRP and BB_vs_BTN_SRP are OOP — excluded intentionally
+    return ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'HJ_vs_BB_SRP', 'LJ_vs_BB_SRP',
+            'UTG_vs_BB_SRP', 'UTG1_vs_BB_SRP', 'UTG2_vs_BB_SRP'].includes(handRun.lane);
 }
 
 // ---------------------------------------------------------------------------
