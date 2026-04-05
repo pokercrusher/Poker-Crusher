@@ -88,10 +88,9 @@ const STAKE_PRESETS = {
 // ============================================================
 // UNIFIED SESSION BUILDER STATE
 // ============================================================
-// Natural live table rotation: as the button moves away each hand, hero cycles through
-// all 9 positions in the order a seated player experiences them.
-// BTN → SB → BB → UTG → UTG1 → UTG2 → LJ → HJ → CO → (repeat)
-const LIVE_TABLE_ROTATION = ['BTN', 'SB', 'BB', 'UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO'];
+// Natural live table rotation: the button moves clockwise (away from hero) each hand,
+// so hero's position advances: BTN → CO → HJ → LJ → UTG2 → UTG1 → UTG → BB → SB → repeat
+const LIVE_TABLE_ROTATION = ['BTN', 'CO', 'HJ', 'LJ', 'UTG2', 'UTG1', 'UTG', 'BB', 'SB'];
 
 // Legacy — kept for any external references; always uses FULL_TABLE lane now
 const FULL_HAND_ALL_LANES = ['FULL_TABLE'];
