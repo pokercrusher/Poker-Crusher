@@ -1366,10 +1366,11 @@ function createHandRun(config) {
         heroSeatIndex = 0;
         firstToActPreflopIndex = 0; // UTG2 opens
     } else if (lane === 'FULL_TABLE') {
-        // Pick hero position randomly; full 9-seat table built here.
-        // _runPreflopTableLoop (called below after hr is created) simulates preflop
-        // villain actions, nulls out irrelevant seats, and derives the 2-player lane.
-        var heroPos = FULL_TABLE_POSITIONS[Math.floor(Math.random() * FULL_TABLE_POSITIONS.length)];
+        // Use the rotation-supplied hero position if provided (live table rotation),
+        // otherwise fall back to random for any standalone calls.
+        var heroPos = (config && config.heroPos && FULL_TABLE_POSITIONS.includes(config.heroPos))
+            ? config.heroPos
+            : FULL_TABLE_POSITIONS[Math.floor(Math.random() * FULL_TABLE_POSITIONS.length)];
         var heroIdx = FULL_TABLE_POSITIONS.indexOf(heroPos);
         seats = FULL_TABLE_POSITIONS.map(function(pos, i) {
             return {
