@@ -133,6 +133,37 @@ const _TURN_HAND_BUCKETS = {
     COMBO_DRAW:'semi_bluff', STRONG_DRAW:'semi_bluff', OESD:'semi_bluff', FD:'semi_bluff'
 };
 
+// ---------------------------------------------------------------------------
+// Villain postflop frequency tables — Tier 2 fallback (hand-strength driven)
+// ---------------------------------------------------------------------------
+
+// When villain is first to act (hero checked): probability villain bets
+const _VILLAIN_BET_FREQ = {
+    SET: 0.85, TWO_PAIR_PLUS: 0.80, TWO_PAIR: 0.80,
+    FULL_HOUSE: 0.90, QUADS: 0.60, TRIPS: 0.80, BOARD_TRIPS: 0.75,
+    OVERPAIR: 0.80, TOP_PAIR: 0.65, SECOND_PAIR: 0.30, THIRD_PAIR: 0.20, UNDERPAIR: 0.22,
+    COMBO_DRAW: 0.75, NFD: 0.65, FD: 0.50, OESD: 0.55, GUTSHOT: 0.35, STRONG_DRAW: 0.55,
+    ACE_HIGH_BACKDOOR: 0.38, OVERCARDS: 0.28, ACE_HIGH: 0.25, AIR: 0.22
+};
+
+// When facing hero bet: probability villain continues (calls or raises — does NOT fold)
+const _VILLAIN_CONTINUE_FREQ = {
+    SET: 0.95, TWO_PAIR_PLUS: 0.92, TWO_PAIR: 0.90,
+    FULL_HOUSE: 0.97, QUADS: 0.98, TRIPS: 0.90, BOARD_TRIPS: 0.85,
+    OVERPAIR: 0.88, TOP_PAIR: 0.80, SECOND_PAIR: 0.50, THIRD_PAIR: 0.30, UNDERPAIR: 0.32,
+    COMBO_DRAW: 0.90, NFD: 0.85, FD: 0.70, OESD: 0.72, GUTSHOT: 0.45, STRONG_DRAW: 0.70,
+    ACE_HIGH_BACKDOOR: 0.28, OVERCARDS: 0.22, ACE_HIGH: 0.20, AIR: 0.10
+};
+
+// Among continuing hands: probability villain raises (vs calls)
+const _VILLAIN_RAISE_FREQ = {
+    SET: 0.55, TWO_PAIR_PLUS: 0.42, TWO_PAIR: 0.40,
+    FULL_HOUSE: 0.60, QUADS: 0.65, TRIPS: 0.48, BOARD_TRIPS: 0.40,
+    OVERPAIR: 0.22, TOP_PAIR: 0.12, SECOND_PAIR: 0.08, THIRD_PAIR: 0.05, UNDERPAIR: 0.06,
+    COMBO_DRAW: 0.35, NFD: 0.32, FD: 0.15, OESD: 0.20, GUTSHOT: 0.10, STRONG_DRAW: 0.20,
+    ACE_HIGH_BACKDOOR: 0.05, OVERCARDS: 0.05, ACE_HIGH: 0.05, AIR: 0.30
+};
+
 function _simTextureBucket(archetype) {
     if (!archetype) return 'dry';
     if (archetype === 'MONOTONE') return 'monotone';
@@ -152,6 +183,49 @@ function _simHandStrengthBucket(heroHandClass, street) {
     if (!heroHandClass) return 'medium';
     const map = (street === 'flop') ? _FLOP_HAND_BUCKETS : _TURN_HAND_BUCKETS;
     return map[heroHandClass] || 'medium';
+}
+
+// ---------------------------------------------------------------------------
+// _classifyHeroHand / _classifyVillainHand
+// Classify a player's actual hole cards against the current board.
+// Returns a hand class string (e.g. 'TOP_PAIR', 'SET', 'FD') or null.
+// ---------------------------------------------------------------------------
+
+function _classifyActualHand(holeCards, board, street) {
+    if (!holeCards || holeCards.length < 2) return null;
+    if (!board || board.length < 3) return null;
+    const handObj = { cards: holeCards.map(function(c) { return { rank: c[0], suit: c[1] }; }) };
+    const flopCards = board.slice(0, 3);
+    try {
+        if (street === 'flop') {
+            return classifyFlopHand(handObj, flopCards);
+        }
+        // turn or river — use first 4 board cards (safe upper bound for classifyTurnHand)
+        if (board.length >= 4) {
+            return classifyTurnHand(handObj, flopCards, board[3]);
+        }
+        return classifyFlopHand(handObj, flopCards);
+    } catch (e) {
+        return null;
+    }
+}
+
+function _classifyHeroHand(handRun) {
+    const heroSeat = handRun.seats[handRun.heroSeatIndex];
+    return _classifyActualHand(
+        heroSeat ? heroSeat.holeCards : null,
+        handRun.gameState.board,
+        handRun.street
+    );
+}
+
+function _classifyVillainHand(handRun) {
+    const villainSeat = handRun.seats.find(function(s) { return s !== null && !s.isHero; });
+    return _classifyActualHand(
+        villainSeat ? villainSeat.holeCards : null,
+        handRun.gameState.board,
+        handRun.street
+    );
 }
 
 function resolveCorrectSizingBucket(spot, spr, street) {
@@ -742,7 +816,7 @@ function resolveDecisionNode(handRun) {
         mixFrequency,
         explanation,
         mathContext,
-        heroHandClass: spot ? (spot.heroHandClass || null) : null,
+        heroHandClass: _classifyHeroHand(hr) || (spot ? (spot.heroHandClass || null) : null),
         heroAction: null,
         chosenSizingBucket: null,
         sizeGrade: null,
@@ -798,6 +872,80 @@ function getAvailableActions(handRun) {
 // resolveVillainAction
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// _getVillainPostflopAction — three-tier villain postflop decision
+// Tier 1: POSTFLOP_STRATEGY_V2 lookup keyed by villain's actual hand class
+// Tier 2: Hand-strength frequency tables (_VILLAIN_BET_FREQ / _CONTINUE / _RAISE)
+// Tier 3: Flat probability (original code — final fallback)
+// ---------------------------------------------------------------------------
+function _getVillainPostflopAction(handRun, heroBet) {
+    const hr = handRun;
+    const street = hr.street;
+    const spot = hr.postflopSpot;
+
+    // Flat-probability fallback (Tier 3)
+    function _tier3() {
+        if (!heroBet) {
+            const betProb = street === 'river' ? 0.20 : 0.25;
+            return Math.random() < betProb ? 'bet' : 'check';
+        }
+        const noise = (Math.random() - 0.5) * 0.15;
+        const foldProb = Math.max(0, Math.min(1, 0.60 + noise));
+        const roll = Math.random();
+        if (roll < foldProb) return 'fold';
+        if (roll < foldProb + 0.35) return 'call';
+        return 'raise';
+    }
+
+    // Classify villain's actual hand against board
+    const villainHandClass = _classifyVillainHand(hr);
+    if (!villainHandClass) return _tier3();
+
+    // Tier 1 — strategy lookup (PFR role only; DEFENDER entries not yet in V2 table)
+    const heroRole = spot ? spot.heroRole : null;
+    const villainRole = heroRole === 'PFR' ? 'DEFENDER' : 'PFR';
+    const preflopFamily = LANE_FAMILY[hr.lane] || 'BTN_vs_BB';
+    const boardArchetype = spot ? (spot.boardArchetype || spot.turnFamily || null) : null;
+
+    if (!heroBet && villainRole === 'PFR' && boardArchetype &&
+        typeof makePostflopSpotKeyV2 === 'function' &&
+        typeof POSTFLOP_STRATEGY_V2 !== 'undefined') {
+        const villainIsIP = !_heroIsIP(hr);
+        const sk = makePostflopSpotKeyV2({
+            potType: 'SRP',
+            preflopFamily: preflopFamily,
+            street: street.toUpperCase(),
+            heroRole: 'PFR',
+            positionState: villainIsIP ? 'IP' : 'OOP',
+            nodeType: 'CBET_DECISION',
+            boardArchetype: boardArchetype,
+            heroHandClass: villainHandClass
+        });
+        const entry = typeof POSTFLOP_STRATEGY_V2 !== 'undefined' ? POSTFLOP_STRATEGY_V2[sk] : null;
+        if (entry && entry.actions && entry.actions.bet33 !== undefined) {
+            return Math.random() < entry.actions.bet33 ? 'bet' : 'check';
+        }
+    }
+
+    // Tier 2 — hand-strength fallback tables
+    if (!heroBet) {
+        const betFreq = _VILLAIN_BET_FREQ[villainHandClass];
+        if (betFreq !== undefined) {
+            return Math.random() < betFreq ? 'bet' : 'check';
+        }
+    } else {
+        const continueFreq = _VILLAIN_CONTINUE_FREQ[villainHandClass];
+        if (continueFreq !== undefined) {
+            if (Math.random() >= continueFreq) return 'fold';
+            const raiseFreq = _VILLAIN_RAISE_FREQ[villainHandClass] || 0;
+            return Math.random() < raiseFreq ? 'raise' : 'call';
+        }
+    }
+
+    // Tier 3 — flat probability
+    return _tier3();
+}
+
 // EXTENSION Pass 4: replace range-weighted sampling with villain archetypes (nit, TAG, station, aggro reg)
 function resolveVillainAction(handRun) {
     const hr = handRun;
@@ -836,19 +984,7 @@ function resolveVillainAction(handRun) {
 
     if (street === 'flop' || street === 'turn' || street === 'river') {
         const heroBet = ss.actions.some(a => a.seatLabel === heroLabel && (a.action === 'bet' || a.action === 'raise'));
-
-        if (!heroBet) {
-            // Hero checked — villain may bet (OOP probe) or check
-            const betProb = street === 'river' ? 0.20 : 0.25;
-            return Math.random() < betProb ? 'bet' : 'check';
-        }
-        // Hero bet — villain folds/calls/raises weighted
-        const noise = (Math.random() - 0.5) * 0.15;
-        const foldProb = Math.max(0, Math.min(1, 0.60 + noise));
-        const roll = Math.random();
-        if (roll < foldProb) return 'fold';
-        if (roll < foldProb + 0.35) return 'call';
-        return 'raise';
+        return _getVillainPostflopAction(hr, heroBet);
     }
 
     return 'check';
