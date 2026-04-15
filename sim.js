@@ -425,7 +425,10 @@ function _runPreflopTableLoop(hr) {
     var heroPos = hr.seats[hr.heroSeatIndex].label;
     var heroOrderIdx = FULL_TABLE_POSITIONS.indexOf(heroPos);
     var ss = hr.gameState.streetState;
-    var openSizeBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
+    // Use the pre-picked villain open size if available (set in ui.js before createHandRun),
+    // so mechanics and display are consistent.  Falls back to hero's configured open.
+    var openSizeBB = (typeof _getPendingVillainOpenBB === 'function') ? _getPendingVillainOpenBB()
+                   : (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
 
     // Deal hidden hole cards to every villain seat before the action loop
     _dealVillainHoleCards(hr);
@@ -1122,9 +1125,13 @@ function advanceStreet(handRun) {
                 hr.postflopSpot.heroRole = 'DEFENDER';
             }
         } else {
-            // SRP: existing canonical pot override
+            // SRP: canonical pot; in full-table mode pass villain's actual open size so the
+            // flop pot reflects the random open rather than hero's configured default.
             const srpFn = (typeof getSRPPot$ === 'function') ? getSRPPot$ : function() { return 16.5; };
-            gs.potBB = parseFloat((srpFn(laneFamily) / bbFn()).toFixed(2));
+            const _srpOpenOverride = (hr.preflopContext && hr.preflopContext.opener
+                && typeof getVillainOpenSize$ === 'function')
+                ? getVillainOpenSize$() : undefined;
+            gs.potBB = parseFloat((srpFn(laneFamily, _srpOpenOverride) / bbFn()).toFixed(2));
             // Generate postflop spot for strategy lookup
             hr.postflopSpot = generatePostflopSpot(20, familyFilter);
             // BB defending SRP → DEFENDER role

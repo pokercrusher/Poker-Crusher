@@ -906,11 +906,14 @@ function getScenarioPot$(scenario) {
 
 // Pot size for a SRP (Single Raised Pot) heading into the flop.
 // Dead money (folded blinds) differs by preflop family.
-function getSRPPot$(preflopFamily) {
+// openSizeOverride: optional dollar amount to use instead of getOpenSize$()
+// (used in full-table mode when villain opened to a different size than hero's configured open).
+function getSRPPot$(preflopFamily, openSizeOverride) {
     const sb = getSmallBlind$();
+    const open$ = (openSizeOverride !== undefined) ? openSizeOverride : getOpenSize$();
     const dead = { BTN_vs_BB:sb, CO_vs_BB:sb, HJ_vs_BB:sb, LJ_vs_BB:sb, UTG_vs_BB:sb,
                    SB_vs_BB:0, BTN_vs_SB:getBigBlind$(), CO_vs_BTN:getBlindTotal$() };
-    return getOpenSize$() * 2 + (dead[preflopFamily] !== undefined ? dead[preflopFamily] : sb);
+    return open$ * 2 + (dead[preflopFamily] !== undefined ? dead[preflopFamily] : sb);
 }
 // Pot size for a 3BP (Three Bet Pot) heading into the flop.
 // Formula: (3bet size × 2) + dead money. Dead money differs by who 3bet.
@@ -1017,8 +1020,16 @@ function pickVillainOpenSize() {
     const pool = getCurrentStakePreset().villainOpenPool;
     return pool[Math.floor(Math.random() * pool.length)];
 }
+// Pending villain open dollars — set before createHandRun so _runPreflopTableLoop can use it.
+var _pendingVillainOpenDollars = null;
+function _getPendingVillainOpenBB() {
+    if (_pendingVillainOpenDollars !== null && typeof getBigBlind$ === 'function') {
+        return _pendingVillainOpenDollars / getBigBlind$();
+    }
+    return typeof getOpenSizeBB === 'function' ? getOpenSizeBB() : 2.5;
+}
 function getVillainOpenSize$() {
-return (state && state.villainOpenSize) ? state.villainOpenSize : getCurrentStakePreset().defaultOpen;
+    return (state && state.villainOpenSize) ? state.villainOpenSize : getOpenSize$();
 }
 
 function getIsoSize$(numLimpers) {
@@ -3112,6 +3123,8 @@ function startSimulator(lane) {
     _simRenderedBoardLen = 0;
     _simLastStreet = '';
     var heroPos = (typeof _simGetCurrentHeroPos === 'function') ? _simGetCurrentHeroPos() : null;
+    // Pick random villain open size BEFORE createHandRun so _runPreflopTableLoop uses it.
+    _pendingVillainOpenDollars = pickVillainOpenSize();
     _simRun = createHandRun({ lane: lane, heroPos: heroPos });
     _simEnsureVillainCards(_simRun); // deal villain cards upfront so they're available for log
 
@@ -3139,7 +3152,11 @@ function startSimulator(lane) {
     const simScenario = (_simRun.lane === 'BB_vs_BTN_SRP' ||
         (_simRun.preflopContext && _simRun.preflopContext.opener)) ? 'FACING_RFI' : 'RFI';
     state.scenario = simScenario;
-    state.villainOpenSize = getOpenSize$();
+    // FACING_RFI: use the randomly-picked villain open; RFI: hero opens to their configured size.
+    state.villainOpenSize = (simScenario === 'FACING_RFI')
+        ? (_pendingVillainOpenDollars || getOpenSize$())
+        : getOpenSize$();
+    _pendingVillainOpenDollars = null;
 
     // Show card backs + greyed-out buttons before animation (matches trainer UX)
     renderHeroCardBacks();
@@ -3236,15 +3253,30 @@ function _simRenderRound() {
     } catch(_) {}
     _simLastStreet = h.street;
 
-    // Pot badge: preflop shows blind total since potBB starts at 0
+    // Pot badge: postflop uses potBB; preflop builds from preflopContext (blinds + any opens).
     try {
         const betsLayer = document.getElementById('bets-layer');
         if (betsLayer) {
             const existing = document.getElementById('pot-badge');
             if (existing) existing.remove();
-            const potAmt = h.gameState.potBB > 0
-                ? h.gameState.potBB * getBigBlind$()
-                : (h.street === 'preflop' ? getBlindTotal$() : 0);
+            let potAmt;
+            if (h.gameState.potBB > 0) {
+                potAmt = h.gameState.potBB * getBigBlind$();
+            } else if (h.street === 'preflop') {
+                const _pctx = h.preflopContext;
+                if (_pctx && _pctx.opener) {
+                    // Villain (and any callers) opened: opener$ + callers*opener$ + blinds
+                    const _callerCount = (_pctx.callers && _pctx.callers.length) || 0;
+                    potAmt = getVillainOpenSize$() * (1 + _callerCount) + getBlindTotal$();
+                } else if (_pctx && _pctx.limpers && _pctx.limpers.length > 0) {
+                    // Limp pot: each limper put in 1BB
+                    potAmt = _pctx.limpers.length * getBigBlind$() + getBlindTotal$();
+                } else {
+                    potAmt = getBlindTotal$();
+                }
+            } else {
+                potAmt = 0;
+            }
             renderPotBadge(betsLayer, potAmt);
         }
     } catch(_) {}
