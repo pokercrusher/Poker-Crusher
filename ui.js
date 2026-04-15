@@ -3643,6 +3643,25 @@ function showSessionLog() {
     var _laneLabel = { 'BTN_vs_BB_SRP':'BTN vs BB','BB_vs_BTN_SRP':'BB vs BTN','CO_vs_BB_SRP':'CO vs BB','SB_vs_BB_SRP':'SB vs BB','HJ_vs_BB_SRP':'HJ vs BB','LJ_vs_BB_SRP':'LJ vs BB','UTG_vs_BB_SRP':'UTG vs BB','UTG1_vs_BB_SRP':'UTG1 vs BB','UTG2_vs_BB_SRP':'UTG2 vs BB' };
     var _streetColor = { preflop:'#818cf8', flop:'#fcd34d', turn:'#fb923c', river:'#f87171' };
 
+    // Build a display label for a log entry, using preflopContext when available (FULL_TABLE hands).
+    var _entryLaneLabel = function(entry) {
+        var ctx = entry.preflopContext;
+        if (ctx) {
+            // FULL_TABLE hand: derive a precise label from actual table action
+            if (!ctx.opener) {
+                // Hero was first to act — label by hero position
+                return ctx.heroPos + ' vs BB';
+            } else if (ctx.heroPos === 'BB') {
+                // BB defending: show actual opener, not the proxy lane
+                return 'BB vs ' + ctx.opener;
+            } else {
+                // Hero facing an open from another position
+                return ctx.heroPos + ' vs ' + ctx.opener;
+            }
+        }
+        return _laneLabel[entry.lane] || entry.lane;
+    };
+
     var entriesHtml = simSession.handLog.map(function(entry) {
         var gradeIcons = entry.decisions.map(function(d) { return (_gradeIcon[d.grade] || ''); }).join('');
         var netStr = entry.netBB >= 0 ? '+' + entry.netBB + 'bb' : entry.netBB + 'bb';
@@ -3682,7 +3701,7 @@ function showSessionLog() {
             '<div onclick="var d=document.getElementById(\'' + entryId + '\');d.style.display=d.style.display===\'none\'?\'block\':\'none\';" ' +
             'style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
             '<span style="font-size:10px;color:#475569;font-weight:700;flex-shrink:0;">H' + entry.handNum + '</span>' +
-            '<span style="font-size:10px;color:#64748b;flex-shrink:0;">' + (_laneLabel[entry.lane] || entry.lane) + '</span>' +
+            '<span style="font-size:10px;color:#64748b;flex-shrink:0;">' + _entryLaneLabel(entry) + '</span>' +
             '<div style="display:flex;gap:2px;">' + heroCardsHtml + '</div>' +
             (boardHtml ? '<div style="display:flex;gap:2px;flex-wrap:nowrap;">' + boardHtml + '</div>' : '') +
             '<span style="font-size:11px;font-weight:800;color:' + netColor + ';margin-left:auto;">' + netStr + '</span>' +

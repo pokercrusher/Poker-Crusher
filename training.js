@@ -231,6 +231,7 @@ function _simRecordHandToSession(h) {
     simSession.handLog.unshift({
         handNum: simSession.handsPlayed,
         lane: h.lane,
+        preflopContext: h.preflopContext || null,
         heroCards: heroSeat ? (heroSeat.holeCards || []) : [],
         villainCards: villainSeat ? (villainSeat.holeCards || []) : [],
         board: (h.gameState && h.gameState.board) ? h.gameState.board : [],
