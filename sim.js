@@ -23,7 +23,15 @@ const SIM_SUPPORTED_LANES = [
     'UTG_vs_BB_SRP',
     'UTG1_vs_BB_SRP',
     'UTG2_vs_BB_SRP',
-    'FULL_TABLE'
+    'FULL_TABLE',
+    // 3BP lanes — hero is the 3-bettor
+    'BTN_3BP_vs_CO', 'BTN_3BP_vs_HJ', 'CO_3BP_vs_HJ',
+    'BTN_3BP_vs_UTG', 'CO_3BP_vs_UTG', 'BB_3BP_vs_BTN',
+    'BB_3BP_vs_CO', 'SB_3BP_vs_BTN', 'HJ_3BP_vs_UTG',
+    'SB_3BP_vs_CO', 'SB_3BP_vs_HJ', 'SB_3BP_vs_UTG', 'BB_3BP_vs_HJ',
+    // 3BP defender lanes — hero called the 3-bet
+    'CO_CALL_3BP_vs_BTN', 'HJ_CALL_3BP_vs_BTN',
+    'BTN_CALL_3BP_vs_BB', 'BTN_CALL_3BP_vs_SB', 'CO_CALL_3BP_vs_BB'
 ];
 
 // Maps lane → preflopFamily key used by getSRPPot$ and postflop generators
@@ -36,7 +44,19 @@ const LANE_FAMILY = {
     'LJ_vs_BB_SRP':   'LJ_vs_BB',
     'UTG_vs_BB_SRP':  'UTG_vs_BB',
     'UTG1_vs_BB_SRP': 'UTG_vs_BB',  // proxy: no distinct UTG1 postflop family
-    'UTG2_vs_BB_SRP': 'LJ_vs_BB'    // proxy: UTG2 opens similar to LJ
+    'UTG2_vs_BB_SRP': 'LJ_vs_BB',   // proxy: UTG2 opens similar to LJ
+    // 3BP lanes map to their own family keys
+    'BTN_3BP_vs_CO':  'BTN_3BP_vs_CO',  'BTN_3BP_vs_HJ': 'BTN_3BP_vs_HJ',
+    'CO_3BP_vs_HJ':   'CO_3BP_vs_HJ',   'BTN_3BP_vs_UTG': 'BTN_3BP_vs_UTG',
+    'CO_3BP_vs_UTG':  'CO_3BP_vs_UTG',  'BB_3BP_vs_BTN': 'BB_3BP_vs_BTN',
+    'BB_3BP_vs_CO':   'BB_3BP_vs_CO',   'SB_3BP_vs_BTN': 'SB_3BP_vs_BTN',
+    'HJ_3BP_vs_UTG':  'HJ_3BP_vs_UTG',  'SB_3BP_vs_CO':  'SB_3BP_vs_CO',
+    'SB_3BP_vs_HJ':   'SB_3BP_vs_HJ',   'SB_3BP_vs_UTG': 'SB_3BP_vs_UTG',
+    'BB_3BP_vs_HJ':   'BB_3BP_vs_HJ',
+    // 3BP defender lanes proxy to their SRP equivalent for now
+    'CO_CALL_3BP_vs_BTN': 'BTN_vs_BB',  'HJ_CALL_3BP_vs_BTN': 'BTN_vs_BB',
+    'BTN_CALL_3BP_vs_BB': 'BTN_vs_BB',  'BTN_CALL_3BP_vs_SB': 'BTN_vs_BB',
+    'CO_CALL_3BP_vs_BB':  'CO_vs_BB'
 };
 
 // Maps lane → familyFilter array passed to all postflop generators
@@ -49,7 +69,19 @@ const LANE_POSTFLOP_FAMILY = {
     'LJ_vs_BB_SRP':   ['LJ_vs_BB'],
     'UTG_vs_BB_SRP':  ['UTG_vs_BB'],
     'UTG1_vs_BB_SRP': ['UTG_vs_BB'],
-    'UTG2_vs_BB_SRP': ['LJ_vs_BB']
+    'UTG2_vs_BB_SRP': ['LJ_vs_BB'],
+    // 3BP lanes
+    'BTN_3BP_vs_CO':  ['BTN_3BP_vs_CO'],  'BTN_3BP_vs_HJ': ['BTN_3BP_vs_HJ'],
+    'CO_3BP_vs_HJ':   ['CO_3BP_vs_HJ'],   'BTN_3BP_vs_UTG': ['BTN_3BP_vs_UTG'],
+    'CO_3BP_vs_UTG':  ['CO_3BP_vs_UTG'],  'BB_3BP_vs_BTN': ['BB_3BP_vs_BTN'],
+    'BB_3BP_vs_CO':   ['BB_3BP_vs_CO'],   'SB_3BP_vs_BTN': ['SB_3BP_vs_BTN'],
+    'HJ_3BP_vs_UTG':  ['HJ_3BP_vs_UTG'],  'SB_3BP_vs_CO':  ['SB_3BP_vs_CO'],
+    'SB_3BP_vs_HJ':   ['SB_3BP_vs_HJ'],   'SB_3BP_vs_UTG': ['SB_3BP_vs_UTG'],
+    'BB_3BP_vs_HJ':   ['BB_3BP_vs_HJ'],
+    // 3BP defender lanes proxy to SRP families
+    'CO_CALL_3BP_vs_BTN': ['BTN_vs_BB'],  'HJ_CALL_3BP_vs_BTN': ['BTN_vs_BB'],
+    'BTN_CALL_3BP_vs_BB': ['BTN_vs_BB'],  'BTN_CALL_3BP_vs_SB': ['BTN_vs_BB'],
+    'CO_CALL_3BP_vs_BB':  ['CO_vs_BB']
 };
 
 const _SIM_SUITS = ['c', 'd', 'h', 's'];
@@ -200,7 +232,8 @@ function _dealHeroCards() {
     return [deck[0], deck[1]];
 }
 
-// Deal `count` board cards from a real deck, excluding hero hole cards and existing board.
+// Deal `count` board cards from a real deck, excluding hero and villain hole cards
+// and any already-dealt board cards.
 // Returns {rank, suit}[] — never touches gameState.board directly.
 function _dealBoardCards(handRun, count) {
     const heroSeat = handRun.seats[handRun.heroSeatIndex];
@@ -208,6 +241,12 @@ function _dealBoardCards(handRun, count) {
     if (heroSeat && heroSeat.holeCards) {
         for (const c of heroSeat.holeCards) exclude.add(c); // strings like 'Ac'
     }
+    // Exclude villain hole cards if they were dealt (FULL_TABLE mode)
+    handRun.seats.forEach(function(seat) {
+        if (seat && !seat.isHero && seat.holeCards) {
+            for (const c of seat.holeCards) exclude.add(c);
+        }
+    });
     const board = handRun.gameState && handRun.gameState.board;
     if (board) {
         for (const c of board) {
@@ -273,65 +312,189 @@ function _buildCommittedBB(seats) {
 }
 
 // ---------------------------------------------------------------------------
-// _runPreflopTableLoop — Phase 1 full-table preflop simulation
-// Simulates villain actions for all seats before hero, then collapses to 2-player.
-// Sets hr.lane to a derived 2-player lane for postflop engine compatibility.
-// Sets hr.preflopContext for UI display of table action summary.
+// _dealVillainHoleCards — deal hidden hole cards to every non-hero seat.
+// Excludes hero's cards. Stores holeCards + handNotation on each seat.
+// ---------------------------------------------------------------------------
+function _dealVillainHoleCards(handRun) {
+    var heroSeat = handRun.seats[handRun.heroSeatIndex];
+    var exclude = new Set();
+    if (heroSeat && heroSeat.holeCards) {
+        for (var _hc = 0; _hc < heroSeat.holeCards.length; _hc++) exclude.add(heroSeat.holeCards[_hc]);
+    }
+    var deck = _shuffle(_freshDeck().filter(function(c) { return !exclude.has(c); }));
+    var di = 0;
+    handRun.seats.forEach(function(seat) {
+        if (!seat || seat.isHero) return;
+        seat.holeCards = [deck[di++], deck[di++]];
+        seat.handNotation = _cardsToHandNotation(seat.holeCards);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// _resolveVillainPreflopAction — pure range-driven action for one villain seat.
+// tableState: { opener, callers[], threeBettor, limpers[], openSizeBB }
+// playerType: key into PLAYER_TYPE_RANGE_PROFILES (default 'GTO')
+// Returns: { action, sizingBB }
+// ---------------------------------------------------------------------------
+function _resolveVillainPreflopAction(seat, tableState, playerType) {
+    var label = seat.label;
+    var hand  = seat.handNotation;
+    var opener     = tableState.opener;
+    var callers    = tableState.callers;
+    var threeBettor = tableState.threeBettor;
+    var limpers    = tableState.limpers;
+    var openSizeBB = tableState.openSizeBB;
+    var isBlind    = (label === 'BB' || label === 'SB');
+    var profile    = (typeof PLAYER_TYPE_RANGE_PROFILES !== 'undefined' && PLAYER_TYPE_RANGE_PROFILES[playerType])
+                     ? PLAYER_TYPE_RANGE_PROFILES[playerType]
+                     : PLAYER_TYPE_RANGE_PROFILES['GTO'];
+
+    // Facing a 3-bet already — cold 4-bet is too rare, fold
+    if (threeBettor) return { action: 'fold', sizingBB: 0 };
+
+    // No open and no limpers — RFI decision
+    if (!opener && limpers.length === 0) {
+        var rfiRange = profile.getRFIRange(label);
+        if (rfiRange && checkRangeHelper(hand, rfiRange)) {
+            return { action: 'raise', sizingBB: openSizeBB };
+        }
+        var limpProb = { UTG:0.03, UTG1:0.03, UTG2:0.04, LJ:0.05, HJ:0.06, CO:0.07, BTN:0.08, SB:0.10 }[label] || 0.05;
+        if (Math.random() < limpProb) return { action: 'limp', sizingBB: 1 };
+        return { action: 'fold', sizingBB: 0 };
+    }
+
+    // Limpers present, no open — iso-raise or fold
+    if (!opener && limpers.length > 0) {
+        var limpKey  = label + '_vs_' + limpers[0] + '_Limp';
+        var limpData = (typeof allFacingLimps !== 'undefined') ? allFacingLimps[limpKey] : null;
+        if (limpData) {
+            var isoRange = (typeof getLimpRaise === 'function') ? getLimpRaise(limpData) : (limpData['Raise'] || []);
+            if (checkRangeHelper(hand, isoRange)) return { action: 'raise', sizingBB: openSizeBB };
+        }
+        return { action: 'fold', sizingBB: 0 };
+    }
+
+    // Open exists, no 3-bet yet
+    if (opener && !threeBettor) {
+        var tbSize;
+        if (callers.length === 0) {
+            // Clean heads-up vs opener: 3-bet / call / fold
+            var rfd = profile.getFacingRFIRange(label, opener);
+            if (!rfd) return { action: 'fold', sizingBB: 0 };
+            if (checkRangeHelper(hand, rfd['3-bet'] || [])) {
+                tbSize = Math.round(openSizeBB * (isBlind ? 4 : 3) * 10) / 10;
+                return { action: '3bet', sizingBB: tbSize };
+            }
+            if (checkRangeHelper(hand, rfd['Call'] || [])) return { action: 'call', sizingBB: openSizeBB };
+            return { action: 'fold', sizingBB: 0 };
+        }
+        if (callers.length === 1) {
+            // 1 caller — squeeze opportunity
+            var sqData = profile.getSqueezeRange(label, opener, callers[0]);
+            if (sqData && checkRangeHelper(hand, sqData['Squeeze'] || [])) {
+                tbSize = Math.round(openSizeBB * (isBlind ? 4.5 : 3.5) * 10) / 10;
+                return { action: '3bet', sizingBB: tbSize };
+            }
+            // Cold-call is possible but less frequent with a caller already in
+            var rfd2 = profile.getFacingRFIRange(label, opener);
+            if (rfd2 && checkRangeHelper(hand, rfd2['Call'] || []) && Math.random() < 0.4) {
+                return { action: 'call', sizingBB: openSizeBB };
+            }
+            return { action: 'fold', sizingBB: 0 };
+        }
+        if (callers.length === 2) {
+            // 2 callers — squeeze with very strong hands only
+            var sq2Data = profile.getSqueeze2CRange(label, opener, callers[0], callers[1]);
+            if (sq2Data && checkRangeHelper(hand, sq2Data['Squeeze'] || [])) {
+                tbSize = Math.round(openSizeBB * (isBlind ? 5 : 4) * 10) / 10;
+                return { action: '3bet', sizingBB: tbSize };
+            }
+        }
+    }
+
+    return { action: 'fold', sizingBB: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// _runPreflopTableLoop — Phase 2 full-table preflop simulation
+// Range-driven: each villain seat is dealt hidden hole cards and acts via
+// _resolveVillainPreflopAction using checkRangeHelper against real ranges.
+// Sets hr.lane, hr.preflopContext, collapses to 2-player for postflop engine.
 // ---------------------------------------------------------------------------
 function _runPreflopTableLoop(hr) {
     var heroPos = hr.seats[hr.heroSeatIndex].label;
     var heroOrderIdx = FULL_TABLE_POSITIONS.indexOf(heroPos);
     var ss = hr.gameState.streetState;
     var openSizeBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
-    var opener = null; // label of first raiser before hero
+
+    // Deal hidden hole cards to every villain seat before the action loop
+    _dealVillainHoleCards(hr);
+
+    // Table state threaded through the loop
+    var tableState = {
+        opener:      null,   // label of first raiser
+        callers:     [],     // labels of callers after the open
+        threeBettor: null,   // label of 3-bettor (if any)
+        limpers:     [],     // labels of limpers (called BB pre-open)
+        openSizeBB:  openSizeBB
+    };
 
     // Simulate each seat that acts before hero in position order
     for (var i = 0; i < heroOrderIdx; i++) {
         var seat = hr.seats[i];
         if (!seat) continue;
-        if (opener === null) {
-            // No open yet: fold or open based on RFI frequency
-            if (Math.random() < (RFI_FREQ[seat.label] || 0.15)) {
-                opener = seat.label;
-                ss.actions.push({ seatLabel: seat.label, action: 'raise', sizingBB: openSizeBB });
+
+        var result = _resolveVillainPreflopAction(seat, tableState, 'GTO');
+
+        switch (result.action) {
+            case 'raise':
+                tableState.opener = seat.label;
+                tableState.limpers = [];     // limpers' money is now dead
                 ss.betMadeThisStreet = true;
-                seat.stackBB = parseFloat((seat.stackBB - openSizeBB).toFixed(2));
-            } else {
+                ss.actions.push({ seatLabel: seat.label, action: 'raise', sizingBB: result.sizingBB });
+                seat.stackBB = parseFloat((seat.stackBB - result.sizingBB).toFixed(2));
+                break;
+            case '3bet':
+                tableState.threeBettor = seat.label;
+                ss.betMadeThisStreet = true;
+                ss.actions.push({ seatLabel: seat.label, action: '3bet', sizingBB: result.sizingBB });
+                seat.stackBB = parseFloat((seat.stackBB - result.sizingBB).toFixed(2));
+                break;
+            case 'call':
+                tableState.callers.push(seat.label);
+                ss.actions.push({ seatLabel: seat.label, action: 'call', sizingBB: result.sizingBB });
+                seat.stackBB = parseFloat((seat.stackBB - result.sizingBB).toFixed(2));
+                break;
+            case 'limp':
+                tableState.limpers.push(seat.label);
+                ss.actions.push({ seatLabel: seat.label, action: 'limp', sizingBB: 1 });
+                seat.stackBB = parseFloat((seat.stackBB - 1).toFixed(2));
+                break;
+            default:
                 ss.actions.push({ seatLabel: seat.label, action: 'fold', sizingBB: 0 });
                 seat.folded = true;
-            }
-        } else {
-            // Facing open: fold or occasionally call (3-bets excluded Phase 1 for clarity)
-            var rangeKey = seat.label + '_vs_' + opener;
-            var rangeData = (typeof facingRfiRanges !== 'undefined') ? facingRfiRanges[rangeKey] : null;
-            var callProb = 0.07;
-            if (rangeData) {
-                var callCombos = _roughCombosInRange(rangeData['Call'] || []);
-                callProb = callCombos / (callCombos + 1100); // ~1100 fold-equivalent combos
-            }
-            if (Math.random() < callProb) {
-                ss.actions.push({ seatLabel: seat.label, action: 'call', sizingBB: openSizeBB });
-                seat.stackBB = parseFloat((seat.stackBB - openSizeBB).toFixed(2));
-            } else {
-                ss.actions.push({ seatLabel: seat.label, action: 'fold', sizingBB: 0 });
-                seat.folded = true;
-            }
+                break;
         }
     }
 
-    // Capture table context for UI display before collapsing to 2-player
+    // Capture table context for UI display
     hr.preflopContext = {
-        heroPos: heroPos,
-        opener: opener,
+        heroPos:      heroPos,
+        opener:       tableState.opener,
+        threeBettor:  tableState.threeBettor,
+        callers:      tableState.callers.slice(),
+        limpers:      tableState.limpers.slice(),
+        potStructure: tableState.threeBettor ? '3BP' : (tableState.limpers.length > 0 ? 'LIMP_POT' : 'SRP'),
         tableActions: ss.actions.map(function(a) { return { seatLabel: a.seatLabel, action: a.action }; })
     };
 
-    // The one villain hero plays against:
-    //   nobody opened → villain is BB (BB will respond to hero's open)
-    //   someone opened → villain is the opener (hero faces their raise)
-    var villainLabel = (opener === null) ? 'BB' : opener;
+    // Choose the surviving villain:
+    //   3-bet exists  → 3-bettor is the villain (last aggressor)
+    //   open exists   → opener is the villain
+    //   no open       → BB responds to hero's open
+    var villainLabel = tableState.threeBettor || tableState.opener || 'BB';
 
-    // Null out all seats except hero and designated villain → 2-player from here
+    // Collapse to 2-player — null out everyone except hero and villain
     hr.seats = hr.seats.map(function(seat) {
         if (seat === null) return null;
         if (seat.isHero) return seat;
@@ -339,27 +502,39 @@ function _runPreflopTableLoop(hr) {
         return null;
     });
 
-    // Derive lane for postflop engine (all downstream functions key off hr.lane)
-    if (opener === null) {
-        // Hero is first to open: heroPos_vs_BB_SRP
+    // Derive lane for postflop engine
+    if (tableState.opener === null) {
+        // Hero opens first (no one raised before hero)
         var openDerived = heroPos + '_vs_BB_SRP';
         hr.lane = SIM_SUPPORTED_LANES.includes(openDerived) ? openDerived : 'BTN_vs_BB_SRP';
     } else if (heroPos === 'BB') {
-        // BB defending: standard OOP proxy
+        // Hero is BB defending against an open (or 3-bet)
         hr.lane = 'BB_vs_BTN_SRP';
     } else {
-        // Non-BB hero facing open: heroPos_vs_BB_SRP proxy (hero is IP relative to opener)
+        // Hero faces an open (or cold-faces a 3-bet) from earlier position
         var defDerived = heroPos + '_vs_BB_SRP';
         hr.lane = SIM_SUPPORTED_LANES.includes(defDerived) ? defDerived : 'BTN_vs_BB_SRP';
     }
 
-    // Rebuild committedBB for the two remaining active seats
+    // Rebuild committedBB for the two surviving seats
     ss.committedBB = _buildCommittedBB(hr.seats);
-    // Restore opener's committed amount and stack so sizing logic is correct
-    if (opener !== null) {
-        ss.committedBB[opener] = openSizeBB;
-        var openerSeat = hr.seats.find(function(s) { return s && s.label === opener; });
+
+    // Restore opener's committed stack so postflop sizing logic is correct
+    if (tableState.opener !== null) {
+        ss.committedBB[tableState.opener] = openSizeBB;
+        var openerSeat = hr.seats.find(function(s) { return s && s.label === tableState.opener; });
         if (openerSeat) openerSeat.stackBB = parseFloat((100 - openSizeBB).toFixed(2));
+    }
+    // Restore 3-bettor's committed stack
+    if (tableState.threeBettor) {
+        var tbAct = ss.actions.find(function(a) { return a.action === '3bet'; });
+        if (tbAct) {
+            var tbSeat = hr.seats.find(function(s) { return s && s.label === tableState.threeBettor; });
+            if (tbSeat) {
+                ss.committedBB[tableState.threeBettor] = tbAct.sizingBB;
+                tbSeat.stackBB = parseFloat((100 - tbAct.sizingBB).toFixed(2));
+            }
+        }
     }
 }
 
@@ -810,24 +985,56 @@ function resolveVillainAction(handRun) {
     if (street === 'preflop') {
         if (hr.lane === 'BB_vs_BTN_SRP') {
             // Villain is BTN: if BTN hasn't acted yet → open-raise;
-            // if BTN is responding to BB's 3bet → fold ~60%, call ~40%
+            // if BTN is responding to BB's 3bet → use rfiVs3BetRanges if hole cards available
             const villainHasActed = ss.actions.some(a => a.seatLabel === villainSeat.label);
             if (!villainHasActed) return 'raise';
+            // BTN facing BB's 3-bet
+            if (villainSeat.holeCards) {
+                const vNotation = _cardsToHandNotation(villainSeat.holeCards);
+                const r3bData = rfiVs3BetRanges['BTN_vs_BB'] || null;
+                if (r3bData) {
+                    if (checkRangeHelper(vNotation, r3bData['4-bet'] || [])) return '4bet';
+                    if (checkRangeHelper(vNotation, r3bData['Call'] || [])) return 'call';
+                    return 'fold';
+                }
+            }
             return Math.random() < 0.60 ? 'fold' : 'call';
         }
-        // Villain (BB) facing hero's 4bet — fold ~65%, call ~35% (no 5bet this pass)
+        // Villain (opener) facing hero's 3-bet — use rfiVs3BetRanges with hole cards
+        const heroThreeBet = ss.actions.some(a => a.seatLabel === heroLabel && a.action === '3bet');
+        if (heroThreeBet) {
+            if (villainSeat.holeCards) {
+                const vNotation = _cardsToHandNotation(villainSeat.holeCards);
+                const r3bKey = villainSeat.label + '_vs_' + heroLabel;
+                const r3bData = rfiVs3BetRanges[r3bKey] || null;
+                if (r3bData) {
+                    if (checkRangeHelper(vNotation, r3bData['4-bet'] || [])) return '4bet';
+                    if (checkRangeHelper(vNotation, r3bData['Call'] || [])) return 'call';
+                    return 'fold';
+                }
+            }
+            return Math.random() < 0.75 ? 'fold' : 'call';
+        }
+        // Villain (BB) facing hero's 4bet — fold ~65%, call ~35%
         const _heroFourbet = ss.actions.some(a => a.seatLabel === heroLabel && a.action === '4bet');
         if (_heroFourbet) return Math.random() < 0.65 ? 'fold' : 'call';
-        // Villain is BB facing hero's open — use the correct facing range for this opener
-        const _bbRangeKey = 'BB_vs_' + heroLabel;
+        // Villain facing hero's open — use actual hole cards when available (FULL_TABLE)
+        const _bbRangeKey = villainSeat.label + '_vs_' + heroLabel;
         const rangeData = facingRfiRanges[_bbRangeKey] || facingRfiRanges['BB_vs_BTN'];
         if (!rangeData) return 'fold';
+        if (villainSeat.holeCards) {
+            const vNotation = _cardsToHandNotation(villainSeat.holeCards);
+            if (checkRangeHelper(vNotation, rangeData['3-bet'] || [])) return '3bet';
+            if (checkRangeHelper(vNotation, rangeData['Call'] || [])) return 'call';
+            return 'fold';
+        }
+        // Fallback: probability-weighted (non-FULL_TABLE paths)
         const threeBetRange = rangeData['3-bet'] || [];
         const callRange = rangeData['Call'] || [];
         const threeBetCombos = _roughCombosInRange(threeBetRange);
         const callCombos = _roughCombosInRange(callRange);
         const totalNonFold = threeBetCombos + callCombos;
-        const foldCombos = Math.round(totalNonFold * 0.61); // fold ≈ 38% overall
+        const foldCombos = Math.round(totalNonFold * 0.61);
         const roll = Math.random() * (threeBetCombos + callCombos + foldCombos);
         if (roll < threeBetCombos) return '3bet';
         if (roll < threeBetCombos + callCombos) return 'call';
@@ -894,17 +1101,36 @@ function advanceStreet(handRun) {
         const flopCards = _dealBoardCards(hr, 3);
         for (const c of flopCards) gs.board.push(c);
 
-        // Override pot with canonical SRP value — eliminates preflop rounding drift
-        const srpFn = (typeof getSRPPot$ === 'function') ? getSRPPot$ : function() { return 16.5; };
-        const bbFn  = (typeof getBigBlind$ === 'function') ? getBigBlind$ : function() { return 3; };
-        gs.potBB = parseFloat((srpFn(laneFamily) / bbFn()).toFixed(2));
+        const bbFn = (typeof getBigBlind$ === 'function') ? getBigBlind$ : function() { return 3; };
 
-        // Generate postflop spot for strategy lookup only — spot.flopCards never used for display
-        hr.postflopSpot = generatePostflopSpot(20, familyFilter);
-        // For BB_vs_BTN_SRP (hero is BB defending), override heroRole so resolveDecisionNode
-        // uses the defender branch. SB_vs_BB_SRP is also OOP but SB is the PFR — keep PFR role.
-        if (hr.lane === 'BB_vs_BTN_SRP' && hr.postflopSpot) {
-            hr.postflopSpot.heroRole = 'DEFENDER';
+        // Detect 3BP from preflop action — ss.actions still holds preflop actions at this point
+        const _preflopIs3BP = ss.actions.some(function(a) { return a.action === '3bet'; });
+
+        if (_preflopIs3BP) {
+            // 3-bet pot: use canonical 3BP pot size
+            const tbpFn = (typeof get3BPPot$ === 'function') ? get3BPPot$ : function() { return 25; };
+            gs.potBB = parseFloat((tbpFn(laneFamily) / bbFn()).toFixed(2));
+            // Try 3BP generator first; fall back to SRP generator if no strategy data yet
+            let spot3bp = null;
+            if (typeof generate3BPPostflopSpot === 'function') {
+                spot3bp = generate3BPPostflopSpot(20, familyFilter);
+            }
+            hr.postflopSpot = (spot3bp && spot3bp.strategy) ? spot3bp : generatePostflopSpot(20, familyFilter);
+            // Hero called the 3-bet → hero is DEFENDER postflop
+            const heroThreeBet = ss.actions.some(function(a) { return a.seatLabel === heroLabel && a.action === '3bet'; });
+            if (!heroThreeBet && hr.postflopSpot) {
+                hr.postflopSpot.heroRole = 'DEFENDER';
+            }
+        } else {
+            // SRP: existing canonical pot override
+            const srpFn = (typeof getSRPPot$ === 'function') ? getSRPPot$ : function() { return 16.5; };
+            gs.potBB = parseFloat((srpFn(laneFamily) / bbFn()).toFixed(2));
+            // Generate postflop spot for strategy lookup
+            hr.postflopSpot = generatePostflopSpot(20, familyFilter);
+            // BB defending SRP → DEFENDER role
+            if (hr.lane === 'BB_vs_BTN_SRP' && hr.postflopSpot) {
+                hr.postflopSpot.heroRole = 'DEFENDER';
+            }
         }
 
     } else if (nextStreet === 'turn') {
@@ -1019,6 +1245,12 @@ function applyHeroAction(handRun, action, heroSizingBB) {
     let sizingBB = 0;
     if (action === 'raise' && street === 'preflop') {
         sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
+    } else if (action === '3bet') {
+        // Hero 3-bets the villain's open: 3x open IP, 4x open from blinds
+        const openEntry = [...ss.actions].reverse().find(a => a.action === 'raise');
+        const openSize = openEntry ? openEntry.sizingBB : ((typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5);
+        const isBlind = (heroSeat.label === 'SB' || heroSeat.label === 'BB');
+        sizingBB = Math.round(openSize * (isBlind ? 4 : 3) * 10) / 10;
     } else if (action === 'bet') {
         // Use hero's chosen size (Pass 3.5a) if provided, else default to 33%
         sizingBB = (heroSizingBB !== undefined && heroSizingBB !== null)

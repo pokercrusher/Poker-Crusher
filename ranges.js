@@ -7808,3 +7808,31 @@ function generateRiverProbeCallDefendSpot(maxRetries, familyFilter) {
 function scoreRiverProbeCallDefenderAction(playerAction, strategy, spot) {
     return scoreRiverDefenderAction(playerAction, strategy, spot);
 }
+
+// ---------------------------------------------------------------------------
+// PLAYER_TYPE_RANGE_PROFILES
+// Scaffold for per-seat player type injection (Sim mode, future).
+// GTO delegates to existing range objects — same data the trainer uses.
+// Future types (NIT, LAG, STATION, AGGRO) slot in here without touching
+// the core preflop loop.
+// ---------------------------------------------------------------------------
+const PLAYER_TYPE_RANGE_PROFILES = {
+    GTO: {
+        getRFIRange: function(pos) {
+            return rfiRanges[pos] || null;
+        },
+        getFacingRFIRange: function(heroPos, oppPos) {
+            return facingRfiRanges[heroPos + '_vs_' + oppPos] || null;
+        },
+        getRFIvs3BetRange: function(openerPos, threeBetorPos) {
+            return rfiVs3BetRanges[openerPos + '_vs_' + threeBetorPos] || null;
+        },
+        getSqueezeRange: function(heroPos, opener, caller1) {
+            return squeezeRanges[heroPos + '_vs_' + opener + '_RFI_' + caller1 + '_Call'] || null;
+        },
+        getSqueeze2CRange: function(heroPos, opener, caller1, caller2) {
+            return squeezeVsRfiTwoCallers[heroPos + '_vs_' + opener + '_RFI_' + caller1 + '_Call_' + caller2 + '_Call'] || null;
+        }
+    }
+    // Future: NIT, LAG, STATION, AGGRO
+};
