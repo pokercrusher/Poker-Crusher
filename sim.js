@@ -594,21 +594,31 @@ function resolveDecisionNode(handRun) {
             );
 
         } else if (heroLabel === 'BB') {
-            // BB defense — hero faces villain's preflop raise
-            // Use actual opener from streetState (works for both existing lanes and FULL_TABLE)
             const _bbOpenerAct = ss.actions.find(function(a) { return a.action === 'raise'; });
-            const _bbOpener = _bbOpenerAct ? _bbOpenerAct.seatLabel : 'BTN';
-            nodeId = 'preflop_defend_BB_vs_' + _bbOpener;
-            spotType = 'FACING_RFI';
-            position = 'OOP';
-            const rawAction = computeCorrectAction(heroHandNotation, 'FACING_RFI', 'BB', _bbOpener, null);
-            correctAction = rawAction === 'RAISE' ? '3bet' : (rawAction === 'CALL' ? 'call' : 'fold');
-            mixFrequency = null;
-            explanation = 'BB vs ' + _bbOpener + ': ' + (
-                correctAction === '3bet'  ? 'hand is in 3-bet range.' :
-                correctAction === 'call'  ? 'hand is in calling range.' :
-                'hand is outside defending range \u2014 fold.'
-            );
+            if (!_bbOpenerAct) {
+                // Folds to BB — BB has a free check option, no raise to defend against
+                nodeId = 'preflop_BB_free_option';
+                spotType = 'BB_FREE_OPTION';
+                position = 'OOP';
+                correctAction = 'check';
+                mixFrequency = null;
+                explanation = 'Folds to BB \u2014 check your option. Raise only with a strong raising hand.';
+            } else {
+                // BB defense — hero faces villain's preflop raise
+                // Use actual opener from streetState (works for both existing lanes and FULL_TABLE)
+                const _bbOpener = _bbOpenerAct.seatLabel;
+                nodeId = 'preflop_defend_BB_vs_' + _bbOpener;
+                spotType = 'FACING_RFI';
+                position = 'OOP';
+                const rawAction = computeCorrectAction(heroHandNotation, 'FACING_RFI', 'BB', _bbOpener, null);
+                correctAction = rawAction === 'RAISE' ? '3bet' : (rawAction === 'CALL' ? 'call' : 'fold');
+                mixFrequency = null;
+                explanation = 'BB vs ' + _bbOpener + ': ' + (
+                    correctAction === '3bet'  ? 'hand is in 3-bet range.' :
+                    correctAction === 'call'  ? 'hand is in calling range.' :
+                    'hand is outside defending range \u2014 fold.'
+                );
+            }
         } else if (ss.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === 'raise'; })) {
             // Non-BB hero facing a villain open (FULL_TABLE: opener pre-populated in streetState)
             const _openAct = ss.actions.find(function(a) { return a.action === 'raise'; });
@@ -753,9 +763,16 @@ function getAvailableActions(handRun) {
     const heroLabel = hr.seats[hr.heroSeatIndex].label;
 
     if (street === 'preflop') {
-        // BB defense lane: hero faces villain's open
-        if (heroLabel === 'BB') return ['fold', 'call', '3bet'];
         const _pfSS = hr.gameState.streetState;
+        if (heroLabel === 'BB') {
+            // Only offer call/3bet if there is actually a raise to face
+            const _facingRaise = _pfSS.actions.some(function(a) {
+                return a.seatLabel !== heroLabel && (a.action === 'raise' || a.action === '3bet');
+            });
+            if (_facingRaise) return ['fold', 'call', '3bet'];
+            // Everyone folded to BB — BB gets the free check option
+            return ['check', 'raise'];
+        }
         // RFI opener facing a villain 3bet
         const _facing3bet = _pfSS.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === '3bet'; });
         if (_facing3bet) return ['fold', 'call', '4bet'];
