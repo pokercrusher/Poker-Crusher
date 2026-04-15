@@ -88,46 +88,23 @@ const STAKE_PRESETS = {
 // ============================================================
 // UNIFIED SESSION BUILDER STATE
 // ============================================================
-const FULL_HAND_ALL_LANES = [
-    'UTG_vs_BB_SRP', 'UTG1_vs_BB_SRP', 'UTG2_vs_BB_SRP',
-    'LJ_vs_BB_SRP', 'HJ_vs_BB_SRP', 'CO_vs_BB_SRP',
-    'BTN_vs_BB_SRP', 'SB_vs_BB_SRP',
-    'BB_vs_BTN_SRP',
-    'FULL_TABLE'
-];
-const FULL_HAND_LANE_LABELS = {
-    'UTG_vs_BB_SRP':  'UTG',
-    'UTG1_vs_BB_SRP': 'UTG1',
-    'UTG2_vs_BB_SRP': 'UTG2',
-    'LJ_vs_BB_SRP':   'LJ',
-    'HJ_vs_BB_SRP':   'HJ',
-    'CO_vs_BB_SRP':   'CO',
-    'BTN_vs_BB_SRP':  'BTN',
-    'SB_vs_BB_SRP':   'SB',
-    'BB_vs_BTN_SRP':  'BB def',
-    'FULL_TABLE':     'Live Table'
-};
+// Natural live table rotation: the button moves clockwise (away from hero) each hand,
+// so hero's position advances: BTN → CO → HJ → LJ → UTG2 → UTG1 → UTG → BB → SB → repeat
+const LIVE_TABLE_ROTATION = ['BTN', 'CO', 'HJ', 'LJ', 'UTG2', 'UTG1', 'UTG', 'BB', 'SB'];
 
-// Clockwise table rotation: BTN → CO → HJ → LJ → UTG2 → UTG1 → UTG → BB → SB → repeat
-const FULL_HAND_ROTATION_ORDER = [
-    'BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'HJ_vs_BB_SRP',
-    'LJ_vs_BB_SRP', 'UTG2_vs_BB_SRP', 'UTG1_vs_BB_SRP',
-    'UTG_vs_BB_SRP', 'BB_vs_BTN_SRP', 'SB_vs_BB_SRP'
-];
+// Legacy — kept for any external references; always uses FULL_TABLE lane now
+const FULL_HAND_ALL_LANES = ['FULL_TABLE'];
 
 function _simGetCurrentSessionLane() {
-    var active = FULL_HAND_ROTATION_ORDER.filter(function(l) {
-        return sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.includes(l);
-    });
-    if (!active.length) return 'BTN_vs_BB_SRP';
-    return active[(simSession.currentLaneIndex || 0) % active.length];
+    return 'FULL_TABLE';
+}
+
+function _simGetCurrentHeroPos() {
+    return LIVE_TABLE_ROTATION[(simSession.currentLaneIndex || 0) % LIVE_TABLE_ROTATION.length];
 }
 
 function _simAdvanceSessionLane() {
-    var active = FULL_HAND_ROTATION_ORDER.filter(function(l) {
-        return sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.includes(l);
-    });
-    simSession.currentLaneIndex = ((simSession.currentLaneIndex || 0) + 1) % Math.max(1, active.length);
+    simSession.currentLaneIndex = ((simSession.currentLaneIndex || 0) + 1) % LIVE_TABLE_ROTATION.length;
 }
 
 let sessionBuilder = {
@@ -137,8 +114,7 @@ let sessionBuilder = {
     stakeId: '1/3',            // key into STAKE_PRESETS
     displayMode: 'dollars',    // 'dollars' | 'bb'
     pfStacks: [5,8,10,13,15,20], // active push/fold stack depths
-    fullHandMode: false,       // true = Full Hand mode (mutually exclusive with pre/post families)
-    fullHandLanes: [...FULL_HAND_ALL_LANES], // active lanes for Full Hand mode
+    fullHandMode: false,       // true = Full Hand mode — always uses live table rotation
     sessionMode: false,        // true = persistent stack session across hands
     sessionStack: 100          // starting stack in bb for session mode
 };
@@ -1210,7 +1186,6 @@ function saveSessionConfig() {
             displayMode: sessionBuilder.displayMode,
             pfStacks: sessionBuilder.pfStacks,
             fullHandMode: sessionBuilder.fullHandMode,
-            fullHandLanes: sessionBuilder.fullHandLanes,
             sessionMode: sessionBuilder.sessionMode,
             sessionStack: sessionBuilder.sessionStack
         }));
@@ -1230,10 +1205,6 @@ function loadSessionConfig() {
             if (c.fullHandMode === true) sessionBuilder.fullHandMode = true;
             if (c.sessionMode === true) sessionBuilder.sessionMode = true;
             if (c.sessionStack && Number.isFinite(c.sessionStack) && c.sessionStack >= 10) sessionBuilder.sessionStack = c.sessionStack;
-            if (Array.isArray(c.fullHandLanes) && c.fullHandLanes.length) {
-                const valid = c.fullHandLanes.filter(l => FULL_HAND_ALL_LANES.includes(l));
-                if (valid.length) sessionBuilder.fullHandLanes = valid;
-            }
         }
     } catch(e) {}
     // Sync openSize to match stake preset's defaultOpen
@@ -1351,56 +1322,17 @@ function renderFullHandChips() {
     const container = document.getElementById('full-hand-chips');
     if (!container) return;
     container.innerHTML = '';
-    const isActive = sessionBuilder.fullHandMode;
-    for (const lane of FULL_HAND_ALL_LANES) {
-        const isSel = isActive && sessionBuilder.fullHandLanes.includes(lane);
-        const btn = document.createElement('button');
-        btn.onclick = () => toggleFullHandLane(lane);
-        btn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${isSel ? 'selected' : ''}`;
-        btn.textContent = FULL_HAND_LANE_LABELS[lane];
-        container.appendChild(btn);
-    }
-    const allSel = isActive && FULL_HAND_ALL_LANES.every(l => sessionBuilder.fullHandLanes.includes(l));
-    const allBtn = document.createElement('button');
-    allBtn.onclick = () => toggleFullHandLane('ALL');
-    allBtn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${allSel ? 'selected-gold' : ''}`;
-    allBtn.textContent = 'All';
-    container.appendChild(allBtn);
+    const isSel = sessionBuilder.fullHandMode;
+    const btn = document.createElement('button');
+    btn.onclick = () => toggleFullHandLane();
+    btn.className = `config-btn px-4 py-2 rounded-full text-xs font-bold transition-all ${isSel ? 'selected-gold' : ''}`;
+    btn.textContent = 'Live Table';
+    container.appendChild(btn);
     renderSessionModeUI();
 }
 
-function toggleFullHandLane(lane) {
-    if (lane === 'ALL') {
-        const alreadyAll = sessionBuilder.fullHandMode &&
-            FULL_HAND_ALL_LANES.every(l => sessionBuilder.fullHandLanes.includes(l));
-        if (alreadyAll) {
-            // Toggle All off = exit full hand mode entirely
-            sessionBuilder.fullHandMode = false;
-            sessionBuilder.fullHandLanes = [...FULL_HAND_ALL_LANES];
-        } else {
-            sessionBuilder.fullHandMode = true;
-            sessionBuilder.fullHandLanes = [...FULL_HAND_ALL_LANES];
-        }
-    } else {
-        if (!sessionBuilder.fullHandMode) {
-            // First lane click: enter full hand mode with just this lane
-            sessionBuilder.fullHandMode = true;
-            sessionBuilder.fullHandLanes = [lane];
-        } else {
-            const idx = sessionBuilder.fullHandLanes.indexOf(lane);
-            if (idx > -1) {
-                if (sessionBuilder.fullHandLanes.length > 1) {
-                    sessionBuilder.fullHandLanes.splice(idx, 1);
-                } else {
-                    // Deselecting the last lane — exit full hand mode
-                    sessionBuilder.fullHandMode = false;
-                    sessionBuilder.fullHandLanes = [...FULL_HAND_ALL_LANES];
-                }
-            } else {
-                sessionBuilder.fullHandLanes.push(lane);
-            }
-        }
-    }
+function toggleFullHandLane() {
+    sessionBuilder.fullHandMode = !sessionBuilder.fullHandMode;
     renderSessionBuilderUI();
     saveSessionConfig();
 }

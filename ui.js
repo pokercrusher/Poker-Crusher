@@ -3091,17 +3091,11 @@ function launchConfiguredSession() {
     if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode) {
         if (sessionBuilder.sessionMode && typeof startSimSession === 'function') {
             startSimSession(sessionBuilder.sessionStack || 100);
-        }
-        var lane;
-        if (sessionBuilder.sessionMode && typeof _simGetCurrentSessionLane === 'function') {
-            lane = _simGetCurrentSessionLane();
         } else {
-            const lanes = (sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length)
-                ? sessionBuilder.fullHandLanes
-                : ['BTN_vs_BB_SRP', 'CO_vs_BB_SRP', 'SB_vs_BB_SRP', 'BB_vs_BTN_SRP'];
-            lane = lanes[Math.floor(Math.random() * lanes.length)];
+            // Non-session mode: reset rotation to BTN so every fresh play starts there
+            if (typeof simSession !== 'undefined') simSession.currentLaneIndex = 0;
         }
-        startSimulator(lane);
+        startSimulator('FULL_TABLE');
     } else {
         startConfiguredTraining();
     }
@@ -3109,15 +3103,7 @@ function launchConfiguredSession() {
 
 function startSimulator(lane) {
     if (!lane) {
-        if (typeof simSession !== 'undefined' && simSession.active && typeof _simGetCurrentSessionLane === 'function') {
-            lane = _simGetCurrentSessionLane();
-        } else if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode &&
-                sessionBuilder.fullHandLanes && sessionBuilder.fullHandLanes.length) {
-            const lanes = sessionBuilder.fullHandLanes;
-            lane = lanes[Math.floor(Math.random() * lanes.length)];
-        } else {
-            lane = (_simRun && _simRun.lane) || 'BTN_vs_BB_SRP';
-        }
+        lane = 'FULL_TABLE';
     }
     try { __clearNextTimer(); __endResolve(); } catch(_) {}
     try { window.__tableAnimToken = (window.__tableAnimToken || 0) + 1; } catch(_) {}
@@ -3125,7 +3111,8 @@ function startSimulator(lane) {
     _simTableInitialized = false;
     _simRenderedBoardLen = 0;
     _simLastStreet = '';
-    _simRun = createHandRun({ lane: lane });
+    var heroPos = (typeof _simGetCurrentHeroPos === 'function') ? _simGetCurrentHeroPos() : null;
+    _simRun = createHandRun({ lane: lane, heroPos: heroPos });
     _simEnsureVillainCards(_simRun); // deal villain cards upfront so they're available for log
 
     hideAllScreens();
