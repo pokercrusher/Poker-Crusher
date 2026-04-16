@@ -62,8 +62,33 @@ SR keys must include all relevant context (scenario, position, bucket, hand) to 
 - New localStorage keys layered on top of existing keys, never replacing them.
 
 ## Deployment
-- GitHub Pages (pokercrusher.github.io) — all changed files must be deployed together.
-- Browser cache issues are a recurring false "bug" — confirm all files are deployed before debugging.
+
+### Checklist
+1. **Rebuild CSS** (required if any Tailwind class was added or removed):
+   ```sh
+   npx tailwindcss -i src/input.css -o tailwind.min.css --minify
+   ```
+   Commit `tailwind.min.css`. Forgetting this step means new utility classes render unstyled in production.
+
+2. **Cache-bust script tags** — after pushing, append the current git short SHA to each `<script src>` in `index.html` so browsers load the new files immediately:
+   ```html
+   <script src="engine.js?v=abc1234" defer></script>
+   ```
+   Use `git rev-parse --short HEAD` to get the SHA. This is the fix for the recurring "deployed but still seeing old behaviour" false bug.
+
+3. **Deploy all changed files together** — GitHub Pages serves files independently. A partial deploy (e.g. pushing `training.js` without `engine.js`) can leave the app in a broken state mid-session for active users.
+
+4. **Smoke test after deploy**:
+   - Open the app in an incognito window (bypasses cache)
+   - Complete one preflop drill — confirm correct answer grades correctly
+   - Open DevTools → Network → confirm `tailwind.min.css` loads (not the CDN script)
+   - Check Console — no errors should appear (warnings are OK with `PC_DEBUG` off)
+
+### CSS Build
+- Source: `src/input.css`
+- Output: `tailwind.min.css` (committed, ~10 KB)
+- Config: `tailwind.config.js` (scans `*.html` and `*.js` for used classes)
+- Run the build command above whenever Tailwind classes change. The CDN is no longer used.
 
 ## Known Issues / On The Horizon
 - **Challenge Path v2** — primary queued workstream. Design done, implementation not started.

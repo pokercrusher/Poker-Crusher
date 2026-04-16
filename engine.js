@@ -83,6 +83,19 @@ function safeSet(key, value) {
 }
 
 // ============================================================
+// MULTI-TAB SAFETY
+// The 'storage' event fires only when a *different* tab writes a key,
+// so this never triggers false positives in the current tab.
+// ============================================================
+window.addEventListener('storage', (e) => {
+    if (e.key && e.key.includes(STORAGE_KEYS.RFI_STATS)) {
+        if (typeof showToast === 'function') {
+            showToast('Progress updated in another tab — refresh to sync.', 'warn');
+        }
+    }
+});
+
+// ============================================================
 // SHARED UTILITIES (Phase 1 refactor)
 // ============================================================
 // Canonical home for helpers used across engine.js, training.js, and ui.js.
@@ -406,6 +419,11 @@ const SR = (function() {
         return db[key];
     }
 
+    /**
+     * SR.update — record a drill result and reschedule the hand's next review.
+     * @param {string} key   — SR hand key from buildSRKey()
+     * @param {string} grade — 'Good' (correct) or 'Again' (incorrect)
+     */
     function update(key, grade) {
         const r = getOrCreate(key);
         const now = Date.now();
@@ -496,6 +514,12 @@ const SR = (function() {
         return count || 1;
     }
 
+    /**
+     * SR.classifySpot — roll up all hand records for a spot into a mastery level.
+     * @param {string}   spotKey        — spot key (e.g. 'RFI|BTN')
+     * @param {Function} [edgeClassifier] — optional fn(hand, spotKey) → 'EDGE'|'NORMAL'|'TRASH'
+     * @returns {'unseen'|'learning'|'struggling'|'mastered'}
+     */
     function classifySpot(spotKey, edgeClassifier) {
         const handKeys = getHandKeysForSpot(spotKey);
 
@@ -675,6 +699,22 @@ const SR = (function() {
 })();
 
 // ============================================================
+// HAND GRID — pre-built 13×13 hand table (static, computed once at load)
+// sampleHand iterates this instead of recomputing hand strings each call.
+// ============================================================
+const HAND_GRID = (() => {
+    const grid = [];
+    for (let i = 0; i < 13; i++) {
+        for (let j = 0; j < 13; j++) {
+            const r1 = RANKS[i], r2 = RANKS[j];
+            const hand = (i === j) ? r1+r2 : (i < j) ? r1+r2+'s' : r2+r1+'o';
+            grid.push({ hand, i, j });
+        }
+    }
+    return grid;
+})();
+
+// ============================================================
 // EDGE-CASE WEIGHTING
 // ============================================================
 const EdgeWeight = (function() {
@@ -718,6 +758,15 @@ const EdgeWeight = (function() {
         return neighbors;
     }
 
+    /**
+     * EdgeWeight.classify — score a hand's position on the range boundary for a given spot.
+     * @param {string}      hand      — canonical hand string e.g. 'AKs', 'TT'
+     * @param {string}      scenario  — e.g. 'RFI', 'FACING_RFI'
+     * @param {string}      heroPos   — hero position e.g. 'BTN'
+     * @param {string}      oppPos    — opponent position ('' for RFI)
+     * @param {Object|null} srRecord  — SR record for this hand, used to detect trash-but-missed
+     * @returns {{ weight: number, category: 'EDGE'|'NORMAL'|'TRASH', action: string }}
+     */
     function classify(hand, scenario, heroPos, oppPos, srRecord) {
         // Find grid position
         const r1 = hand[0], r2 = hand[1], type = hand[2] || '';
@@ -782,13 +831,8 @@ const EdgeWeight = (function() {
         const recentKeys = missBoostData ? (missBoostData.recentHandKeys || []) : [];
         const recentSet = new Set(recentKeys.slice(-5));
 
-        for (let i = 0; i < 13; i++) {
-            for (let j = 0; j < 13; j++) {
-                const r1 = RANKS[i], r2 = RANKS[j];
-                let hand;
-                if (i === j) hand = r1 + r2;
-                else if (i < j) hand = r1 + r2 + 's';
-                else hand = r2 + r1 + 'o';
+        for (const { hand, i, j } of HAND_GRID) {
+            {
                 const oppSuffix = scenario === 'VS_LIMP' ? '_Limp' : '';
                 let handSRKey;
                 // Use buildSRKey for canonical key construction.
@@ -985,6 +1029,10 @@ function hideReviewPreview() {
     showMenu();
 }
 
+/**
+ * launchReviewSession — start the review trainer with the queue built by showReviewPreview().
+ * Falls back to building a fresh queue if the preview was skipped.
+ */
 function launchReviewSession() {
     const queue = reviewSession._previewQueue || buildReviewQueue();
     if (queue.length === 0) return;

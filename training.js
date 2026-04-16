@@ -2416,6 +2416,12 @@ function switchLibBucket(spotIdx, pos, opp, bucket) {
 
 // --- TRAINER LOGIC ---
 
+/**
+ * generateNextRound — build and display the next drill question.
+ * Selects scenario, position, and hand (via SR/EdgeWeight), updates `state`,
+ * renders the table and action buttons, and starts the round timer.
+ * Entry point for both normal sessions and review sessions.
+ */
 function generateNextRound() {
     // FIX Bug D: reset per-round so guard doesn't saturate across the session
     if (dailyRunState && dailyRunState.active) dailyRunState._rerollGuard = 0;
@@ -3706,6 +3712,12 @@ function __beginResolve() {
     return true;
 }
 
+/**
+ * handleInput — grade a preflop answer and advance the session.
+ * @param {string} action — user's chosen action (e.g. 'RAISE', 'FOLD', '3BET', 'CALL', 'SHOVE')
+ * Compares against `state._handState.correctAction`, updates SR, logs the
+ * decision node, shows feedback, then calls generateNextRound after delay.
+ */
 function handleInput(action) {
     if (!__beginResolve()) return;
     // Immediately disable buttons to prevent double-clicks

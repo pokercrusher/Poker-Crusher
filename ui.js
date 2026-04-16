@@ -1433,6 +1433,12 @@ function switchChartBucket(bucket) {
 }
 
 let _toastTimer = null;
+/**
+ * showToast — display a transient notification banner.
+ * @param {string} text — message to display
+ * @param {string} [type] — visual style: 'correct' | 'incorrect' | 'warn' (default neutral)
+ * @param {number} [duration] — visible duration in ms (default ~1800)
+ */
 function showToast(text, type, duration) {
     const container = document.getElementById('toast-container');
     if (!container) { console.warn('[Toast] Missing #toast-container:', text); return; }
@@ -1705,8 +1711,10 @@ function closeSessionSummary() {
     if (el) el.classList.add('hidden');
     showConfigMenu();
 }
+/** saveProgress — persist `state.global` to localStorage, flush SR, and mark cloud dirty. */
 function saveProgress() { localStorage.setItem(profileKey(STORAGE_KEYS.RFI_STATS), JSON.stringify(state.global)); SR.save(); markCloudDirty(); }
 function loadProgress() { const s = localStorage.getItem(profileKey(STORAGE_KEYS.RFI_STATS)); if (s) state.global = JSON.parse(s); if (!state.global.byScenario) state.global.byScenario = {}; if (!state.global.byPos) state.global.byPos = {}; if (!state.global.byPosGroup) state.global.byPosGroup = {}; if (!state.global.bestStreak) state.global.bestStreak = 0; if (!state.global.bySpot) state.global.bySpot = {}; if (!state.global.byHand) state.global.byHand = {}; loadConfig(); loadLimperMix(); SR.load(); try { if(typeof loadPostflopStats==='function') loadPostflopStats(); } catch(_) {} updateMenuUI(); if (window.RANGE_VALIDATE) { validateAndNormalizeRanges(facingRfiRanges); validateAndNormalizeRanges(rfiVs3BetRanges); validateAndNormalizeRanges(allFacingLimps); } }
+/** updateUI — re-render session stats bar (accuracy, streak) and current action buttons. */
 function updateUI() {
     document.getElementById('accuracy').innerText = (state.sessionStats.total ? Math.round(state.sessionStats.correct/state.sessionStats.total*100) : 0) + '%';
     document.getElementById('streak').innerText = state.sessionStats.streak;

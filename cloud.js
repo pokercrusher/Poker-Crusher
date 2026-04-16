@@ -309,11 +309,19 @@ let _pcCloudDirty = false;
 let _pcCloudAutosaveTimer = null;
 let _pcCloudLastAutosaveAt = 0;
 let _pcCloudAutosaveInFlight = false;
+let _pcCloudFailCount = 0; // consecutive autosave failures; reset on success
 
+/** markCloudDirty — flag that local progress has changed and needs to be pushed to cloud. */
 function markCloudDirty() {
     _pcCloudDirty = true;
+    _refreshLastSyncUI();
 }
 
+/**
+ * cloudSaveSilent — push the current trainer payload to Firebase without user prompts.
+ * @returns {Promise<boolean>} true on success, false on failure or if conditions aren't met.
+ * Skips push if cloud copy has more hands than local (prevents overwriting a more advanced device).
+ */
 async function cloudSaveSilent() {
     const user = getCurrentUser();
     if (!user) return false;
@@ -344,10 +352,16 @@ async function cloudSaveSilent() {
     try {
         await window.PokerCrusherCloud.save(user.uid, payload);
         try { localStorage.setItem('pc_last_cloud_sync_at', new Date().toISOString()); } catch(e) {}
+        _pcCloudFailCount = 0;
         _refreshLastSyncUI();
         return true;
     } catch (e) {
         window.PC_DEBUG && console.warn('Cloud autosave error:', e);
+        _pcCloudFailCount++;
+        if (_pcCloudFailCount === 3) {
+            if (typeof showToast === 'function') showToast('Cloud sync failing — check connection', 'warn');
+        }
+        _refreshLastSyncUI();
         return false;
     }
 }
@@ -375,6 +389,7 @@ function startCloudAutosaveLoop(forceRestart=false) {
             if (ok) {
                 _pcCloudDirty = false;
                 _pcCloudLastAutosaveAt = now;
+                _refreshLastSyncUI(); // clear the unsynced dot now that dirty flag is reset
             }
         } catch(e) {
             _pcCloudAutosaveInFlight = false;
@@ -1278,12 +1293,23 @@ function _refreshLastSyncUI() {
     const el = document.getElementById('auth-last-sync');
     if (!el) return;
     try {
+        const isSignedIn = !!getCurrentUser();
+        const dirty = _pcCloudDirty && isSignedIn;
+        const failing = _pcCloudFailCount >= 3;
+
         const t = localStorage.getItem('pc_last_cloud_sync_at');
-        if (!t) { el.textContent = 'Not yet synced'; return; }
-        const secs = Math.round((Date.now() - new Date(t).getTime()) / 1000);
-        if (secs < 10)   el.textContent = 'Synced just now';
-        else if (secs < 3600) el.textContent = `Synced ${Math.round(secs / 60)}m ago`;
-        else el.textContent = `Synced ${Math.round(secs / 3600)}h ago`;
+        let syncText;
+        if (!t) { syncText = 'Not yet synced'; }
+        else {
+            const secs = Math.round((Date.now() - new Date(t).getTime()) / 1000);
+            if (secs < 10)        syncText = 'Synced just now';
+            else if (secs < 3600) syncText = `Synced ${Math.round(secs / 60)}m ago`;
+            else                  syncText = `Synced ${Math.round(secs / 3600)}h ago`;
+        }
+
+        if (failing)     { el.textContent = '● Sync failing'; el.className = 'text-[11px] text-red-400 mt-0.5'; }
+        else if (dirty)  { el.textContent = '● Unsynced';     el.className = 'text-[11px] text-amber-400/80 mt-0.5'; }
+        else             { el.textContent = syncText;          el.className = 'text-[11px] text-emerald-500/80 mt-0.5'; }
     } catch(e) { el.textContent = ''; }
 }
 

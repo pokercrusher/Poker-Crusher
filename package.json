@@ -6,6 +6,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.2.2",
+    "tailwindcss": "^4.2.2",
     "vitest": "^2.0.0"
   }
 }
