@@ -325,10 +325,10 @@ let dailyRunState = {
 // 1) add the scenario key to the appropriate tier array below
 // 2) ensure the scenario is actually supported by the current codebase/range data
 //
-// Pools are cumulative:
-// - easy   = foundational/common spots only
-// - medium = easy + moderately complex spots
-// - hard   = medium + highest-complexity currently supported spots
+// Pools are EXCLUSIVE — each level only draws from its own scenarios:
+// - easy   = foundational open/face-open preflop spots
+// - medium = more complex preflop spots (limpers, 3-bets, squeezes)
+// - hard   = postflop play + push/fold short-stack spots
 const DAILY_RUN_TIER_RULES = {
     easy: {
         order: 0,
@@ -343,15 +343,15 @@ const DAILY_RUN_TIER_RULES = {
         label: 'Grind',
         scenarios: [
             'VS_LIMP',
-            'RFI_VS_3BET'
+            'RFI_VS_3BET',
+            'SQUEEZE',
+            'SQUEEZE_2C'
         ]
     },
     hard: {
         order: 2,
         label: 'Boss',
         scenarios: [
-            'SQUEEZE',
-            'SQUEEZE_2C',
             'PUSH_FOLD',
             'POSTFLOP_CBET',
             'POSTFLOP_3BP_CBET',
@@ -377,26 +377,10 @@ const DAILY_RUN_TIER_RULES = {
     }
 };
 
-function getDailyRunTierNamesUpTo(option) {
-    const maxOrder = Number((DAILY_RUN_TIER_RULES[option] || {}).order);
-    return Object.keys(DAILY_RUN_TIER_RULES)
-        .filter(name => Number((DAILY_RUN_TIER_RULES[name] || {}).order) <= maxOrder)
-        .sort((a, b) => Number(DAILY_RUN_TIER_RULES[a].order) - Number(DAILY_RUN_TIER_RULES[b].order));
-}
-
 function getDailyRunConfiguredScenariosForOption(option) {
-    const seen = new Set();
-    const ordered = [];
-    getDailyRunTierNamesUpTo(option).forEach(tierName => {
-        const list = (DAILY_RUN_TIER_RULES[tierName] && DAILY_RUN_TIER_RULES[tierName].scenarios) || [];
-        list.forEach(sc => {
-            if (!seen.has(sc)) {
-                seen.add(sc);
-                ordered.push(sc);
-            }
-        });
-    });
-    return ordered;
+    const tierRule = DAILY_RUN_TIER_RULES[option];
+    if (!tierRule) return [];
+    return (tierRule.scenarios || []).slice();
 }
 
 function applyDailyRunHUDState(active) {
