@@ -21,6 +21,65 @@ window.RANGE_AUTO_FIX = false;
 window.SR_EDGE_DEBUG = false;
 
 // ============================================================
+// DEBUG LOGGING
+// Gate all diagnostic output behind PC_DEBUG.
+// Enable via: localStorage.setItem('PC_DEBUG','true'); location.reload()
+// ============================================================
+const _log  = (...a) => window.PC_DEBUG && console.log(...a);
+const _warn = (...a) => window.PC_DEBUG && console.warn(...a);
+
+// ============================================================
+// STORAGE KEY REGISTRY
+// Single source of truth for all versioned localStorage key suffixes.
+// Callers use profileKey(STORAGE_KEYS.X) to get the namespaced key.
+// ============================================================
+const STORAGE_KEYS = {
+    RFI_STATS:       'gto_rfi_stats_v2',
+    SR_DATA:         'gto_sr_v2',
+    CONFIG:          'gto_config_v2',
+    SESSION_BUILDER: 'gto_session_builder_v1',
+    MEDALS:          'gto_medals_v1',
+    CHALLENGE:       'gto_challenge_v2',
+    DAILY_RUN:       'pc_dailyRun_v1',
+    TRAINING_STREAK: 'pc_training_streak_v1',
+    POSTFLOP_STATS:  'gto_postflop_stats_v1',
+    SIM_HISTORY:     'gto_sim_history_v1',
+};
+
+// ============================================================
+// SAFE STORAGE HELPERS
+// ============================================================
+/**
+ * safeGet — read and parse a localStorage key, return fallback on missing or corrupt data.
+ * @param {string} key
+ * @param {*} fallback
+ */
+function safeGet(key, fallback = null) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (_) {
+        _warn(`[Storage] Failed to parse "${key}"; using fallback.`);
+        return fallback;
+    }
+}
+
+/**
+ * safeSet — stringify and write to localStorage, surface quota errors as a toast.
+ * @param {string} key
+ * @param {*} value
+ */
+function safeSet(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+            if (typeof showToast === 'function') showToast('Storage full — some progress may not be saved.', 'warn');
+        }
+    }
+}
+
+// ============================================================
 // SHARED UTILITIES (Phase 1 refactor)
 // ============================================================
 // Canonical home for helpers used across engine.js, training.js, and ui.js.
@@ -275,7 +334,7 @@ const SR = (function() {
             const oldData = localStorage.getItem(OLD_STORAGE_KEY);
             if (oldData && Object.keys(db).length === 0) {
                 const oldDb = JSON.parse(oldData);
-                console.log('[SR] Migrating v1 spot-level → v2 hand-level...');
+                _log('[SR] Migrating v1 spot-level → v2 hand-level...');
                 let migrated = 0;
                 for (const spotKey in oldDb) {
                     const oldRec = oldDb[spotKey];
@@ -283,15 +342,15 @@ const SR = (function() {
                     db[spotKey + '|_LEGACY'] = sanitizeRecord({...oldRec, recentResults: []});
                     migrated++;
                 }
-                console.log(`[SR] Migrated ${migrated} legacy records.`);
+                _log(`[SR] Migrated ${migrated} legacy records.`);
                 save();
             }
-        } catch(e) { console.warn('[SR Migration] Error:', e); }
+        } catch(e) { _warn('[SR Migration] Error:', e); }
         for (const k in db) sanitizeRecord(db[k]);
     }
 
     function load() {
-        try { const s = localStorage.getItem(STORAGE_KEY); if (s) db = JSON.parse(s); } catch(e) {}
+        try { const s = localStorage.getItem(STORAGE_KEY); if (s) db = JSON.parse(s); } catch(e) { _warn('[SR] Failed to load DB:', e); }
         migrate();
         applyVacationMode();
     }
@@ -326,7 +385,7 @@ const SR = (function() {
             }
         }
         if (shifted > 0) {
-            console.log(`[SR] Vacation mode: ${absenceDays.toFixed(1)}d absence shifted ${shifted} cards +${shiftDays.toFixed(1)}d`);
+            _log(`[SR] Vacation mode: ${absenceDays.toFixed(1)}d absence shifted ${shifted} cards +${shiftDays.toFixed(1)}d`);
             save();
         }
     }
@@ -1100,15 +1159,15 @@ function startReviewSession() {
 
             if (warnings.length > 0) {
                 issues++;
-                console.warn(`[RangeValidator] ⚠ ${key}:`);
+                _warn(`[RangeValidator] ⚠ ${key}:`);
                 for (const w of warnings) {
-                    console.warn(`  Rule: ${w.rule}`);
-                    console.warn(`  Missing: ${w.missing.join(', ')}${window.RANGE_AUTO_FIX ? ' → AUTO-FIXED' : ''}`);
+                    _warn(`  Rule: ${w.rule}`);
+                    _warn(`  Missing: ${w.missing.join(', ')}${window.RANGE_AUTO_FIX ? ' → AUTO-FIXED' : ''}`);
                 }
             }
         }
 
-        if (issues === 0) console.log('[RangeValidator] ✓ All ranges passed monotonicity checks.');
+        if (issues === 0) _log('[RangeValidator] ✓ All ranges passed monotonicity checks.');
         return rangesObj;
     };
 })();

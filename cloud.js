@@ -326,7 +326,7 @@ async function cloudSaveSilent() {
             if (cloudHands > localHands) {
                 // Cloud has more progress — don't overwrite it. The higher-count
                 // data will be pulled on next sign-in or manual reload.
-                console.log(`[PC] Skipping push — cloud has ${cloudHands} hands vs local ${localHands}`);
+                window.PC_DEBUG && console.log(`[PC] Skipping push — cloud has ${cloudHands} hands vs local ${localHands}`);
                 return true;
             }
         }
@@ -343,7 +343,7 @@ async function cloudSaveSilent() {
         _refreshLastSyncUI();
         return true;
     } catch (e) {
-        console.warn('Cloud autosave error:', e);
+        window.PC_DEBUG && console.warn('Cloud autosave error:', e);
         return false;
     }
 }
@@ -487,14 +487,14 @@ async function cloudLoadNow() {
     try {
         showToast('Loading from cloud...', 'correct', 900);
         const result = await window.PokerCrusherCloud.load(docId);
-        console.log('[PokerCrusher] Cloud load raw result:', result);
+        window.PC_DEBUG && console.log('[PokerCrusher] Cloud load raw result:', result);
         if (!result) {
             showToast('No cloud data found for that username', 'incorrect', 2200);
             return;
         }
-        console.log('[PokerCrusher] result type:', typeof result);
-        console.log('[PokerCrusher] result.data:', result.data);
-        console.log('[PokerCrusher] result keys:', Object.keys(result));
+        window.PC_DEBUG && console.log('[PokerCrusher] result type:', typeof result);
+        window.PC_DEBUG && console.log('[PokerCrusher] result.data:', result.data);
+        window.PC_DEBUG && console.log('[PokerCrusher] result keys:', Object.keys(result));
         const payload = result;
         const ok = applyTrainerPayload(payload);
         if (ok) {

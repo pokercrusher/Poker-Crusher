@@ -813,7 +813,7 @@ function startDailyRun(option) {
 
     const scenarioPool = getDailyRunScenarioPool(option);
     if (!scenarioPool.length) {
-        console.warn('[DailyRun] No supported scenarios for option:', option);
+        _warn('[DailyRun] No supported scenarios for option:', option);
         updateDailyRunUI();
         return;
     }
@@ -2557,8 +2557,8 @@ function generateNextRound() {
             if (s === 'POSTFLOP_RIVER_PROBE_CALL_DEFEND') { return typeof POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY).length > 0; }
             return false;
         });
-        if (!validScenarios.length) { console.warn('[Trainer] No valid scenarios for config:', JSON.stringify(state.config)); return; }
-        console.log('[Trainer] Config scenarios:', state.config.scenarios, '→ valid:', validScenarios);
+        if (!validScenarios.length) { _warn('[Trainer] No valid scenarios for config:', JSON.stringify(state.config)); return; }
+        _log('[Trainer] Config scenarios:', state.config.scenarios, '→ valid:', validScenarios);
 
         // 80/20 due-item priority: if SR has due hands matching config, pick from due set 80% of the time
         let usedDuePick = false;
@@ -3105,7 +3105,7 @@ function generateNextRound() {
         if (dailyRunState._rerollGuard < 120) {
             return generateNextRound();
         }
-        console.warn('[DailyRun] Could not build an allowed spot after many rerolls. Resetting guard and trying again.');
+        _warn('[DailyRun] Could not build an allowed spot after many rerolls. Resetting guard and trying again.');
         dailyRunState._rerollGuard = 0;
         state._reviewHandOverride = null;
         return generateNextRound();
@@ -3675,7 +3675,7 @@ function generateNextRound() {
         try {
             renderHand(state.currentHand);
         } catch (e) {
-            console.warn('[Render] renderHand failed; forcing layer reset', e);
+            _warn('[Render] renderHand failed; forcing layer reset', e);
             try { ensureTableLayers(true); } catch(_) {}
             try { renderHand(state.currentHand); } catch(_) {}
         }
