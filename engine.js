@@ -34,16 +34,19 @@ const _warn = (...a) => window.PC_DEBUG && console.warn(...a);
 // Callers use profileKey(STORAGE_KEYS.X) to get the namespaced key.
 // ============================================================
 const STORAGE_KEYS = {
-    RFI_STATS:       'gto_rfi_stats_v2',
-    SR_DATA:         'gto_sr_v2',
-    CONFIG:          'gto_config_v2',
-    SESSION_BUILDER: 'gto_session_builder_v1',
-    MEDALS:          'gto_medals_v1',
-    CHALLENGE:       'gto_challenge_v2',
-    DAILY_RUN:       'pc_dailyRun_v1',
-    TRAINING_STREAK: 'pc_training_streak_v1',
-    POSTFLOP_STATS:  'gto_postflop_stats_v1',
-    SIM_HISTORY:     'gto_sim_history_v1',
+    RFI_STATS:        'gto_rfi_stats_v2',
+    SR_DATA:          'gto_sr_v2',
+    SR_DATA_LEGACY:   'gto_sr_v1',        // v1 spot-level records; read-once migration source
+    CONFIG:           'gto_config_v2',
+    SESSION_BUILDER:  'gto_session_builder_v1',
+    MEDALS:           'gto_medals_v1',
+    CHALLENGE:        'gto_challenge_v2',
+    CHALLENGE_LEGACY: 'gto_challenge_v1', // v1 progress; read during migration then removed
+    DAILY_RUN:        'pc_dailyRun_v1',
+    TRAINING_STREAK:  'pc_training_streak_v1',
+    POSTFLOP_STATS:   'gto_postflop_stats_v1',
+    SIM_HISTORY:      'gto_sim_history_v1',
+    LIMPER_MIX:       'gto_limper_mix',   // limper mix config (included in cloud sync payload)
 };
 
 // ============================================================
@@ -302,8 +305,8 @@ function buildDecisionNode(spotContext, handState, userAction, correct, extras) 
 // SPACED REPETITION ENGINE
 // ============================================================
 const SR = (function() {
-    const STORAGE_KEY = profileKey('gto_sr_v2');
-    const OLD_STORAGE_KEY = profileKey('gto_sr_v1');
+    const STORAGE_KEY = profileKey(STORAGE_KEYS.SR_DATA);
+    const OLD_STORAGE_KEY = profileKey(STORAGE_KEYS.SR_DATA_LEGACY);
     const DAY_MS = 86400000;
     const MIN_INTERVAL = 0.02;
     const MAX_INTERVAL = 90;

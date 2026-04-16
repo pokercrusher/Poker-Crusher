@@ -266,7 +266,7 @@ const CHALLENGE_NODES = [
 // ============================================================
 // PROGRESS PERSISTENCE — v2 schema
 // ============================================================
-const CHALLENGE_V2_KEY_SUFFIX = 'gto_challenge_v2';
+const CHALLENGE_V2_KEY_SUFFIX = STORAGE_KEYS.CHALLENGE;
 
 function loadChallengeV2() {
     try { const s = localStorage.getItem(profileKey(CHALLENGE_V2_KEY_SUFFIX)); return s ? JSON.parse(s) : null; } catch(e) { return null; }
@@ -289,7 +289,7 @@ function getChallengeProgress() {
 // v1 → v2 migration
 function _migrateChallengeV1() {
     let v1 = null;
-    try { const s = localStorage.getItem(profileKey('gto_challenge_v1')); v1 = s ? JSON.parse(s) : null; } catch(e) {}
+    try { const s = localStorage.getItem(profileKey(STORAGE_KEYS.CHALLENGE_LEGACY)); v1 = s ? JSON.parse(s) : null; } catch(e) {}
     if (!v1 || v1.v !== 1 || !v1.nodes) return null;
 
     // Map old node IDs to new ones where reasonable
@@ -504,7 +504,7 @@ function resetChallengeProgress() {
     if (!confirm('Reset all Challenge Path progress? This cannot be undone.')) return;
     saveChallengeV2({ v: 2, nodes: {}, lastPlayed: null, completedAt: null });
     // Also clear the old v1 key if it exists
-    try { localStorage.removeItem(profileKey('gto_challenge_v1')); } catch(_) {}
+    try { localStorage.removeItem(profileKey(STORAGE_KEYS.CHALLENGE_LEGACY)); } catch(_) {}
     renderChallengeScreen();
 }
 

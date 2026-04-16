@@ -166,10 +166,11 @@ function endSimSession() {
             ? Math.round((simSession.correctDecisions / simSession.totalDecisions) * 100) : 0
     };
     try {
-        var hist = JSON.parse(localStorage.getItem('gto_sim_history_v1') || '[]');
+        // TODO: should this be profileKey(STORAGE_KEYS.SIM_HISTORY)? Currently unnamespaced (shared across profiles).
+        var hist = JSON.parse(localStorage.getItem(STORAGE_KEYS.SIM_HISTORY) || '[]');
         hist.unshift(summary);
         if (hist.length > 20) hist.length = 20;
-        localStorage.setItem('gto_sim_history_v1', JSON.stringify(hist));
+        localStorage.setItem(STORAGE_KEYS.SIM_HISTORY, JSON.stringify(hist));
         localStorage.removeItem('gto_sim_session_active_v1');
     } catch(e) {}
 }
@@ -302,7 +303,7 @@ let drillState = {
 };
 
 // --- DAILY RUN (once per 24 hours) ---
-const DAILY_RUN_KEY = 'pc_dailyRun_v1';
+const DAILY_RUN_KEY = STORAGE_KEYS.DAILY_RUN;
 let dailyRunState = {
     active: false,
     option: null,           // 'easy' | 'medium' | 'hard'
@@ -545,10 +546,10 @@ function getLocalDayIndex(ts) {
 
 // ── Training Streak ──────────────────────────────────────────
 function loadTrainingStreak() {
-    try { const s = localStorage.getItem(profileKey('pc_training_streak_v1')); return s ? JSON.parse(s) : { current: 0, longest: 0, lastDayIndex: null }; } catch(e) { return { current: 0, longest: 0, lastDayIndex: null }; }
+    try { const s = localStorage.getItem(profileKey(STORAGE_KEYS.TRAINING_STREAK)); return s ? JSON.parse(s) : { current: 0, longest: 0, lastDayIndex: null }; } catch(e) { return { current: 0, longest: 0, lastDayIndex: null }; }
 }
 function saveTrainingStreak(data) {
-    try { localStorage.setItem(profileKey('pc_training_streak_v1'), JSON.stringify(data)); } catch(e) {}
+    try { localStorage.setItem(profileKey(STORAGE_KEYS.TRAINING_STREAK), JSON.stringify(data)); } catch(e) {}
 }
 function updateTrainingStreak(handsPlayed) {
     if (!handsPlayed || handsPlayed < 5) return;
@@ -978,10 +979,10 @@ function prettySpotName(spotKey) {
 
 // Medal storage
 function loadMedals() {
-    try { const s = localStorage.getItem(profileKey('gto_medals_v1')); return s ? JSON.parse(s) : {}; } catch(e) { return {}; }
+    try { const s = localStorage.getItem(profileKey(STORAGE_KEYS.MEDALS)); return s ? JSON.parse(s) : {}; } catch(e) { return {}; }
 }
 function saveMedals(m) {
-    try { localStorage.setItem(profileKey('gto_medals_v1'), JSON.stringify(m)); } catch(e) {}
+    try { localStorage.setItem(profileKey(STORAGE_KEYS.MEDALS), JSON.stringify(m)); } catch(e) {}
 }
 function getMedalForResult(hands, accuracy) {
     if (hands >= MEDAL_THRESHOLDS.gold.hands && accuracy >= MEDAL_THRESHOLDS.gold.accuracy) return 'gold';
@@ -1162,7 +1163,7 @@ function setLimperMix(preset) {
 // --- Session config persistence ---
 function saveSessionConfig() {
     try {
-        localStorage.setItem(profileKey('gto_session_builder_v1'), JSON.stringify({
+        localStorage.setItem(profileKey(STORAGE_KEYS.SESSION_BUILDER), JSON.stringify({
             module: sessionBuilder.module,
             families: sessionBuilder.families,
             sessionLength: sessionBuilder.sessionLength,
@@ -1177,7 +1178,7 @@ function saveSessionConfig() {
 }
 function loadSessionConfig() {
     try {
-        const s = localStorage.getItem(profileKey('gto_session_builder_v1'));
+        const s = localStorage.getItem(profileKey(STORAGE_KEYS.SESSION_BUILDER));
         if (s) {
             const c = JSON.parse(s);
             if (c.module && FAMILY_MODEL[c.module]) sessionBuilder.module = c.module;
@@ -1417,7 +1418,7 @@ function buildDrillConfig() {}
 let challengeState = { active: false, nodeId: null, reqAcc: 0, _thresholds: null };
 
 function saveConfig() {
-    localStorage.setItem(profileKey('gto_config_v2'), JSON.stringify(state.config));
+    localStorage.setItem(profileKey(STORAGE_KEYS.CONFIG), JSON.stringify(state.config));
 }
 function setOpenSize(size) {
     state.config.openSize = size;
@@ -1432,7 +1433,7 @@ function updateOpenSizeUI() {
 }
 function loadConfig() {
     try {
-        const s = localStorage.getItem(profileKey('gto_config_v2'));
+        const s = localStorage.getItem(profileKey(STORAGE_KEYS.CONFIG));
         if (s) {
             const c = JSON.parse(s);
             const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_3BP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_3BP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET', 'POSTFLOP_TURN_DELAYED_DEFEND', 'POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND', 'POSTFLOP_RIVER_CBET', 'POSTFLOP_RIVER_DEFEND', 'POSTFLOP_RIVER_DELAYED_CBET', 'POSTFLOP_RIVER_DELAYED_DEFEND', 'POSTFLOP_RIVER_PROBE', 'POSTFLOP_RIVER_PROBE_BET', 'POSTFLOP_RIVER_TURN_CHECK_CBET', 'POSTFLOP_RIVER_TURN_CHECK_DEFEND', 'POSTFLOP_RIVER_PROBE_CALL_BET', 'POSTFLOP_RIVER_PROBE_CALL_DEFEND'];
@@ -3901,8 +3902,8 @@ function safeGenerateNextRound() {
 // POSTFLOP TRAINING HELPERS
 // ============================================================
 let postflopStats = { total:0, correct:0, streak:0, byArchetype:{}, byFamily:{}, byPosition:{} };
-function loadPostflopStats(){ try { const s=localStorage.getItem(profileKey('gto_postflop_stats_v1')); if(s) postflopStats=JSON.parse(s); } catch(e){} if(!postflopStats.byArchetype) postflopStats.byArchetype={}; if(!postflopStats.byFamily) postflopStats.byFamily={}; if(!postflopStats.byPosition) postflopStats.byPosition={}; }
-function savePostflopStats(){ try { localStorage.setItem(profileKey('gto_postflop_stats_v1'),JSON.stringify(postflopStats)); } catch(e){} }
+function loadPostflopStats(){ try { const s=localStorage.getItem(profileKey(STORAGE_KEYS.POSTFLOP_STATS)); if(s) postflopStats=JSON.parse(s); } catch(e){} if(!postflopStats.byArchetype) postflopStats.byArchetype={}; if(!postflopStats.byFamily) postflopStats.byFamily={}; if(!postflopStats.byPosition) postflopStats.byPosition={}; }
+function savePostflopStats(){ try { localStorage.setItem(profileKey(STORAGE_KEYS.POSTFLOP_STATS),JSON.stringify(postflopStats)); } catch(e){} }
 
 // Fix 7: use _darkBgSuitColor so clubs/spades appear light on the dark trainer background
 function _flopCardsHtml(cards){ return cards.map(c => { const color=_darkBgSuitColor(c.suit); return `<span style="color:${color};font-weight:900;">${c.rank}${SUIT_SYMBOLS[c.suit]}</span>`; }).join(' '); }

@@ -34,6 +34,8 @@ function migrateBaseDataIntoProfile(p) {
     // If user sets a profile for the first time, copy existing Guest keys into profile namespace
     // (so they don’t "lose" progress when switching to username).
     if (!p) return;
+    // NOTE: raw string literals are intentional here. cloud.js loads before engine.js,
+    // so STORAGE_KEYS is not yet defined. Keep in sync with STORAGE_KEYS in engine.js.
     const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
     baseKeys.forEach(k => {
         const namespaced = `${k}__pc_${p}`;
@@ -98,6 +100,7 @@ function hideSettings() { document.getElementById('settings-screen').classList.a
 
         function exportTrainerData() {
     try {
+        // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
         const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
         const profile = getProfileName();
         const payload = {
@@ -170,6 +173,7 @@ function triggerImport() {
                 } catch(e) {}
             }
 
+            // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
             const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
             let wrote = 0;
             allowed.forEach(k => {
@@ -399,6 +403,7 @@ function buildTrainerPayloadForSync() {
     // Keep identical to exportTrainerData payload shape, but always read/write
     // the *active profile* namespace via profileKey(...) so Cloud sync matches
     // what the trainer actually uses.
+    // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
     const baseKeys = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
     const profile = getProfileName(); // '' means Guest
 
@@ -443,6 +448,7 @@ function applyTrainerPayload(payload) {
     } catch(e) {}
 
     // Write only the known keys into the *active* profile namespace.
+    // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
     const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
     const data = payload.data;
 
@@ -536,6 +542,7 @@ function resetStats() {
     state.global = { totalHands: 0, totalCorrect: 0, bestStreak: 0, byScenario: {}, byPos: {}, byPosGroup: {}, bySpot: {}, byHand: {} };
     SR.reset();
     saveMedals({});
+    // NOTE: raw string literal — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
     try { localStorage.removeItem(profileKey('gto_challenge_v1')); } catch(e) {}
     try { if (typeof saveChallengeV2 === 'function') saveChallengeV2({ v: 2, nodes: {}, lastPlayed: null, completedAt: null }); } catch(e) {}
     saveProgress(); updateMenuUI(); renderUserStats();
