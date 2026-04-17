@@ -2373,7 +2373,11 @@ function isPostflopSpotKey(key){return key.startsWith('SRP|')||key.startsWith('3
 // Families: BTN_vs_BB (hero=BB), CO_vs_BB (hero=BB), SB_vs_BB (hero=BB)
 // In all three families, hero is BB defending.
 
-const DEFENDER_FAMILIES = ['BTN_vs_BB', 'CO_vs_BB', 'SB_vs_BB'];
+const DEFENDER_FAMILIES = [
+    'BTN_vs_BB', 'CO_vs_BB', 'SB_vs_BB',   // original three
+    'HJ_vs_BB', 'LJ_vs_BB', 'UTG_vs_BB',   // EP/MP vs BB
+    'BTN_vs_SB', 'CO_vs_BTN'               // SB and BTN defending
+];
 
 const POSTFLOP_DEFEND_VS_CBET = {};
 
@@ -2480,9 +2484,20 @@ const POSTFLOP_DEFEND_VS_CBET = {};
         AIR: 'No made hand or draw. Fold is default; raise-bluff occasionally on PFR-favorable boards.'
     };
 
-    // Family offsets: SB_vs_BB defender defends slightly wider (SB opened tighter range)
-    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
-    // Positive offset → less folding (wider defense). Applied as: fold -= off, call += off/2, raise += off/2
+    // Family offsets: positive = call wider vs baseline (BTN_vs_BB).
+    // Tighter opener range → defender folds more (negative offset).
+    // IP defender (CO_vs_BTN: hero is BTN) calls wider due to positional advantage.
+    const FAM_OFF = {
+        BTN_vs_BB:  0,      // baseline: BTN opens widest, BB defends most
+        CO_vs_BB:   0.02,   // CO slightly tighter, small adj
+        SB_vs_BB:   0.03,   // BB is IP vs SB; SB range wide → call more
+        HJ_vs_BB:  -0.02,   // HJ ~21% range → BB folds slightly more
+        LJ_vs_BB:  -0.04,   // LJ ~15% range → fold more
+        UTG_vs_BB: -0.06,   // UTG ~12% range, very tight → fold significantly more
+        BTN_vs_SB: -0.02,   // SB OOP vs BTN; BTN range wide but positional disadvantage
+        CO_vs_BTN:  0.03,   // BTN IP as defender vs CO; position compensates range disadvantage
+    };
+    // Applied as: fold -= off, call += off*0.5, raise += off*0.5 (then normalised)
 
     for (const fam of DEFENDER_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
@@ -4332,8 +4347,12 @@ const POSTFLOP_TURN_DEFEND_STRATEGY = {};
         AIR:          'No hand — fold. Raise-bluff is occasionally correct on safe boards.'
     };
 
-    // Small family offsets: SB_vs_BB and CO_vs_BB defenders defend slightly wider
-    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+    // Family offsets: positive = call wider. Tighter opener → more folding (negative).
+    const FAM_OFF = {
+        BTN_vs_BB:  0,     CO_vs_BB:   0.02,  SB_vs_BB:   0.03,
+        HJ_vs_BB:  -0.02,  LJ_vs_BB:  -0.04,  UTG_vs_BB: -0.06,
+        BTN_vs_SB: -0.02,  CO_vs_BTN:  0.03,
+    };
 
     for (const fam of DEFENDER_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
@@ -5077,8 +5096,12 @@ const POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY = {};
         AIR:            'Air — mostly fold. Raise-bluff selectively on favorable textures vs capped PFR.'
     };
 
-    // Family offsets: CO_vs_BB and SB_vs_BB defenders get small extra calling width
-    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+    // Family offsets: positive = call wider. Tighter opener → more folding (negative).
+    const FAM_OFF = {
+        BTN_vs_BB:  0,     CO_vs_BB:   0.02,  SB_vs_BB:   0.03,
+        HJ_vs_BB:  -0.02,  LJ_vs_BB:  -0.04,  UTG_vs_BB: -0.06,
+        BTN_vs_SB: -0.02,  CO_vs_BTN:  0.03,
+    };
 
     for (const fam of DEFENDER_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
@@ -6041,7 +6064,11 @@ const POSTFLOP_RIVER_DEFEND_STRATEGY = {};
         AIR:          'No hand — fold.'
     };
 
-    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+    const FAM_OFF = {
+        BTN_vs_BB:  0,     CO_vs_BB:   0.02,  SB_vs_BB:   0.03,
+        HJ_vs_BB:  -0.02,  LJ_vs_BB:  -0.04,  UTG_vs_BB: -0.06,
+        BTN_vs_SB: -0.02,  CO_vs_BTN:  0.03,
+    };
 
     for (const fam of DEFENDER_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
@@ -6525,7 +6552,11 @@ const POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY = {};
         AIR:            'No hand — fold; even a wider PFR range beats air.'
     };
 
-    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+    const FAM_OFF = {
+        BTN_vs_BB:  0,     CO_vs_BB:   0.02,  SB_vs_BB:   0.03,
+        HJ_vs_BB:  -0.02,  LJ_vs_BB:  -0.04,  UTG_vs_BB: -0.06,
+        BTN_vs_SB: -0.02,  CO_vs_BTN:  0.03,
+    };
 
     for (const fam of DEFENDER_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
@@ -7316,7 +7347,11 @@ const POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY = {};
         OVERCARDS:      'Overcards — fold most; PFR\'s range has enough value to make calling thin.',
         AIR:            'Air — fold; no equity against even a capped PFR range.'
     };
-    const FAM_OFF = { BTN_vs_BB: 0, CO_vs_BB: 0.02, SB_vs_BB: 0.03 };
+    const FAM_OFF = {
+        BTN_vs_BB:  0,     CO_vs_BB:   0.02,  SB_vs_BB:   0.03,
+        HJ_vs_BB:  -0.02,  LJ_vs_BB:  -0.04,  UTG_vs_BB: -0.06,
+        BTN_vs_SB: -0.02,  CO_vs_BTN:  0.03,
+    };
     for (const fam of DEFENDER_FAMILIES) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
         if (!fi) continue;
