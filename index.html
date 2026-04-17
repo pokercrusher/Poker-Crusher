@@ -558,39 +558,39 @@
                 <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">2.</span><span><span class="text-slate-200 font-bold">DAILY RUN</span> — one shot per difficulty per day. Score = correct answers in a row.</span></div>
                 <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">3.</span><span><span class="text-slate-200 font-bold">REVIEW</span> — hands you've missed come back on a schedule. Check it daily.</span></div>
             </div>
-            <button onclick="dismissOnboarding()" class="mt-2 text-[9px] text-slate-600 hover:text-slate-400 font-bold uppercase tracking-wider">Dismiss</button>
+            <button id="btn-dismiss-onboarding" class="mt-2 text-[9px] text-slate-600 hover:text-slate-400 font-bold uppercase tracking-wider">Dismiss</button>
         </div>
 
         <div class="w-full flex flex-col gap-3">
-            <button onclick="showConfigMenu()" class="w-full py-5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-xl transition-all shadow-lg">
+            <button id="btn-train-now" class="w-full py-5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-xl transition-all shadow-lg">
                 TRAIN NOW
             </button>
 
-            <button onclick="showDailyRunMenu()" class="w-full py-4 bg-indigo-700/90 hover:bg-indigo-600 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
+            <button id="btn-daily-run" class="w-full py-4 bg-indigo-700/90 hover:bg-indigo-600 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
                 <span>🔥</span><span>DAILY RUN</span>
             </button>
 
             <div class="flex flex-col gap-1">
-                <button onclick="showChallengeMenu()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
+                <button id="btn-challenge" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
                     <span>🏆</span><span>CHALLENGE MODE</span>
                 </button>
             </div>
-            <button onclick="showLibrary()" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
+            <button id="btn-library" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
                 STRATEGY LIBRARY
             </button>
             <!-- Prescription card: populated by updateMenuUI() -->
             <div id="menu-prescription-card" class="w-full bg-slate-900/60 border border-slate-700/40 rounded-2xl p-4 text-left"></div>
-            <button onclick="showMathDrillMenu()" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
+            <button id="btn-math-drills" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                 MATH DRILLS
             </button>
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="showUserStats()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
+                <button id="btn-my-stats" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                     MY STATS
                 </button>
-                <button onclick="showSettings()" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm col-span-1">
+                <button id="btn-settings" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm col-span-1">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.5.36 1.05.36 1.62v.76c0 .57-.12 1.12-.36 1.62Z"/></svg>
                     SETTINGS
                 </button>
@@ -607,7 +607,7 @@
                     <p class="pc-eyebrow text-emerald-400/80">Challenge Path</p>
                     <h2 class="pc-title mt-0.5">Campaign</h2>
                 </div>
-                <button onclick="closeChallengeMenu()" class="pc-btn-utility px-3 py-2 text-xs">Back</button>
+                <button id="btn-close-challenge" class="pc-btn-utility px-3 py-2 text-xs">Back</button>
             </div>
 
             <div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">
@@ -625,7 +625,7 @@
             <div id="challenge-body" class="flex flex-col gap-2"></div>
 
             <div class="pt-2">
-                <button onclick="resetChallengeProgress()" class="w-full py-3 pc-btn-utility font-bold text-xs text-slate-500">
+                <button id="btn-reset-challenge" class="w-full py-3 pc-btn-utility font-bold text-xs text-slate-500">
                     Reset Challenge Progress
                 </button>
             </div>
@@ -638,7 +638,7 @@
         <!-- Fixed header: title + close -->
         <div class="shrink-0 px-5 pt-5 pb-3 border-b border-white/5 flex justify-between items-center">
             <h2 class="pc-title">GTO Library</h2>
-            <button onclick="hideLibrary()" class="p-2 bg-slate-900 rounded-lg text-slate-400">
+            <button id="btn-hide-library" class="p-2 bg-slate-900 rounded-lg text-slate-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
@@ -647,15 +647,15 @@
         <div class="shrink-0 bg-slate-950 border-b border-white/5 px-4 pt-3 pb-2 flex flex-col gap-2">
             <!-- Row 1: scenario category tabs -->
             <div id="lib-nav" class="flex gap-1.5 overflow-x-auto scroll-hide pb-1">
-                <button id="lib-tab-RFI" onclick="setLibCategory('RFI')" class="pc-chip pc-chip-sm active">RFI</button>
-                <button id="lib-tab-FACING_RFI" onclick="setLibCategory('FACING_RFI')" class="pc-chip pc-chip-sm">Defending vs RFI</button>
-                <button id="lib-tab-RFI_VS_3BET" onclick="setLibCategory('RFI_VS_3BET')" class="pc-chip pc-chip-sm">vs 3-Bet</button>
-                <button id="lib-tab-VS_4BET" onclick="setLibCategory('VS_4BET')" class="pc-chip pc-chip-sm">vs 4-Bet</button>
-                <button id="lib-tab-VS_LIMP" onclick="setLibCategory('VS_LIMP')" class="pc-chip pc-chip-sm">vs Limpers</button>
-                <button id="lib-tab-SQUEEZE" onclick="setLibCategory('SQUEEZE')" class="pc-chip pc-chip-sm">Squeeze</button>
-                <button id="lib-tab-SQUEEZE_2C" onclick="setLibCategory('SQUEEZE_2C')" class="pc-chip pc-chip-sm">Squeeze 2C</button>
-                <button id="lib-tab-PUSH_FOLD" onclick="setLibCategory('PUSH_FOLD')" class="pc-chip pc-chip-sm">Push/Fold</button>
-                <button id="lib-tab-POSTFLOP" onclick="setLibCategory('POSTFLOP')" class="pc-chip pc-chip-sm">Postflop</button>
+                <button id="lib-tab-RFI" data-lib-category="RFI" class="pc-chip pc-chip-sm active">RFI</button>
+                <button id="lib-tab-FACING_RFI" data-lib-category="FACING_RFI" class="pc-chip pc-chip-sm">Defending vs RFI</button>
+                <button id="lib-tab-RFI_VS_3BET" data-lib-category="RFI_VS_3BET" class="pc-chip pc-chip-sm">vs 3-Bet</button>
+                <button id="lib-tab-VS_4BET" data-lib-category="VS_4BET" class="pc-chip pc-chip-sm">vs 4-Bet</button>
+                <button id="lib-tab-VS_LIMP" data-lib-category="VS_LIMP" class="pc-chip pc-chip-sm">vs Limpers</button>
+                <button id="lib-tab-SQUEEZE" data-lib-category="SQUEEZE" class="pc-chip pc-chip-sm">Squeeze</button>
+                <button id="lib-tab-SQUEEZE_2C" data-lib-category="SQUEEZE_2C" class="pc-chip pc-chip-sm">Squeeze 2C</button>
+                <button id="lib-tab-PUSH_FOLD" data-lib-category="PUSH_FOLD" class="pc-chip pc-chip-sm">Push/Fold</button>
+                <button id="lib-tab-POSTFLOP" data-lib-category="POSTFLOP" class="pc-chip pc-chip-sm">Postflop</button>
             </div>
             <!-- Row 2: hero position picker (always shown) -->
             <div id="lib-hero-row" class="flex gap-1.5 overflow-x-auto scroll-hide pb-1"></div>
@@ -703,7 +703,7 @@
                     <div id="rc-wrong-rows"></div>
                 </div>
             </div>
-            <button onclick="closeReviewComplete()" class="w-full py-4 pc-btn-primary transition-all">Back to Menu</button>
+            <button id="btn-close-review-complete" class="w-full py-4 pc-btn-primary transition-all">Back to Menu</button>
         </div>
     </div>
 
@@ -734,7 +734,7 @@
                     <div id="ss-spot-rows"></div>
                 </div>
             </div>
-            <button onclick="closeSessionSummary()" class="w-full py-4 pc-btn-primary transition-all">Back to Menu</button>
+            <button id="btn-close-session-summary" class="w-full py-4 pc-btn-primary transition-all">Back to Menu</button>
         </div>
     </div>
 
@@ -746,7 +746,7 @@
                     <p class="pc-eyebrow text-amber-400/80">Spaced Repetition</p>
                     <h2 class="pc-title mt-0.5">Today's Review</h2>
                 </div>
-                <button onclick="hideReviewPreview()" class="pc-btn-utility px-3 py-2 text-xs">Back</button>
+                <button id="btn-hide-review-preview" class="pc-btn-utility px-3 py-2 text-xs">Back</button>
             </div>
 
             <!-- Session summary card -->
@@ -772,7 +772,7 @@
                 You have a daily cap of <span class="text-slate-300 font-bold">20 review hands</span>. The most overdue and weakest spots are picked first. Come back tomorrow for the next batch.
             </div>
 
-            <button onclick="launchReviewSession()" class="w-full py-5 pc-btn-primary transition-all shadow-lg">
+            <button id="btn-launch-review" class="w-full py-5 pc-btn-primary transition-all shadow-lg">
                 START REVIEW
             </button>
         </div>
@@ -782,7 +782,7 @@
     <div id="stats-screen" class="hidden fixed inset-0 bg-slate-950 z-[60] flex flex-col overflow-hidden">
         <div class="p-6 border-b border-white/5 flex justify-between items-center shrink-0">
             <h2 class="pc-title">My Stats</h2>
-            <button onclick="hideUserStats()" class="p-2 bg-slate-900 rounded-lg text-slate-400">
+            <button id="btn-hide-stats" class="p-2 bg-slate-900 rounded-lg text-slate-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
@@ -796,7 +796,7 @@
     <div id="daily-run-screen" class="hidden fixed inset-0 bg-slate-950/98 backdrop-blur-xl flex flex-col items-center justify-start overflow-y-auto z-40">
         <div class="w-full max-w-md p-6 flex flex-col gap-5">
             <div class="flex items-center justify-between">
-                <button onclick="showMenu()" class="pc-btn-utility px-4 py-2 text-sm">← Back</button>
+                <button id="btn-daily-run-back" class="pc-btn-utility px-4 py-2 text-sm">← Back</button>
                 <div class="text-right">
                     <div class="pc-eyebrow text-slate-500">Daily Run</div>
                     <div class="pc-title">Daily Run</div>
@@ -808,15 +808,15 @@
             </div>
 
             <div class="grid grid-cols-1 gap-3">
-                <button onclick="startDailyRun('easy')" id="daily-run-btn-easy" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
+                <button id="daily-run-btn-easy" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
                     <span class="flex items-center gap-3"><span class="text-lg">🟢</span><span>Warm‑Up</span></span>
                     <span class="flex flex-col items-end gap-0.5"><span class="text-slate-400 text-sm font-bold">Opens &amp; calls</span><span class="dr-btn-best hidden text-[9px] font-bold text-emerald-400/80"></span></span>
                 </button>
-                <button onclick="startDailyRun('medium')" id="daily-run-btn-medium" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
+                <button id="daily-run-btn-medium" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
                     <span class="flex items-center gap-3"><span class="text-lg">🟡</span><span>Grind</span></span>
                     <span class="flex flex-col items-end gap-0.5"><span class="text-slate-400 text-sm font-bold">3-bets &amp; squeezes</span><span class="dr-btn-best hidden text-[9px] font-bold text-yellow-400/80"></span></span>
                 </button>
-                <button onclick="startDailyRun('hard')" id="daily-run-btn-hard" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
+                <button id="daily-run-btn-hard" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-between px-5">
                     <span class="flex items-center gap-3"><span class="text-lg">🔴</span><span>Boss</span></span>
                     <span class="flex flex-col items-end gap-0.5"><span class="text-slate-400 text-sm font-bold">Postflop</span><span class="dr-btn-best hidden text-[9px] font-bold text-rose-400/80"></span></span>
                 </button>
@@ -837,8 +837,8 @@
             </div>
             <div id="daily-run-complete-body" class="mt-4"></div>
             <div class="mt-5 flex flex-col gap-3">
-                <button id="dr-play-again-btn" onclick="drPlayAgain()" class="w-full py-4 pc-btn-aggressive active:scale-[0.98] transition-all shadow-lg" style="border-radius:16px;font-size:16px;">Play Again</button>
-                <button onclick="endDailyRunToMenu()" class="w-full py-4 pc-btn-primary transition-all shadow-lg">Main Menu</button>
+                <button id="dr-play-again-btn" class="w-full py-4 pc-btn-aggressive active:scale-[0.98] transition-all shadow-lg" style="border-radius:16px;font-size:16px;">Play Again</button>
+                <button id="btn-daily-run-to-menu" class="w-full py-4 pc-btn-primary transition-all shadow-lg">Main Menu</button>
             </div>
         </div>
     </div>
@@ -853,7 +853,7 @@
                     <p class="pc-eyebrow text-indigo-400/80">Train Now</p>
                     <h2 class="pc-title mt-0.5">Session Builder</h2>
                 </div>
-                <button onclick="hideConfigMenu()" class="pc-btn-utility px-3 py-2 text-xs">Back</button>
+                <button id="btn-config-back-header" class="pc-btn-utility px-3 py-2 text-xs">Back</button>
             </div>
 
             <!-- Spots (preflop + postflop combined) -->
@@ -889,9 +889,9 @@
                 <div id="filter-limper-mix" class="hidden bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Limper Table Mix</p>
                     <div class="grid grid-cols-3 gap-2">
-                        <button onclick="setLimperMix('mostly1')" id="lmix-mostly1" class="config-btn py-2.5 rounded-xl text-[11px] font-bold">Tight</button>
-                        <button onclick="setLimperMix('liveish')" id="lmix-liveish" class="config-btn py-2.5 rounded-xl text-[11px] font-bold">Live 1/3</button>
-                        <button onclick="setLimperMix('multiway')" id="lmix-multiway" class="config-btn py-2.5 rounded-xl text-[11px] font-bold selected">Active</button>
+                        <button id="lmix-mostly1" class="config-btn py-2.5 rounded-xl text-[11px] font-bold">Tight</button>
+                        <button id="lmix-liveish" class="config-btn py-2.5 rounded-xl text-[11px] font-bold">Live 1/3</button>
+                        <button id="lmix-multiway" class="config-btn py-2.5 rounded-xl text-[11px] font-bold selected">Active</button>
                     </div>
                     <p class="text-[9px] text-slate-600 mt-2 leading-snug">1L / 2L / 3+ — Tight: 70/22/8 · Live: 50/32/18 · Active: 38/40/22</p>
                 </div>
@@ -910,10 +910,10 @@
             <div class="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-4">
                 <p class="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-3">Session Length</p>
                 <div class="flex gap-2">
-                    <button onclick="setSessionLength('ENDLESS')" id="slen-ENDLESS" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">&#8734; Endless</button>
-                    <button onclick="setSessionLength(10)" id="slen-10" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">10</button>
-                    <button onclick="setSessionLength(25)" id="slen-25" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">25</button>
-                    <button onclick="setSessionLength(50)" id="slen-50" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">50</button>
+                    <button id="slen-ENDLESS" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">&#8734; Endless</button>
+                    <button id="slen-10" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">10</button>
+                    <button id="slen-25" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">25</button>
+                    <button id="slen-50" class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all config-btn">50</button>
                 </div>
             </div>
 
@@ -927,8 +927,8 @@
 
             <!-- CTA -->
             <div class="flex flex-col gap-3 mt-1">
-                <button onclick="launchConfiguredSession()" id="cfg-start-btn" class="w-full py-5 pc-btn-primary transition-all shadow-lg">START TRAINING</button>
-                <button onclick="hideConfigMenu()" class="w-full py-3 pc-btn-utility font-bold text-sm">Back</button>
+                <button id="cfg-start-btn" class="w-full py-5 pc-btn-primary transition-all shadow-lg">START TRAINING</button>
+                <button id="btn-config-back-footer" class="w-full py-3 pc-btn-utility font-bold text-sm">Back</button>
             </div>
         </div>
     </div>
@@ -944,7 +944,7 @@
         <div id="sim-session-hud" style="display:none;width:100%;background:#0f172a;border-bottom:1px solid #1e293b;padding:4px 16px;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;font-size:10px;"></div>
         <!-- Header -->
         <div id="trainer-header" class="w-full flex justify-between items-center bg-slate-900/30 border-b border-white/5 shrink-0 z-30" style="padding: clamp(8px,1.5vh,14px) clamp(10px,2vw,24px); max-width: 1200px; margin: 0 auto;">
-            <button onclick="confirmExit()" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg" style="font-size:clamp(10px,1.4vh,13px);padding:clamp(6px,1vh,10px) clamp(10px,1.4vw,16px);">Exit</button>
+            <button id="btn-confirm-exit" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg" style="font-size:clamp(10px,1.4vh,13px);padding:clamp(6px,1vh,10px) clamp(10px,1.4vw,16px);">Exit</button>
             <div class="flex gap-6">
                 <div id="drill-counter" class="hidden text-right">
                     <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(9px,1.1vh,12px);margin-bottom:2px;">Hands</p>
@@ -966,7 +966,7 @@
                     <p class="text-slate-500 font-bold uppercase" style="font-size:clamp(9px,1.1vh,12px);margin-bottom:2px;">Best</p>
                     <p id="streak-best" class="font-black text-slate-500" style="font-size:clamp(18px,2.5vh,26px);">0</p>
                 </div>
-                <button onclick="showSessionLog()" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg flex items-center gap-1" style="font-size:clamp(10px,1.4vh,13px);padding:clamp(6px,1vh,10px) clamp(10px,1.4vw,16px);">
+                <button id="btn-show-log" class="text-slate-400 font-bold uppercase tracking-widest hover:text-white bg-slate-800 rounded-lg flex items-center gap-1" style="font-size:clamp(10px,1.4vh,13px);padding:clamp(6px,1vh,10px) clamp(10px,1.4vw,16px);">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
                     LOG
                 </button>
@@ -1032,7 +1032,7 @@
     <div id="settings-screen" class="hidden fixed inset-0 bg-slate-950 z-[60] flex flex-col overflow-hidden">
         <div class="p-6 border-b border-white/5 flex justify-between items-center shrink-0">
             <h2 class="pc-title">Settings</h2>
-            <button onclick="hideSettings()" class="p-2 bg-slate-900 rounded-lg text-slate-400">
+            <button id="btn-hide-settings" class="p-2 bg-slate-900 rounded-lg text-slate-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
@@ -1045,7 +1045,7 @@
                 <!-- Signed-out state -->
                 <div id="auth-signed-out">
                     <p class="text-sm text-slate-300 leading-relaxed mb-4">Sign in to automatically sync your progress across all your devices.</p>
-                    <button onclick="signInWithGoogle()" class="w-full py-4 bg-white hover:bg-slate-100 active:bg-slate-200 rounded-2xl font-black transition-all flex items-center justify-center gap-3 text-slate-900 text-[15px]">
+                    <button id="btn-sign-in" class="w-full py-4 bg-white hover:bg-slate-100 active:bg-slate-200 rounded-2xl font-black transition-all flex items-center justify-center gap-3 text-slate-900 text-[15px]">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
                             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -1067,7 +1067,7 @@
                                 <div id="auth-last-sync" class="text-[11px] text-emerald-500/80 mt-0.5"></div>
                             </div>
                         </div>
-                        <button onclick="signOutCloud()" class="shrink-0 text-[11px] font-black text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl transition-all">SIGN OUT</button>
+                        <button id="btn-sign-out" class="shrink-0 text-[11px] font-black text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl transition-all">SIGN OUT</button>
                     </div>
                     <div class="flex items-center justify-between gap-3 bg-slate-950/40 border border-slate-800 rounded-xl p-3 mb-3">
                         <label class="flex items-center gap-2 text-[12px] font-black text-slate-200 cursor-pointer">
@@ -1083,7 +1083,7 @@
                             </select>
                         </div>
                     </div>
-                    <button onclick="cloudSyncNow()" class="w-full py-3 bg-emerald-600/15 border border-emerald-500/30 hover:bg-emerald-600/25 rounded-2xl font-black text-emerald-400 transition-all text-[13px] flex items-center justify-center gap-2">
+                    <button id="btn-sync-now" class="w-full py-3 bg-emerald-600/15 border border-emerald-500/30 hover:bg-emerald-600/25 rounded-2xl font-black text-emerald-400 transition-all text-[13px] flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
                         SYNC NOW
                     </button>
@@ -1096,12 +1096,12 @@
                 </p>
 
                 <div class="flex flex-col gap-3">
-                    <button onclick="exportTrainerData()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black transition-all flex items-center justify-center gap-2">
+                    <button id="btn-export" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black transition-all flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                         EXPORT DATA
                     </button>
 
-                    <button onclick="triggerImport()" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-center gap-2">
+                    <button id="btn-import" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-2xl font-black text-slate-200 transition-all flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
                         IMPORT DATA
                     </button>
@@ -1126,11 +1126,11 @@
 
 
     <!-- SESSION LOG PANEL -->
-    <div id="session-log-panel" class="hidden fixed inset-0 z-[75] flex flex-col justify-end" style="background:rgba(0,0,0,0.6);" onclick="if(event.target===this)hideSessionLog()">
+    <div id="session-log-panel" class="hidden fixed inset-0 z-[75] flex flex-col justify-end" style="background:rgba(0,0,0,0.6);">
         <div class="bg-slate-900 border-t border-slate-700 rounded-t-3xl flex flex-col panel-slide-up" style="max-height:75vh;">
             <div class="flex justify-between items-center px-5 py-4 border-b border-white/5 shrink-0">
                 <h3 class="font-black text-base">Session Log</h3>
-                <button onclick="hideSessionLog()" class="p-1.5 bg-slate-800 rounded-lg text-slate-400">
+                <button id="btn-close-log" class="p-1.5 bg-slate-800 rounded-lg text-slate-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                 </button>
             </div>
@@ -1142,12 +1142,12 @@
     <div id="drilldown-panel" class="hidden fixed inset-0 bg-slate-950 z-[80] flex flex-col overflow-hidden">
         <div class="p-5 border-b border-white/5 flex justify-between items-center shrink-0">
             <div class="flex items-center gap-3">
-                <button onclick="hideDrilldown()" class="p-1.5 bg-slate-800 rounded-lg text-slate-400">
+                <button id="btn-drilldown-back" class="p-1.5 bg-slate-800 rounded-lg text-slate-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                 </button>
                 <h3 id="drilldown-title" class="font-black text-base"></h3>
             </div>
-            <button onclick="hideDrilldown()" class="p-1.5 bg-slate-800 rounded-lg text-slate-400">
+            <button id="btn-drilldown-close" class="p-1.5 bg-slate-800 rounded-lg text-slate-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
@@ -1162,7 +1162,7 @@
             <div id="chart-legend" class="flex gap-4 mb-4 text-[9px] font-bold uppercase tracking-wider"></div>
             <div id="chart-bucket-toggle" class="hidden flex gap-2 mb-3"></div>
             <div id="chart-container" class="range-grid w-full mb-6"></div>
-            <button onclick="closeChart()" class="w-full py-4 pc-btn-primary transition-colors">Resume</button>
+            <button id="btn-close-chart" class="w-full py-4 pc-btn-primary transition-colors">Resume</button>
         </div>
     </div>
 
@@ -1240,8 +1240,8 @@
             </div>
             <div id="campaign-medal-counts" class="w-full bg-slate-900/60 border border-amber-500/20 rounded-2xl p-5"></div>
             <div class="flex flex-col gap-3 w-full">
-                <button onclick="closeCampaignComplete()" class="w-full py-4 pc-btn-primary transition-all">Back to Campaign</button>
-                <button onclick="closeCampaignCompleteToMenu()" class="w-full py-4 pc-btn-utility font-bold text-sm">Main Menu</button>
+                <button id="btn-close-campaign" class="w-full py-4 pc-btn-primary transition-all">Back to Campaign</button>
+                <button id="btn-campaign-to-menu" class="w-full py-4 pc-btn-utility font-bold text-sm">Main Menu</button>
             </div>
         </div>
     </div>
@@ -1250,7 +1250,7 @@
     <div id="math-drill-screen" class="hidden fixed inset-0 bg-slate-950 z-50 flex flex-col overflow-hidden">
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800/60 shrink-0">
-            <button onclick="exitMathDrill()" class="text-slate-500 hover:text-slate-300 text-[11px] font-black uppercase tracking-widest px-3 py-2 rounded-xl hover:bg-slate-800/50 transition-all">EXIT</button>
+            <button id="btn-exit-math-drill" class="text-slate-500 hover:text-slate-300 text-[11px] font-black uppercase tracking-widest px-3 py-2 rounded-xl hover:bg-slate-800/50 transition-all">EXIT</button>
             <span id="math-drill-title" class="text-[11px] font-black text-slate-400 uppercase tracking-widest">Math Drills</span>
             <span id="math-drill-progress" class="text-[11px] font-bold text-slate-500 min-w-[40px] text-right"></span>
         </div>

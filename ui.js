@@ -2717,7 +2717,92 @@ function renderSettingsStakeDisplay() {
     };
 })();
 
-window.onload = function(){ loadProgress(); try{ updateMenuUI(); }catch(e){} try{ updateOpenSizeUI(); }catch(e){} startCloudAutosaveLoop(false); };
+function initEventListeners() {
+    // ── Menu screen ──
+    document.getElementById('btn-dismiss-onboarding').addEventListener('click', dismissOnboarding);
+    document.getElementById('btn-train-now').addEventListener('click', showConfigMenu);
+    document.getElementById('btn-daily-run').addEventListener('click', showDailyRunMenu);
+    document.getElementById('btn-challenge').addEventListener('click', showChallengeMenu);
+    document.getElementById('btn-library').addEventListener('click', showLibrary);
+    document.getElementById('btn-math-drills').addEventListener('click', showMathDrillMenu);
+    document.getElementById('btn-my-stats').addEventListener('click', showUserStats);
+    document.getElementById('btn-settings').addEventListener('click', showSettings);
+
+    // ── Challenge screen ──
+    document.getElementById('btn-close-challenge').addEventListener('click', closeChallengeMenu);
+    document.getElementById('btn-reset-challenge').addEventListener('click', resetChallengeProgress);
+
+    // ── Library screen ──
+    document.getElementById('btn-hide-library').addEventListener('click', hideLibrary);
+    // setLibCategory: delegate on #lib-nav; buttons carry data-lib-category
+    document.getElementById('lib-nav').addEventListener('click', function(e) {
+        var cat = e.target.closest('[data-lib-category]');
+        if (cat) setLibCategory(cat.dataset.libCategory);
+    });
+
+    // ── Review / session summary / review preview ──
+    document.getElementById('btn-close-review-complete').addEventListener('click', closeReviewComplete);
+    document.getElementById('btn-close-session-summary').addEventListener('click', closeSessionSummary);
+    document.getElementById('btn-hide-review-preview').addEventListener('click', hideReviewPreview);
+    document.getElementById('btn-launch-review').addEventListener('click', launchReviewSession);
+
+    // ── Stats screen ──
+    document.getElementById('btn-hide-stats').addEventListener('click', hideUserStats);
+
+    // ── Daily run screen ──
+    document.getElementById('btn-daily-run-back').addEventListener('click', showMenu);
+    document.getElementById('daily-run-btn-easy').addEventListener('click', function() { startDailyRun('easy'); });
+    document.getElementById('daily-run-btn-medium').addEventListener('click', function() { startDailyRun('medium'); });
+    document.getElementById('daily-run-btn-hard').addEventListener('click', function() { startDailyRun('hard'); });
+    document.getElementById('dr-play-again-btn').addEventListener('click', drPlayAgain);
+    document.getElementById('btn-daily-run-to-menu').addEventListener('click', endDailyRunToMenu);
+
+    // ── Session builder (config screen) ──
+    document.getElementById('btn-config-back-header').addEventListener('click', hideConfigMenu);
+    document.getElementById('btn-config-back-footer').addEventListener('click', hideConfigMenu);
+    document.getElementById('lmix-mostly1').addEventListener('click', function() { setLimperMix('mostly1'); });
+    document.getElementById('lmix-liveish').addEventListener('click', function() { setLimperMix('liveish'); });
+    document.getElementById('lmix-multiway').addEventListener('click', function() { setLimperMix('multiway'); });
+    document.getElementById('slen-ENDLESS').addEventListener('click', function() { setSessionLength('ENDLESS'); });
+    document.getElementById('slen-10').addEventListener('click', function() { setSessionLength(10); });
+    document.getElementById('slen-25').addEventListener('click', function() { setSessionLength(25); });
+    document.getElementById('slen-50').addEventListener('click', function() { setSessionLength(50); });
+    document.getElementById('cfg-start-btn').addEventListener('click', launchConfiguredSession);
+
+    // ── Trainer screen ──
+    document.getElementById('btn-confirm-exit').addEventListener('click', confirmExit);
+    document.getElementById('btn-show-log').addEventListener('click', showSessionLog);
+
+    // ── Settings screen ──
+    document.getElementById('btn-hide-settings').addEventListener('click', hideSettings);
+    document.getElementById('btn-sign-in').addEventListener('click', signInWithGoogle);
+    document.getElementById('btn-sign-out').addEventListener('click', signOutCloud);
+    document.getElementById('btn-sync-now').addEventListener('click', cloudSyncNow);
+    document.getElementById('btn-export').addEventListener('click', exportTrainerData);
+    document.getElementById('btn-import').addEventListener('click', triggerImport);
+
+    // ── Session log panel ──
+    document.getElementById('session-log-panel').addEventListener('click', function(e) {
+        if (e.target === e.currentTarget) hideSessionLog();
+    });
+    document.getElementById('btn-close-log').addEventListener('click', hideSessionLog);
+
+    // ── Stats drilldown panel ──
+    document.getElementById('btn-drilldown-back').addEventListener('click', hideDrilldown);
+    document.getElementById('btn-drilldown-close').addEventListener('click', hideDrilldown);
+
+    // ── Chart modal ──
+    document.getElementById('btn-close-chart').addEventListener('click', closeChart);
+
+    // ── Campaign complete screen ──
+    document.getElementById('btn-close-campaign').addEventListener('click', closeCampaignComplete);
+    document.getElementById('btn-campaign-to-menu').addEventListener('click', closeCampaignCompleteToMenu);
+
+    // ── Math drills screen ──
+    document.getElementById('btn-exit-math-drill').addEventListener('click', exitMathDrill);
+}
+
+window.onload = function(){ loadProgress(); try{ updateMenuUI(); }catch(e){} try{ updateOpenSizeUI(); }catch(e){} startCloudAutosaveLoop(false); initEventListeners(); };
 
 // Forward wheel events to #menu-screen when it is the active screen,
 // so scrolling works even when the mouse is outside the narrow center column.
