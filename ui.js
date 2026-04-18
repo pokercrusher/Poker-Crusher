@@ -850,6 +850,14 @@ function getScenarioPot$(scenario) {
         if (state.postflop) return get3BPPot$(state.postflop.preflopFamily);
         return open$ * 6 + getSmallBlind$() + getBigBlind$();
     }
+    if (scenario === 'POSTFLOP_3BP_TURN_CBET' || scenario === 'POSTFLOP_3BP_TURN_DEFEND') {
+        if (state.postflop) return Math.round(get3BPPot$(state.postflop.preflopFamily) * 1.66);
+        return Math.round((open$ * 6 + getSmallBlind$() + getBigBlind$()) * 1.66);
+    }
+    if (scenario === 'POSTFLOP_3BP_RIVER_CBET' || scenario === 'POSTFLOP_3BP_RIVER_DEFEND') {
+        if (state.postflop) return Math.round(get3BPPot$(state.postflop.preflopFamily) * 3.3);
+        return Math.round((open$ * 6 + getSmallBlind$() + getBigBlind$()) * 3.3);
+    }
     if (scenario === 'POSTFLOP_TURN_CBET') {
         if (state.postflop) return Math.round(getSRPPot$(state.postflop.preflopFamily) * 1.66);
         return Math.round((open$ * 2 + getSmallBlind$()) * 1.66);

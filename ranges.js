@@ -2940,6 +2940,23 @@ function generate3BPDefenderSpot(maxRetries, familyFilter) {
 }
 
 // ============================================================
+// 3BP POSTFLOP PHASES 2+3 — TURN AND RIVER KEY BUILDERS
+// ============================================================
+
+function make3BPTurnCBetSpotKeyV1(spot) {
+    return `3BP|${spot.preflopFamily}|TURN|PFR|${spot.positionState}|TURN_CBET_DECISION|${spot.turnFamily}|${spot.heroHandClass}`;
+}
+function make3BPTurnDefendSpotKeyV1(spot) {
+    return `3BP|${spot.preflopFamily}|TURN|DEFENDER|${spot.positionState}|TURN_VS_BET_DECISION|${spot.turnFamily}|${spot.heroHandClass}`;
+}
+function make3BPRiverCBetSpotKeyV1(spot) {
+    return `3BP|${spot.preflopFamily}|RIVER|PFR|${spot.positionState}|RIVER_CBET_DECISION|${spot.riverFamily}|${spot.heroHandClass}`;
+}
+function make3BPRiverDefendSpotKeyV1(spot) {
+    return `3BP|${spot.preflopFamily}|RIVER|DEFENDER|${spot.positionState}|RIVER_VS_BET_DECISION|${spot.riverFamily}|${spot.heroHandClass}`;
+}
+
+// ============================================================
 // SRP POSTFLOP PHASE 2 — TURN ARCHITECTURE
 // ============================================================
 // Covers: turn card family classification, turn hand reclassification,
@@ -4399,6 +4416,381 @@ const POSTFLOP_TURN_DEFEND_STRATEGY = {};
         console.log(`[TurnV1] Built ${Object.keys(POSTFLOP_TURN_DEFEND_STRATEGY).length} defender turn strategy entries.`);
     }
 })();
+
+// --- 3BP Turn strategy: PFR barrel (bet50 vs check) ---
+const POSTFLOP_3BP_TURN_STRATEGY = {};
+
+(function() {
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.92 },
+        QUADS:          { _default: 0.90 },
+        FULL_HOUSE:     { _default: 0.90, FLUSH_COMPLETE: 0.85, STRAIGHT_COMPLETE: 0.83 },
+        FLUSH:          { _default: 0.88, FLUSH_COMPLETE: 0.83 },
+        STRAIGHT:       { _default: 0.82 },
+        SET:            { _default: 0.90, FLUSH_COMPLETE: 0.80, STRAIGHT_COMPLETE: 0.76 },
+        TRIPS:          { _default: 0.86, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.72,
+                          BOARD_PAIR: 0.84, ACE_OVERCARD: 0.78, BROADWAY_OVERCARD: 0.82 },
+        BOARD_TRIPS:    { _default: 0.52, BRICK: 0.56, LOW_BLANK: 0.60, FLUSH_COMPLETE: 0.36,
+                          STRAIGHT_COMPLETE: 0.32, ACE_OVERCARD: 0.42, BROADWAY_OVERCARD: 0.46,
+                          OVERCARD: 0.44, BOARD_PAIR: 0.50, DYNAMIC_CONNECTOR: 0.44 },
+        TWO_PAIR:       { _default: 0.82, FLUSH_COMPLETE: 0.69, STRAIGHT_COMPLETE: 0.66, ACE_OVERCARD: 0.74 },
+        OVERPAIR:       { _default: 0.76, ACE_OVERCARD: 0.36, FLUSH_COMPLETE: 0.60, STRAIGHT_COMPLETE: 0.55,
+                          BROADWAY_OVERCARD: 0.63, OVERCARD: 0.60, BOARD_PAIR: 0.70, DYNAMIC_CONNECTOR: 0.67 },
+        TOP_PAIR:       { _default: 0.64, BRICK: 0.68, LOW_BLANK: 0.72, ACE_OVERCARD: 0.40,
+                          FLUSH_COMPLETE: 0.45, STRAIGHT_COMPLETE: 0.42, BROADWAY_OVERCARD: 0.50,
+                          OVERCARD: 0.50, BOARD_PAIR: 0.58, DYNAMIC_CONNECTOR: 0.54 },
+        SECOND_PAIR:    { _default: 0.32, BRICK: 0.36, LOW_BLANK: 0.40, ACE_OVERCARD: 0.22,
+                          FLUSH_COMPLETE: 0.22, STRAIGHT_COMPLETE: 0.18, BROADWAY_OVERCARD: 0.26,
+                          OVERCARD: 0.24, BOARD_PAIR: 0.28, DYNAMIC_CONNECTOR: 0.28 },
+        THIRD_PAIR:     { _default: 0.20, BRICK: 0.24, LOW_BLANK: 0.28, ACE_OVERCARD: 0.12,
+                          FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10, BOARD_PAIR: 0.20 },
+        UNDERPAIR:      { _default: 0.22, BRICK: 0.28, LOW_BLANK: 0.32, ACE_OVERCARD: 0.12,
+                          FLUSH_COMPLETE: 0.14, STRAIGHT_COMPLETE: 0.12, BOARD_PAIR: 0.22 },
+        COMBO_DRAW:     { _default: 0.80, BRICK: 0.83, FLUSH_COMPLETE: 0.60, STRAIGHT_COMPLETE: 0.60,
+                          ACE_OVERCARD: 0.70, BROADWAY_OVERCARD: 0.75, DYNAMIC_CONNECTOR: 0.85 },
+        STRONG_DRAW:    { _default: 0.70, BRICK: 0.73, LOW_BLANK: 0.75, FLUSH_COMPLETE: 0.55,
+                          STRAIGHT_COMPLETE: 0.55, ACE_OVERCARD: 0.60, BROADWAY_OVERCARD: 0.63,
+                          DYNAMIC_CONNECTOR: 0.77, BOARD_PAIR: 0.67 },
+        OESD:           { _default: 0.57, BRICK: 0.60, LOW_BLANK: 0.63, FLUSH_COMPLETE: 0.43,
+                          STRAIGHT_COMPLETE: 0.40, ACE_OVERCARD: 0.50, BROADWAY_OVERCARD: 0.53 },
+        GUTSHOT:        { _default: 0.36, BRICK: 0.40, LOW_BLANK: 0.43, FLUSH_COMPLETE: 0.26,
+                          STRAIGHT_COMPLETE: 0.24, ACE_OVERCARD: 0.32, BROADWAY_OVERCARD: 0.34 },
+        ACE_HIGH:       { _default: 0.48, BRICK: 0.54, LOW_BLANK: 0.56, ACE_OVERCARD: 0.35,
+                          FLUSH_COMPLETE: 0.32, STRAIGHT_COMPLETE: 0.28, BROADWAY_OVERCARD: 0.43,
+                          OVERCARD: 0.40, BOARD_PAIR: 0.45, DYNAMIC_CONNECTOR: 0.43 },
+        OVERCARDS:      { _default: 0.33, BRICK: 0.37, LOW_BLANK: 0.40, ACE_OVERCARD: 0.22,
+                          FLUSH_COMPLETE: 0.22, STRAIGHT_COMPLETE: 0.18, BROADWAY_OVERCARD: 0.26,
+                          OVERCARD: 0.24, BOARD_PAIR: 0.28, DYNAMIC_CONNECTOR: 0.28 },
+        AIR:            { _default: 0.28, BRICK: 0.32, LOW_BLANK: 0.36, ACE_OVERCARD: 0.16,
+                          FLUSH_COMPLETE: 0.16, STRAIGHT_COMPLETE: 0.14, BROADWAY_OVERCARD: 0.23,
+                          OVERCARD: 0.20, BOARD_PAIR: 0.25, DYNAMIC_CONNECTOR: 0.23 }
+    };
+
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.86 },
+        QUADS:          { _default: 0.84 },
+        FULL_HOUSE:     { _default: 0.84, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.74 },
+        FLUSH:          { _default: 0.81, FLUSH_COMPLETE: 0.74 },
+        STRAIGHT:       { _default: 0.74 },
+        SET:            { _default: 0.81, FLUSH_COMPLETE: 0.68, STRAIGHT_COMPLETE: 0.64 },
+        TRIPS:          { _default: 0.76, FLUSH_COMPLETE: 0.64, STRAIGHT_COMPLETE: 0.61,
+                          BOARD_PAIR: 0.74, ACE_OVERCARD: 0.68, BROADWAY_OVERCARD: 0.71 },
+        BOARD_TRIPS:    { _default: 0.40, BRICK: 0.46, LOW_BLANK: 0.48, FLUSH_COMPLETE: 0.27,
+                          STRAIGHT_COMPLETE: 0.23, ACE_OVERCARD: 0.33, BROADWAY_OVERCARD: 0.36,
+                          OVERCARD: 0.33, BOARD_PAIR: 0.37 },
+        TWO_PAIR:       { _default: 0.72, FLUSH_COMPLETE: 0.58, STRAIGHT_COMPLETE: 0.56 },
+        OVERPAIR:       { _default: 0.62, ACE_OVERCARD: 0.27, FLUSH_COMPLETE: 0.48,
+                          STRAIGHT_COMPLETE: 0.44, BROADWAY_OVERCARD: 0.50, OVERCARD: 0.48, BOARD_PAIR: 0.56 },
+        TOP_PAIR:       { _default: 0.50, BRICK: 0.54, LOW_BLANK: 0.58, ACE_OVERCARD: 0.30,
+                          FLUSH_COMPLETE: 0.33, STRAIGHT_COMPLETE: 0.30, BROADWAY_OVERCARD: 0.37,
+                          OVERCARD: 0.35, BOARD_PAIR: 0.44, DYNAMIC_CONNECTOR: 0.41 },
+        SECOND_PAIR:    { _default: 0.22, BRICK: 0.27, LOW_BLANK: 0.30, ACE_OVERCARD: 0.14,
+                          FLUSH_COMPLETE: 0.14, STRAIGHT_COMPLETE: 0.12 },
+        THIRD_PAIR:     { _default: 0.14, BRICK: 0.18, ACE_OVERCARD: 0.07, FLUSH_COMPLETE: 0.07 },
+        UNDERPAIR:      { _default: 0.16, BRICK: 0.20, ACE_OVERCARD: 0.07, FLUSH_COMPLETE: 0.08 },
+        COMBO_DRAW:     { _default: 0.68, BRICK: 0.71, FLUSH_COMPLETE: 0.50, STRAIGHT_COMPLETE: 0.48,
+                          ACE_OVERCARD: 0.58, BROADWAY_OVERCARD: 0.62, DYNAMIC_CONNECTOR: 0.74 },
+        STRONG_DRAW:    { _default: 0.58, BRICK: 0.61, FLUSH_COMPLETE: 0.44, STRAIGHT_COMPLETE: 0.42,
+                          ACE_OVERCARD: 0.48, BROADWAY_OVERCARD: 0.52, DYNAMIC_CONNECTOR: 0.64 },
+        OESD:           { _default: 0.46, BRICK: 0.50, FLUSH_COMPLETE: 0.34,
+                          STRAIGHT_COMPLETE: 0.30, ACE_OVERCARD: 0.40, BROADWAY_OVERCARD: 0.42 },
+        GUTSHOT:        { _default: 0.27, BRICK: 0.31, FLUSH_COMPLETE: 0.18,
+                          STRAIGHT_COMPLETE: 0.16, ACE_OVERCARD: 0.22 },
+        ACE_HIGH:       { _default: 0.36, BRICK: 0.42, LOW_BLANK: 0.46, ACE_OVERCARD: 0.25,
+                          FLUSH_COMPLETE: 0.22, STRAIGHT_COMPLETE: 0.18 },
+        OVERCARDS:      { _default: 0.22, BRICK: 0.27, LOW_BLANK: 0.31, ACE_OVERCARD: 0.14,
+                          FLUSH_COMPLETE: 0.14, STRAIGHT_COMPLETE: 0.12 },
+        AIR:            { _default: 0.20, BRICK: 0.24, LOW_BLANK: 0.28, ACE_OVERCARD: 0.10,
+                          FLUSH_COMPLETE: 0.10, STRAIGHT_COMPLETE: 0.08 }
+    };
+
+    const TURN_REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush in 3BP — the virtual nuts. Bet for maximum value.',
+        QUADS:          'Quads in 3BP — near-unbeatable. Extract maximum value.',
+        FULL_HOUSE:     'Full house in 3BP — bet for value; pot is large.',
+        FLUSH:          'Flush in 3BP — bet for value.',
+        STRAIGHT:       'Straight in 3BP — bet for value; pot commitment.',
+        SET:            'Set in 3BP — almost always bet; very few hands beat you.',
+        TRIPS:          'Trips in 3BP — bet for value on most turns.',
+        BOARD_TRIPS:    'Board trips in 3BP — kicker-dependent value betting.',
+        TWO_PAIR:       'Two pair in 3BP — strong value hand, bet for value.',
+        OVERPAIR:       'Overpair in 3BP — strong value hand in inflated pot.',
+        TOP_PAIR:       'Top pair in 3BP — value bet on safe turns; protect equity.',
+        SECOND_PAIR:    'Second pair in 3BP — thin value, mostly check.',
+        THIRD_PAIR:     'Third pair in 3BP — check; not enough equity in large pot.',
+        UNDERPAIR:      'Underpair in 3BP — check; dominated by caller\'s range.',
+        COMBO_DRAW:     'Combo draw in 3BP — semi-bluff aggressively in the inflated pot.',
+        STRONG_DRAW:    'Flush draw in 3BP — semi-bluff; strong equity in large pot.',
+        OESD:           'OESD in 3BP — semi-bluff selectively.',
+        GUTSHOT:        'Gutshot in 3BP — occasional semi-bluff; mostly check.',
+        ACE_HIGH:       'Ace-high in 3BP — bluff selectively on turns favoring polar range.',
+        OVERCARDS:      'Overcards in 3BP — occasional semi-bluff.',
+        AIR:            'Air in 3BP — give up unless runout heavily favors polar range.'
+    };
+
+    const FAMILY_OFF = {
+        BTN_3BP_vs_CO:  0,    BTN_3BP_vs_HJ:  0.03, CO_3BP_vs_HJ:   0.02,
+        BTN_3BP_vs_UTG: 0.05, CO_3BP_vs_UTG:  0.04, HJ_3BP_vs_UTG:  0.04,
+        BB_3BP_vs_BTN:  0,    BB_3BP_vs_CO:   0.03, SB_3BP_vs_BTN:  0.02,
+        SB_3BP_vs_CO:   0.03, SB_3BP_vs_HJ:   0.04, SB_3BP_vs_UTG:  0.05, BB_3BP_vs_HJ: 0.04
+    };
+
+    for (const fam of HERO_HAND_AWARE_3BP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+        for (const tf of TURN_FAMILIES) {
+            for (const hc of TURN_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[tf] !== undefined) ? baseFreqs[tf] : baseFreqs._default;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const sk = make3BPTurnCBetSpotKeyV1({ preflopFamily: fam, positionState: fi.positionState, turnFamily: tf, heroHandClass: hc });
+                POSTFLOP_3BP_TURN_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: bet >= 0.50 ? 'bet50' : 'check',
+                    reasoning: TURN_REASONING[hc] || '',
+                    simplification: fi.positionState === 'OOP' ? '3BP OOP Turn Barrel (50% pot)' : '3BP IP Turn Barrel (50% pot)'
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) {
+        console.log(`[3BPTurnV1] Built ${Object.keys(POSTFLOP_3BP_TURN_STRATEGY).length} 3BP PFR turn strategy entries.`);
+    }
+})();
+
+// --- 3BP Turn strategy: defender vs turn bet ---
+const POSTFLOP_3BP_TURN_DEFEND_STRATEGY = {};
+
+(function() {
+    const BASE = {
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.10, raise: 0.90 } },
+        QUADS:          { _default: { fold: 0.00, call: 0.15, raise: 0.85 } },
+        FULL_HOUSE:     { _default: { fold: 0.00, call: 0.20, raise: 0.80 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.18, raise: 0.82 } },
+        FLUSH:          { _default: { fold: 0.00, call: 0.25, raise: 0.75 } },
+        STRAIGHT:       { _default: { fold: 0.00, call: 0.28, raise: 0.72 } },
+        SET:            { _default: { fold: 0.00, call: 0.30, raise: 0.70 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.25, raise: 0.75 } },
+        TRIPS:          { _default: { fold: 0.00, call: 0.30, raise: 0.70 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.24, raise: 0.76 },
+                          STRAIGHT_COMPLETE: { fold: 0.00, call: 0.26, raise: 0.74 } },
+        BOARD_TRIPS:    { _default: { fold: 0.08, call: 0.65, raise: 0.27 },
+                          BRICK: { fold: 0.06, call: 0.68, raise: 0.26 },
+                          FLUSH_COMPLETE: { fold: 0.15, call: 0.62, raise: 0.23 },
+                          STRAIGHT_COMPLETE: { fold: 0.12, call: 0.64, raise: 0.24 } },
+        TWO_PAIR:       { _default: { fold: 0.00, call: 0.38, raise: 0.62 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.48, raise: 0.48 },
+                          STRAIGHT_COMPLETE: { fold: 0.05, call: 0.50, raise: 0.45 } },
+        OVERPAIR:       { _default: { fold: 0.00, call: 0.68, raise: 0.32 },
+                          ACE_OVERCARD: { fold: 0.02, call: 0.74, raise: 0.24 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.70, raise: 0.26 },
+                          STRAIGHT_COMPLETE: { fold: 0.06, call: 0.70, raise: 0.24 } },
+        TOP_PAIR:       { _default: { fold: 0.08, call: 0.76, raise: 0.16 },
+                          BRICK: { fold: 0.05, call: 0.80, raise: 0.15 },
+                          LOW_BLANK: { fold: 0.04, call: 0.82, raise: 0.14 },
+                          ACE_OVERCARD: { fold: 0.20, call: 0.68, raise: 0.12 },
+                          FLUSH_COMPLETE: { fold: 0.22, call: 0.66, raise: 0.12 },
+                          STRAIGHT_COMPLETE: { fold: 0.25, call: 0.64, raise: 0.11 } },
+        SECOND_PAIR:    { _default: { fold: 0.38, call: 0.54, raise: 0.08 },
+                          BRICK: { fold: 0.28, call: 0.62, raise: 0.10 },
+                          LOW_BLANK: { fold: 0.24, call: 0.66, raise: 0.10 },
+                          ACE_OVERCARD: { fold: 0.52, call: 0.42, raise: 0.06 },
+                          FLUSH_COMPLETE: { fold: 0.54, call: 0.40, raise: 0.06 },
+                          STRAIGHT_COMPLETE: { fold: 0.56, call: 0.40, raise: 0.04 } },
+        THIRD_PAIR:     { _default: { fold: 0.68, call: 0.28, raise: 0.04 },
+                          BRICK: { fold: 0.58, call: 0.36, raise: 0.06 },
+                          ACE_OVERCARD: { fold: 0.80, call: 0.18, raise: 0.02 },
+                          FLUSH_COMPLETE: { fold: 0.78, call: 0.20, raise: 0.02 } },
+        UNDERPAIR:      { _default: { fold: 0.72, call: 0.24, raise: 0.04 },
+                          BRICK: { fold: 0.60, call: 0.34, raise: 0.06 },
+                          ACE_OVERCARD: { fold: 0.84, call: 0.14, raise: 0.02 },
+                          FLUSH_COMPLETE: { fold: 0.80, call: 0.18, raise: 0.02 } },
+        COMBO_DRAW:     { _default: { fold: 0.00, call: 0.32, raise: 0.68 },
+                          FLUSH_COMPLETE: { fold: 0.02, call: 0.38, raise: 0.60 },
+                          STRAIGHT_COMPLETE: { fold: 0.02, call: 0.40, raise: 0.58 } },
+        STRONG_DRAW:    { _default: { fold: 0.02, call: 0.50, raise: 0.48 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.58, raise: 0.38 },
+                          BRICK: { fold: 0.00, call: 0.45, raise: 0.55 } },
+        OESD:           { _default: { fold: 0.20, call: 0.58, raise: 0.22 },
+                          FLUSH_COMPLETE: { fold: 0.28, call: 0.58, raise: 0.14 },
+                          STRAIGHT_COMPLETE: { fold: 0.30, call: 0.58, raise: 0.12 } },
+        GUTSHOT:        { _default: { fold: 0.50, call: 0.44, raise: 0.06 },
+                          FLUSH_COMPLETE: { fold: 0.60, call: 0.38, raise: 0.02 } },
+        ACE_HIGH:       { _default: { fold: 0.65, call: 0.30, raise: 0.05 },
+                          BRICK: { fold: 0.52, call: 0.40, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.75, call: 0.22, raise: 0.03 } },
+        OVERCARDS:      { _default: { fold: 0.76, call: 0.20, raise: 0.04 },
+                          BRICK: { fold: 0.62, call: 0.32, raise: 0.06 },
+                          FLUSH_COMPLETE: { fold: 0.84, call: 0.14, raise: 0.02 } },
+        AIR:            { _default: { fold: 0.88, call: 0.10, raise: 0.02 },
+                          BRICK: { fold: 0.78, call: 0.18, raise: 0.04 } }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush — raise all-in for maximum value.',
+        QUADS: 'Quads in 3BP — raise to build the pot.', FULL_HOUSE: 'Full house in 3BP — raise for value.',
+        FLUSH: 'Flush in 3BP — raise nutted flushes; call non-nuts.',
+        STRAIGHT: 'Straight in 3BP — raise or call depending on draw possibilities.',
+        SET: 'Set in 3BP — raise to build pot.', TRIPS: 'Trips in 3BP — raise or call for value.',
+        BOARD_TRIPS: 'Board trips — kicker-dependent; call or fold.',
+        TWO_PAIR: 'Two pair in 3BP — raise most combos for value.',
+        OVERPAIR: 'Overpair in 3BP — call; too strong to fold, not enough to raise for value.',
+        TOP_PAIR: 'Top pair in 3BP — call on blanks; fold on dangerous cards.',
+        SECOND_PAIR: 'Second pair in 3BP — fold on dangerous turns; call on blanks.',
+        THIRD_PAIR: 'Third pair in 3BP — mostly fold.', UNDERPAIR: 'Underpair in 3BP — mostly fold.',
+        COMBO_DRAW: 'Combo draw in 3BP — raise to semi-bluff the inflated pot.',
+        STRONG_DRAW: 'Flush draw in 3BP — semi-bluff raise or call depending on equity.',
+        OESD: 'OESD in 3BP — call or fold; semi-bluff selectively.',
+        GUTSHOT: 'Gutshot in 3BP — mostly fold.', ACE_HIGH: 'Ace-high in 3BP — fold most; occasional peel.',
+        OVERCARDS: 'Overcards in 3BP — fold mostly.', AIR: 'Air in 3BP — fold.'
+    };
+
+    const FAM_OFF = {
+        BTN_CALL_3BP_vs_BB: 0,   BTN_CALL_3BP_vs_SB:  0.01,
+        CO_CALL_3BP_vs_BB: -0.01, CO_CALL_3BP_vs_BTN: 0, HJ_CALL_3BP_vs_BTN: 0.02
+    };
+
+    for (const fam of HERO_HAND_AWARE_3BP_DEFEND_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAM_OFF[fam] || 0;
+        for (const tf of TURN_FAMILIES) {
+            for (const hc of TURN_HAND_CLASSES) {
+                const row = BASE[hc];
+                if (!row) continue;
+                const rawObj = row[tf] !== undefined ? row[tf] : row._default;
+                const fold  = Math.max(0, Math.min(1, parseFloat((rawObj.fold  - famOff).toFixed(2))));
+                const raise = Math.max(0, Math.min(1, parseFloat((rawObj.raise + famOff).toFixed(2))));
+                const call  = parseFloat(Math.max(0, 1 - fold - raise).toFixed(2));
+                let preferred = 'call';
+                if (fold >= 0.50) preferred = 'fold';
+                else if (raise >= 0.50) preferred = 'raise';
+                const sk = make3BPTurnDefendSpotKeyV1({ preflopFamily: fam, positionState: fi.positionState, turnFamily: tf, heroHandClass: hc });
+                POSTFLOP_3BP_TURN_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise }, preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: fi.positionState === 'IP' ? '3BP IP Defender vs Turn Barrel' : '3BP OOP Defender vs Turn Barrel'
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) {
+        console.log(`[3BPTurnDefend] Built ${Object.keys(POSTFLOP_3BP_TURN_DEFEND_STRATEGY).length} 3BP defender turn strategy entries.`);
+    }
+})();
+
+function generate3BPTurnSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_3BP_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const spot = {
+            potType: '3BP', preflopFamily: fs.preflopFamily, street: 'TURN', heroRole: 'PFR',
+            positionState: fs.positionState, nodeType: 'TURN_CBET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            turnFamily: ts.turnFamily, heroHandClass: ts.turnHandCls, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards, turnTexture: ts.turnTexture,
+            actionHistory: ['FLOP_3BP_CBET', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = make3BPTurnCBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_3BP_TURN_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[3BPTurn] Retries exhausted; forcing BTN_3BP_vs_CO fallback.');
+    const fsFB = _buildBaseFlopState('BTN_3BP_vs_CO', fi => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_3BP_vs_CO', positionState: 'IP', heroPos: 'BTN', villainPos: 'CO',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const spotFB = {
+        potType: '3BP', preflopFamily: fsFB.preflopFamily, street: 'TURN', heroRole: 'PFR',
+        positionState: fsFB.positionState, nodeType: 'TURN_CBET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        turnFamily: tsFB.turnFamily, heroHandClass: tsFB.turnHandCls, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards, turnTexture: tsFB.turnTexture,
+        actionHistory: ['FLOP_3BP_CBET', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = make3BPTurnCBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_3BP_TURN_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function generate3BPTurnDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_3BP_DEFEND_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _deal3BPDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const spot = {
+            potType: '3BP', preflopFamily: fs.preflopFamily, street: 'TURN', heroRole: 'DEFENDER',
+            positionState: fs.positionState, nodeType: 'TURN_VS_BET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            turnFamily: ts.turnFamily, heroHandClass: ts.turnHandCls, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards, turnTexture: ts.turnTexture,
+            actionHistory: ['FLOP_3BP_CBET_FACED', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = make3BPTurnDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_3BP_TURN_DEFEND_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[3BPTurnDefend] Retries exhausted; forcing BTN_CALL_3BP_vs_BB fallback.');
+    const fbHand = _deal3BPDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fsFB = _buildBaseFlopState('BTN_CALL_3BP_vs_BB', () => fbHand) ||
+        { preflopFamily: 'BTN_CALL_3BP_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const spotFB = {
+        potType: '3BP', preflopFamily: fsFB.preflopFamily, street: 'TURN', heroRole: 'DEFENDER',
+        positionState: fsFB.positionState, nodeType: 'TURN_VS_BET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        turnFamily: tsFB.turnFamily, heroHandClass: tsFB.turnHandCls, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards, turnTexture: tsFB.turnTexture,
+        actionHistory: ['FLOP_3BP_CBET_FACED', 'FLOP_CALLED'], potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = make3BPTurnDefendSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_3BP_TURN_DEFEND_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
 
 // --- Turn texture enrichment helpers ---
 
@@ -6115,6 +6507,344 @@ const POSTFLOP_RIVER_DEFEND_STRATEGY = {};
         console.log(`[RiverV1] Built ${Object.keys(POSTFLOP_RIVER_DEFEND_STRATEGY).length} defender river strategy entries.`);
     }
 })();
+
+// --- 3BP River strategy: PFR barrel (bet50 vs check) ---
+const POSTFLOP_3BP_RIVER_STRATEGY = {};
+
+(function() {
+    const BASE_IP = {
+        STRAIGHT_FLUSH: { _default: 0.94 },
+        QUADS:          { _default: 0.92 },
+        FULL_HOUSE:     { _default: 0.90, FLUSH_COMPLETE: 0.86, STRAIGHT_COMPLETE: 0.84 },
+        FLUSH:          { _default: 0.88, FLUSH_COMPLETE: 0.80 },
+        STRAIGHT:       { _default: 0.83 },
+        SET:            { _default: 0.90, FLUSH_COMPLETE: 0.78, STRAIGHT_COMPLETE: 0.74 },
+        TRIPS:          { _default: 0.86, FLUSH_COMPLETE: 0.74, STRAIGHT_COMPLETE: 0.70,
+                          BOARD_PAIR: 0.82, ACE_OVERCARD: 0.78, BROADWAY_OVERCARD: 0.80 },
+        BOARD_TRIPS:    { _default: 0.54, BRICK: 0.58, LOW_BLANK: 0.60, FLUSH_COMPLETE: 0.38,
+                          STRAIGHT_COMPLETE: 0.34, ACE_OVERCARD: 0.44, BROADWAY_OVERCARD: 0.48, BOARD_PAIR: 0.50 },
+        TWO_PAIR:       { _default: 0.82, FLUSH_COMPLETE: 0.66, STRAIGHT_COMPLETE: 0.64, ACE_OVERCARD: 0.72 },
+        OVERPAIR:       { _default: 0.70, ACE_OVERCARD: 0.28, FLUSH_COMPLETE: 0.52, STRAIGHT_COMPLETE: 0.48,
+                          BROADWAY_OVERCARD: 0.56, OVERCARD: 0.54, BOARD_PAIR: 0.64, DYNAMIC_CONNECTOR: 0.62 },
+        TOP_PAIR:       { _default: 0.56, BRICK: 0.62, LOW_BLANK: 0.64, ACE_OVERCARD: 0.33,
+                          FLUSH_COMPLETE: 0.38, STRAIGHT_COMPLETE: 0.35, BROADWAY_OVERCARD: 0.44,
+                          OVERCARD: 0.44, BOARD_PAIR: 0.52, DYNAMIC_CONNECTOR: 0.48 },
+        SECOND_PAIR:    { _default: 0.25, BRICK: 0.30, LOW_BLANK: 0.32, ACE_OVERCARD: 0.15,
+                          FLUSH_COMPLETE: 0.15, STRAIGHT_COMPLETE: 0.12 },
+        THIRD_PAIR:     { _default: 0.14, BRICK: 0.18, FLUSH_COMPLETE: 0.07 },
+        UNDERPAIR:      { _default: 0.16, BRICK: 0.20, FLUSH_COMPLETE: 0.07 },
+        ACE_HIGH:       { _default: 0.50, BRICK: 0.56, LOW_BLANK: 0.58, ACE_OVERCARD: 0.32,
+                          FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.25, BROADWAY_OVERCARD: 0.42,
+                          OVERCARD: 0.36, BOARD_PAIR: 0.42 },
+        OVERCARDS:      { _default: 0.34, BRICK: 0.38, LOW_BLANK: 0.40, ACE_OVERCARD: 0.18,
+                          FLUSH_COMPLETE: 0.16, STRAIGHT_COMPLETE: 0.14 },
+        AIR:            { _default: 0.32, BRICK: 0.36, LOW_BLANK: 0.38, ACE_OVERCARD: 0.15,
+                          FLUSH_COMPLETE: 0.12, STRAIGHT_COMPLETE: 0.10, BROADWAY_OVERCARD: 0.24 }
+    };
+
+    const BASE_OOP = {
+        STRAIGHT_FLUSH: { _default: 0.86 },
+        QUADS:          { _default: 0.84 },
+        FULL_HOUSE:     { _default: 0.82, FLUSH_COMPLETE: 0.76, STRAIGHT_COMPLETE: 0.74 },
+        FLUSH:          { _default: 0.79, FLUSH_COMPLETE: 0.72 },
+        STRAIGHT:       { _default: 0.74 },
+        SET:            { _default: 0.80, FLUSH_COMPLETE: 0.66, STRAIGHT_COMPLETE: 0.62 },
+        TRIPS:          { _default: 0.74, FLUSH_COMPLETE: 0.62, STRAIGHT_COMPLETE: 0.58 },
+        BOARD_TRIPS:    { _default: 0.42, BRICK: 0.46, LOW_BLANK: 0.48, FLUSH_COMPLETE: 0.28,
+                          STRAIGHT_COMPLETE: 0.24, ACE_OVERCARD: 0.34 },
+        TWO_PAIR:       { _default: 0.70, FLUSH_COMPLETE: 0.54, STRAIGHT_COMPLETE: 0.52 },
+        OVERPAIR:       { _default: 0.56, ACE_OVERCARD: 0.22, FLUSH_COMPLETE: 0.42, STRAIGHT_COMPLETE: 0.38 },
+        TOP_PAIR:       { _default: 0.44, BRICK: 0.50, LOW_BLANK: 0.52, ACE_OVERCARD: 0.26,
+                          FLUSH_COMPLETE: 0.28, STRAIGHT_COMPLETE: 0.26 },
+        SECOND_PAIR:    { _default: 0.16, BRICK: 0.20, FLUSH_COMPLETE: 0.08 },
+        THIRD_PAIR:     { _default: 0.10 },
+        UNDERPAIR:      { _default: 0.12 },
+        ACE_HIGH:       { _default: 0.36, BRICK: 0.42, LOW_BLANK: 0.44, FLUSH_COMPLETE: 0.18 },
+        OVERCARDS:      { _default: 0.22, BRICK: 0.26, FLUSH_COMPLETE: 0.09 },
+        AIR:            { _default: 0.22, BRICK: 0.26, LOW_BLANK: 0.29, FLUSH_COMPLETE: 0.08 }
+    };
+
+    const RIVER_REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush in 3BP — extract maximum value from committed ranges.',
+        QUADS: 'Quads in 3BP — bet for maximum value.', FULL_HOUSE: 'Full house in 3BP — bet for value.',
+        FLUSH: 'Flush in 3BP — bet for value.', STRAIGHT: 'Straight in 3BP — bet for value.',
+        SET: 'Set in 3BP — bet for value; committed 3BP pot.',
+        TRIPS: 'Trips in 3BP — bet for value.', BOARD_TRIPS: 'Board trips in 3BP — kicker-dependent.',
+        TWO_PAIR: 'Two pair in 3BP — bet for value.',
+        OVERPAIR: 'Overpair in 3BP — bet for thin value; ranges are committed.',
+        TOP_PAIR: 'Top pair in 3BP — bet for thin value on blanks.',
+        SECOND_PAIR: 'Second pair in 3BP — check for showdown.',
+        THIRD_PAIR: 'Third pair in 3BP — check.', UNDERPAIR: 'Underpair in 3BP — check.',
+        ACE_HIGH: 'Ace-high in 3BP — bluff on polar-range-favoring rivers.',
+        OVERCARDS: 'Overcards in 3BP — occasional bluff; mostly check.',
+        AIR: 'Air in 3BP — bluff on very favorable runouts; otherwise check.'
+    };
+
+    const FAMILY_OFF = {
+        BTN_3BP_vs_CO:  0,    BTN_3BP_vs_HJ:  0.03, CO_3BP_vs_HJ:   0.02,
+        BTN_3BP_vs_UTG: 0.05, CO_3BP_vs_UTG:  0.04, HJ_3BP_vs_UTG:  0.04,
+        BB_3BP_vs_BTN:  0,    BB_3BP_vs_CO:   0.03, SB_3BP_vs_BTN:  0.02,
+        SB_3BP_vs_CO:   0.03, SB_3BP_vs_HJ:   0.04, SB_3BP_vs_UTG:  0.05, BB_3BP_vs_HJ: 0.04
+    };
+
+    for (const fam of HERO_HAND_AWARE_3BP_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAMILY_OFF[fam] || 0;
+        const baseTable = fi.positionState === 'OOP' ? BASE_OOP : BASE_IP;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const baseFreqs = baseTable[hc];
+                if (!baseFreqs) continue;
+                const raw = (baseFreqs[rf] !== undefined) ? baseFreqs[rf] : baseFreqs._default;
+                if (raw === undefined) continue;
+                const bet = Math.max(0.05, Math.min(0.95, parseFloat((raw + famOff).toFixed(2))));
+                const chk = parseFloat((1 - bet).toFixed(2));
+                const sk = make3BPRiverCBetSpotKeyV1({ preflopFamily: fam, positionState: fi.positionState, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_3BP_RIVER_STRATEGY[sk] = {
+                    actions: { check: chk, bet50: bet },
+                    preferredAction: bet >= 0.50 ? 'bet50' : 'check',
+                    reasoning: RIVER_REASONING[hc] || '',
+                    simplification: fi.positionState === 'OOP' ? '3BP OOP River Barrel (50% pot)' : '3BP IP River Barrel (50% pot)'
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) {
+        console.log(`[3BPRiverV1] Built ${Object.keys(POSTFLOP_3BP_RIVER_STRATEGY).length} 3BP PFR river strategy entries.`);
+    }
+})();
+
+// --- 3BP River strategy: defender vs river bet ---
+const POSTFLOP_3BP_RIVER_DEFEND_STRATEGY = {};
+
+(function() {
+    const BASE = {
+        STRAIGHT_FLUSH: { _default: { fold: 0.00, call: 0.08, raise: 0.92 } },
+        QUADS:          { _default: { fold: 0.00, call: 0.12, raise: 0.88 } },
+        FULL_HOUSE:     { _default: { fold: 0.00, call: 0.18, raise: 0.82 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.16, raise: 0.84 } },
+        FLUSH:          { _default: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        STRAIGHT:       { _default: { fold: 0.00, call: 0.26, raise: 0.74 } },
+        SET:            { _default: { fold: 0.00, call: 0.28, raise: 0.72 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        TRIPS:          { _default: { fold: 0.00, call: 0.28, raise: 0.72 },
+                          FLUSH_COMPLETE: { fold: 0.00, call: 0.22, raise: 0.78 } },
+        BOARD_TRIPS:    { _default: { fold: 0.10, call: 0.66, raise: 0.24 },
+                          FLUSH_COMPLETE: { fold: 0.20, call: 0.62, raise: 0.18 },
+                          STRAIGHT_COMPLETE: { fold: 0.18, call: 0.64, raise: 0.18 } },
+        TWO_PAIR:       { _default: { fold: 0.00, call: 0.44, raise: 0.56 },
+                          FLUSH_COMPLETE: { fold: 0.04, call: 0.52, raise: 0.44 },
+                          STRAIGHT_COMPLETE: { fold: 0.05, call: 0.54, raise: 0.41 } },
+        OVERPAIR:       { _default: { fold: 0.00, call: 0.72, raise: 0.28 },
+                          ACE_OVERCARD: { fold: 0.02, call: 0.78, raise: 0.20 },
+                          FLUSH_COMPLETE: { fold: 0.05, call: 0.72, raise: 0.23 },
+                          STRAIGHT_COMPLETE: { fold: 0.08, call: 0.70, raise: 0.22 } },
+        TOP_PAIR:       { _default: { fold: 0.12, call: 0.76, raise: 0.12 },
+                          BRICK: { fold: 0.08, call: 0.80, raise: 0.12 },
+                          LOW_BLANK: { fold: 0.07, call: 0.82, raise: 0.11 },
+                          ACE_OVERCARD: { fold: 0.26, call: 0.66, raise: 0.08 },
+                          FLUSH_COMPLETE: { fold: 0.30, call: 0.62, raise: 0.08 },
+                          STRAIGHT_COMPLETE: { fold: 0.32, call: 0.60, raise: 0.08 } },
+        SECOND_PAIR:    { _default: { fold: 0.45, call: 0.50, raise: 0.05 },
+                          BRICK: { fold: 0.32, call: 0.62, raise: 0.06 },
+                          LOW_BLANK: { fold: 0.28, call: 0.66, raise: 0.06 },
+                          ACE_OVERCARD: { fold: 0.60, call: 0.36, raise: 0.04 },
+                          FLUSH_COMPLETE: { fold: 0.62, call: 0.34, raise: 0.04 },
+                          STRAIGHT_COMPLETE: { fold: 0.65, call: 0.32, raise: 0.03 } },
+        THIRD_PAIR:     { _default: { fold: 0.72, call: 0.26, raise: 0.02 },
+                          BRICK: { fold: 0.60, call: 0.36, raise: 0.04 },
+                          FLUSH_COMPLETE: { fold: 0.80, call: 0.18, raise: 0.02 } },
+        UNDERPAIR:      { _default: { fold: 0.76, call: 0.22, raise: 0.02 },
+                          BRICK: { fold: 0.64, call: 0.32, raise: 0.04 } },
+        ACE_HIGH:       { _default: { fold: 0.72, call: 0.24, raise: 0.04 },
+                          BRICK: { fold: 0.56, call: 0.38, raise: 0.06 },
+                          FLUSH_COMPLETE: { fold: 0.82, call: 0.16, raise: 0.02 } },
+        OVERCARDS:      { _default: { fold: 0.82, call: 0.16, raise: 0.02 },
+                          BRICK: { fold: 0.68, call: 0.28, raise: 0.04 } },
+        AIR:            { _default: { fold: 0.92, call: 0.07, raise: 0.01 },
+                          BRICK: { fold: 0.82, call: 0.15, raise: 0.03 } }
+    };
+
+    const REASONING = {
+        STRAIGHT_FLUSH: 'Straight flush in 3BP — raise for maximum value.',
+        QUADS: 'Quads in 3BP — raise to extract value.', FULL_HOUSE: 'Full house in 3BP — raise.',
+        FLUSH: 'Flush in 3BP — raise nutted flush.', STRAIGHT: 'Straight in 3BP — raise or call.',
+        SET: 'Set in 3BP — raise for value.', TRIPS: 'Trips in 3BP — raise or call for value.',
+        BOARD_TRIPS: 'Board trips in 3BP — kicker-dependent call.',
+        TWO_PAIR: 'Two pair in 3BP — raise most combos on the river.',
+        OVERPAIR: 'Overpair in 3BP — call; no worse hands call a raise.',
+        TOP_PAIR: 'Top pair in 3BP — call on blanks; fold on dangerous rivers.',
+        SECOND_PAIR: 'Second pair in 3BP — fold most; call only on bricks.',
+        THIRD_PAIR: 'Third pair in 3BP — fold most.', UNDERPAIR: 'Underpair in 3BP — fold.',
+        ACE_HIGH: 'Ace-high in 3BP — mostly fold.', OVERCARDS: 'Overcards in 3BP — fold.',
+        AIR: 'Air in 3BP — fold.'
+    };
+
+    const FAM_OFF = {
+        BTN_CALL_3BP_vs_BB: 0,   BTN_CALL_3BP_vs_SB:  0.01,
+        CO_CALL_3BP_vs_BB: -0.01, CO_CALL_3BP_vs_BTN: 0, HJ_CALL_3BP_vs_BTN: 0.02
+    };
+
+    for (const fam of HERO_HAND_AWARE_3BP_DEFEND_FAMILIES) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+        if (!fi) continue;
+        const famOff = FAM_OFF[fam] || 0;
+        for (const rf of RIVER_FAMILIES) {
+            for (const hc of RIVER_HAND_CLASSES) {
+                const row = BASE[hc];
+                if (!row) continue;
+                const rawObj = row[rf] !== undefined ? row[rf] : row._default;
+                const fold  = Math.max(0, Math.min(1, parseFloat((rawObj.fold  - famOff).toFixed(2))));
+                const raise = Math.max(0, Math.min(1, parseFloat((rawObj.raise + famOff).toFixed(2))));
+                const call  = parseFloat(Math.max(0, 1 - fold - raise).toFixed(2));
+                let preferred = 'call';
+                if (fold >= 0.50) preferred = 'fold';
+                else if (raise >= 0.50) preferred = 'raise';
+                const sk = make3BPRiverDefendSpotKeyV1({ preflopFamily: fam, positionState: fi.positionState, riverFamily: rf, heroHandClass: hc });
+                POSTFLOP_3BP_RIVER_DEFEND_STRATEGY[sk] = {
+                    actions: { fold, call, raise }, preferredAction: preferred,
+                    reasoning: REASONING[hc] || '',
+                    simplification: fi.positionState === 'IP' ? '3BP IP Defender vs River Barrel' : '3BP OOP Defender vs River Barrel'
+                };
+            }
+        }
+    }
+    if (window.RANGE_VALIDATE) {
+        console.log(`[3BPRiverDefend] Built ${Object.keys(POSTFLOP_3BP_RIVER_DEFEND_STRATEGY).length} 3BP defender river strategy entries.`);
+    }
+})();
+
+function generate3BPRiverSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_3BP_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _dealPostflopHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: '3BP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+            positionState: fs.positionState, nodeType: 'RIVER_CBET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_3BP_CBET', 'FLOP_CALLED', 'TURN_3BP_BARREL', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = make3BPRiverCBetSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_3BP_RIVER_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[3BPRiver] Retries exhausted; forcing BTN_3BP_vs_CO fallback.');
+    const fsFB = _buildBaseFlopState('BTN_3BP_vs_CO', fi => _dealPostflopHeroHand('BTN')) ||
+        { preflopFamily: 'BTN_3BP_vs_CO', positionState: 'IP', heroPos: 'BTN', villainPos: 'CO',
+          heroHand: _concreteHand('AK', true), flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', _concreteHand('AK', true)),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: '3BP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'PFR',
+        positionState: fsFB.positionState, nodeType: 'RIVER_CBET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_3BP_CBET', 'FLOP_CALLED', 'TURN_3BP_BARREL', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = make3BPRiverCBetSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_3BP_RIVER_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
+
+function generate3BPRiverDefendSpot(maxRetries, familyFilter) {
+    maxRetries = maxRetries || 25;
+    let fams = [...HERO_HAND_AWARE_3BP_DEFEND_FAMILIES];
+    if (familyFilter && Array.isArray(familyFilter) && familyFilter.length > 0) {
+        const filtered = fams.filter(f => familyFilter.includes(f));
+        if (filtered.length > 0) fams = filtered;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const fam = fams[Math.floor(Math.random() * fams.length)];
+        const fs = _buildBaseFlopState(fam, fi => _deal3BPDefenderHeroHand(fi.heroPos));
+        if (!fs) continue;
+        const ts = _extendFlopStateToTurn(fs);
+        if (!ts) continue;
+        const rs = _extendTurnStateToRiver(fs, ts);
+        if (!rs) continue;
+        const spot = {
+            potType: '3BP', preflopFamily: fs.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+            positionState: fs.positionState, nodeType: 'RIVER_VS_BET_DECISION',
+            flopArchetype: fs.flopArch, boardArchetype: fs.flopArch,
+            riverFamily: rs.riverFamily, heroHandClass: rs.riverHandCls,
+            turnFamily: ts.turnFamily, flopHandClass: fs.flopHandClass,
+            heroPos: fs.heroPos, villainPos: fs.villainPos,
+            flopCards: fs.flopCards, flopClassification: fs.flopClassification,
+            turnCard: ts.turnCard, turnBoard: ts.turnBoard,
+            riverCard: rs.riverCard, riverBoard: rs.riverBoard,
+            heroHand: fs.heroHand, heroCards: fs.heroCards,
+            actionHistory: ['FLOP_3BP_CBET_FACED', 'FLOP_CALLED', 'TURN_BET_FACED', 'TURN_CALLED'],
+            potSize: null, effectiveStack: 200
+        };
+        spot.spotKey = make3BPRiverDefendSpotKeyV1(spot);
+        spot.strategy = POSTFLOP_3BP_RIVER_DEFEND_STRATEGY[spot.spotKey] || null;
+        if (spot.strategy && spot.heroHand && spot.heroHandClass) return spot;
+    }
+    console.warn('[3BPRiverDefend] Retries exhausted; forcing BTN_CALL_3BP_vs_BB fallback.');
+    const fbHand = _deal3BPDefenderHeroHand('BTN') || _concreteHand('AK', true);
+    const fsFB = _buildBaseFlopState('BTN_CALL_3BP_vs_BB', () => fbHand) ||
+        { preflopFamily: 'BTN_CALL_3BP_vs_BB', positionState: 'IP', heroPos: 'BTN', villainPos: 'BB',
+          heroHand: fbHand, flopArch: 'A_HIGH_DRY',
+          flopCards: _generateFlopNoConflict('A_HIGH_DRY', fbHand),
+          flopHandClass: 'AIR', flopClassification: {} };
+    fsFB.heroCards = fsFB.heroHand.cards;
+    const tsFB = _extendFlopStateToTurn(fsFB) ||
+        { turnCard: { rank: '2', suit: 'c' }, turnBoard: [...(fsFB.flopCards || []), { rank: '2', suit: 'c' }],
+          turnFamily: 'BRICK', turnHandCls: 'AIR', turnTexture: null };
+    const rsFB = _extendTurnStateToRiver(fsFB, tsFB) ||
+        { riverCard: { rank: '3', suit: 'd' }, riverBoard: [...(tsFB.turnBoard || []), { rank: '3', suit: 'd' }],
+          riverFamily: 'BRICK', riverHandCls: 'AIR' };
+    const spotFB = {
+        potType: '3BP', preflopFamily: fsFB.preflopFamily, street: 'RIVER', heroRole: 'DEFENDER',
+        positionState: fsFB.positionState, nodeType: 'RIVER_VS_BET_DECISION',
+        flopArchetype: fsFB.flopArch, boardArchetype: fsFB.flopArch,
+        riverFamily: rsFB.riverFamily, heroHandClass: rsFB.riverHandCls,
+        turnFamily: tsFB.turnFamily, flopHandClass: fsFB.flopHandClass,
+        heroPos: fsFB.heroPos, villainPos: fsFB.villainPos,
+        flopCards: fsFB.flopCards, flopClassification: fsFB.flopClassification,
+        turnCard: tsFB.turnCard, turnBoard: tsFB.turnBoard,
+        riverCard: rsFB.riverCard, riverBoard: rsFB.riverBoard,
+        heroHand: fsFB.heroHand, heroCards: fsFB.heroCards,
+        actionHistory: ['FLOP_3BP_CBET_FACED', 'FLOP_CALLED', 'TURN_BET_FACED', 'TURN_CALLED'],
+        potSize: null, effectiveStack: 200
+    };
+    spotFB.spotKey = make3BPRiverDefendSpotKeyV1(spotFB);
+    spotFB.strategy = POSTFLOP_3BP_RIVER_DEFEND_STRATEGY[spotFB.spotKey] || null;
+    return spotFB;
+}
 
 // --- River spot generators ---
 

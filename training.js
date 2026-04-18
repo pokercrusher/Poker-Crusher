@@ -1,7 +1,7 @@
 // training.js — Medals, drills, daily run, challenge mode, generateNextRound, handleInput
 // Auto-split from PokerCrusher monolith — do not reorder script tags
 
-const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_4BET: 'vs 4-Bet (5B/Call/Fold)', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)', POSTFLOP_CBET: 'Flop C-Bet (Postflop)', POSTFLOP_3BP_CBET: '3BP Flop C-Bet (Postflop)', POSTFLOP_DEFEND: 'Defend vs C-Bet (Postflop)', POSTFLOP_3BP_DEFEND: '3BP Flop Defense (Postflop)', POSTFLOP_TURN_CBET: 'Turn Barrel (Postflop)', POSTFLOP_TURN_DEFEND: 'Turn Defense (Postflop)', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet (Postflop)', POSTFLOP_TURN_PROBE: 'Turn Probe Defense (Postflop)', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet (Postflop)', POSTFLOP_RIVER_CBET: 'River Barrel (Postflop)', POSTFLOP_RIVER_DEFEND: 'River Defense (Postflop)', POSTFLOP_RIVER_DELAYED_CBET: 'River Barrel — Delayed Line (Postflop)', POSTFLOP_RIVER_DELAYED_DEFEND: 'River Defense — Delayed Line (Postflop)', POSTFLOP_RIVER_PROBE: 'River Probe Defense (Postflop)', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet (Postflop)', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn Delayed Defense (Postflop)', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River Barrel — Turn Check-Check (Postflop)', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River Defense — Turn Check-Check (Postflop)', POSTFLOP_RIVER_PROBE_CALL_BET: 'River 2nd Barrel — Probe Line (Postflop)', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River Defense — Probe 2nd Barrel (Postflop)' };
+const SCENARIO_NAMES = { RFI: 'RFI (Unopened)', FACING_RFI: 'Defending vs RFI', RFI_VS_3BET: 'vs 3-Bet', VS_4BET: 'vs 4-Bet (5B/Call/Fold)', VS_LIMP: 'Vs Limpers (1–3+)', SQUEEZE: 'Squeeze', SQUEEZE_2C: 'Squeeze vs 2C', PUSH_FOLD: 'Push / Fold (Short Stack)', POSTFLOP_CBET: 'Flop C-Bet (Postflop)', POSTFLOP_3BP_CBET: '3BP Flop C-Bet (Postflop)', POSTFLOP_DEFEND: 'Defend vs C-Bet (Postflop)', POSTFLOP_3BP_DEFEND: '3BP Flop Defense (Postflop)', POSTFLOP_TURN_CBET: 'Turn Barrel (Postflop)', POSTFLOP_TURN_DEFEND: 'Turn Defense (Postflop)', POSTFLOP_TURN_DELAYED_CBET: 'Turn Delayed C-Bet (Postflop)', POSTFLOP_TURN_PROBE: 'Turn Probe Defense (Postflop)', POSTFLOP_TURN_PROBE_DEFEND: 'Turn Probe Bet (Postflop)', POSTFLOP_RIVER_CBET: 'River Barrel (Postflop)', POSTFLOP_RIVER_DEFEND: 'River Defense (Postflop)', POSTFLOP_RIVER_DELAYED_CBET: 'River Barrel — Delayed Line (Postflop)', POSTFLOP_RIVER_DELAYED_DEFEND: 'River Defense — Delayed Line (Postflop)', POSTFLOP_RIVER_PROBE: 'River Probe Defense (Postflop)', POSTFLOP_RIVER_PROBE_BET: 'River Probe Bet (Postflop)', POSTFLOP_TURN_DELAYED_DEFEND: 'Turn Delayed Defense (Postflop)', POSTFLOP_RIVER_TURN_CHECK_CBET: 'River Barrel — Turn Check-Check (Postflop)', POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River Defense — Turn Check-Check (Postflop)', POSTFLOP_RIVER_PROBE_CALL_BET: 'River 2nd Barrel — Probe Line (Postflop)', POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River Defense — Probe 2nd Barrel (Postflop)', POSTFLOP_3BP_TURN_CBET: '3BP Turn Barrel (Postflop)', POSTFLOP_3BP_TURN_DEFEND: '3BP Turn Defense (Postflop)', POSTFLOP_3BP_RIVER_CBET: '3BP River Barrel (Postflop)', POSTFLOP_3BP_RIVER_DEFEND: '3BP River Defense (Postflop)' };
 const MEDAL_THRESHOLDS = {
     bronze: { hands: 10, accuracy: 65 },
     silver: { hands: 25, accuracy: 80 },
@@ -44,6 +44,10 @@ const FAMILY_MODEL = {
         { id: 'RIVER_TURN_CHECK_DEFEND',  label: 'River TCC-Def',           scenarios: ['POSTFLOP_RIVER_TURN_CHECK_DEFEND'] },
         { id: 'RIVER_PROBE_CALL_BET',     label: 'River P2-Bet',            scenarios: ['POSTFLOP_RIVER_PROBE_CALL_BET'] },
         { id: 'RIVER_PROBE_CALL_DEFEND',  label: 'River P2-Def',            scenarios: ['POSTFLOP_RIVER_PROBE_CALL_DEFEND'] },
+        { id: '3BP_TURN_CBET',    label: '3BP Turn Barrel',    scenarios: ['POSTFLOP_3BP_TURN_CBET'] },
+        { id: '3BP_TURN_DEFEND',  label: '3BP Turn Defense',   scenarios: ['POSTFLOP_3BP_TURN_DEFEND'] },
+        { id: '3BP_RIVER_CBET',   label: '3BP River Barrel',   scenarios: ['POSTFLOP_3BP_RIVER_CBET'] },
+        { id: '3BP_RIVER_DEFEND', label: '3BP River Defense',  scenarios: ['POSTFLOP_3BP_RIVER_DEFEND'] },
     ]
     // Future: FULL_HAND: [...]
 };
@@ -373,7 +377,11 @@ const DAILY_RUN_TIER_RULES = {
             'POSTFLOP_RIVER_TURN_CHECK_CBET',
             'POSTFLOP_RIVER_TURN_CHECK_DEFEND',
             'POSTFLOP_RIVER_PROBE_CALL_BET',
-            'POSTFLOP_RIVER_PROBE_CALL_DEFEND'
+            'POSTFLOP_RIVER_PROBE_CALL_DEFEND',
+            'POSTFLOP_3BP_TURN_CBET',
+            'POSTFLOP_3BP_TURN_DEFEND',
+            'POSTFLOP_3BP_RIVER_CBET',
+            'POSTFLOP_3BP_RIVER_DEFEND'
         ]
     }
 };
@@ -455,6 +463,10 @@ function getDailyRunSupportedScenarios() {
     if (typeof generateRiverTurnCheckDefendSpot === 'function') supported.push('POSTFLOP_RIVER_TURN_CHECK_DEFEND');
     if (typeof generateRiverProbeCallBetSpot === 'function') supported.push('POSTFLOP_RIVER_PROBE_CALL_BET');
     if (typeof generateRiverProbeCallDefendSpot === 'function') supported.push('POSTFLOP_RIVER_PROBE_CALL_DEFEND');
+    if (typeof generate3BPTurnSpot === 'function') supported.push('POSTFLOP_3BP_TURN_CBET');
+    if (typeof generate3BPTurnDefendSpot === 'function') supported.push('POSTFLOP_3BP_TURN_DEFEND');
+    if (typeof generate3BPRiverSpot === 'function') supported.push('POSTFLOP_3BP_RIVER_CBET');
+    if (typeof generate3BPRiverDefendSpot === 'function') supported.push('POSTFLOP_3BP_RIVER_DEFEND');
     return supported.filter(s => !!SCENARIO_NAMES[s]);
 }
 
@@ -1436,7 +1448,7 @@ function loadConfig() {
         const s = localStorage.getItem(profileKey(STORAGE_KEYS.CONFIG));
         if (s) {
             const c = JSON.parse(s);
-            const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_3BP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_3BP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET', 'POSTFLOP_TURN_DELAYED_DEFEND', 'POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND', 'POSTFLOP_RIVER_CBET', 'POSTFLOP_RIVER_DEFEND', 'POSTFLOP_RIVER_DELAYED_CBET', 'POSTFLOP_RIVER_DELAYED_DEFEND', 'POSTFLOP_RIVER_PROBE', 'POSTFLOP_RIVER_PROBE_BET', 'POSTFLOP_RIVER_TURN_CHECK_CBET', 'POSTFLOP_RIVER_TURN_CHECK_DEFEND', 'POSTFLOP_RIVER_PROBE_CALL_BET', 'POSTFLOP_RIVER_PROBE_CALL_DEFEND'];
+            const validScenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C', 'PUSH_FOLD', 'POSTFLOP_CBET', 'POSTFLOP_3BP_CBET', 'POSTFLOP_DEFEND', 'POSTFLOP_3BP_DEFEND', 'POSTFLOP_TURN_CBET', 'POSTFLOP_TURN_DEFEND', 'POSTFLOP_TURN_DELAYED_CBET', 'POSTFLOP_TURN_DELAYED_DEFEND', 'POSTFLOP_TURN_PROBE', 'POSTFLOP_TURN_PROBE_DEFEND', 'POSTFLOP_RIVER_CBET', 'POSTFLOP_RIVER_DEFEND', 'POSTFLOP_RIVER_DELAYED_CBET', 'POSTFLOP_RIVER_DELAYED_DEFEND', 'POSTFLOP_RIVER_PROBE', 'POSTFLOP_RIVER_PROBE_BET', 'POSTFLOP_RIVER_TURN_CHECK_CBET', 'POSTFLOP_RIVER_TURN_CHECK_DEFEND', 'POSTFLOP_RIVER_PROBE_CALL_BET', 'POSTFLOP_RIVER_PROBE_CALL_DEFEND', 'POSTFLOP_3BP_TURN_CBET', 'POSTFLOP_3BP_TURN_DEFEND', 'POSTFLOP_3BP_RIVER_CBET', 'POSTFLOP_3BP_RIVER_DEFEND'];
             if (c.scenarios && Array.isArray(c.scenarios)) {
                 state.config.scenarios = c.scenarios.filter(s => validScenarios.includes(s));
                 if (state.config.scenarios.length === 0) state.config.scenarios = ['RFI', 'FACING_RFI', 'RFI_VS_3BET', 'VS_LIMP', 'SQUEEZE', 'SQUEEZE_2C'];
@@ -2562,6 +2574,10 @@ function generateNextRound() {
             if (s === 'POSTFLOP_RIVER_TURN_CHECK_DEFEND') { return typeof POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY).length > 0; }
             if (s === 'POSTFLOP_RIVER_PROBE_CALL_BET') { return typeof POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY).length > 0; }
             if (s === 'POSTFLOP_RIVER_PROBE_CALL_DEFEND') { return typeof POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY).length > 0; }
+            if (s === 'POSTFLOP_3BP_TURN_CBET') { return typeof POSTFLOP_3BP_TURN_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_3BP_TURN_STRATEGY).length > 0; }
+            if (s === 'POSTFLOP_3BP_TURN_DEFEND') { return typeof POSTFLOP_3BP_TURN_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_3BP_TURN_DEFEND_STRATEGY).length > 0; }
+            if (s === 'POSTFLOP_3BP_RIVER_CBET') { return typeof POSTFLOP_3BP_RIVER_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_3BP_RIVER_STRATEGY).length > 0; }
+            if (s === 'POSTFLOP_3BP_RIVER_DEFEND') { return typeof POSTFLOP_3BP_RIVER_DEFEND_STRATEGY !== 'undefined' && Object.keys(POSTFLOP_3BP_RIVER_DEFEND_STRATEGY).length > 0; }
             return false;
         });
         if (!validScenarios.length) { _warn('[Trainer] No valid scenarios for config:', JSON.stringify(state.config)); return; }
@@ -2814,6 +2830,62 @@ function generateNextRound() {
                 if (pfFamFilter.length === 0) pfFamFilter = null;
             }
             const spot = generate3BPDefenderSpot(20, pfFamFilter);
+            state.postflop = spot;
+            state.currentPos = spot.heroPos;
+            state.oppPos = spot.villainPos;
+        } else if (state.scenario === 'POSTFLOP_3BP_TURN_CBET') {
+            let pfFamFilter = state.config.postflopFamilies || null;
+            if (!pfFamFilter && state.config.positions && state.config.positions.length > 0) {
+                const posSet = new Set(state.config.positions);
+                pfFamFilter = [...HERO_HAND_AWARE_3BP_FAMILIES].filter(fam => {
+                    const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+                    return fi && posSet.has(fi.heroPos);
+                });
+                if (pfFamFilter.length === 0) pfFamFilter = null;
+            }
+            const spot = generate3BPTurnSpot(25, pfFamFilter);
+            state.postflop = spot;
+            state.currentPos = spot.heroPos;
+            state.oppPos = spot.villainPos;
+        } else if (state.scenario === 'POSTFLOP_3BP_TURN_DEFEND') {
+            let pfFamFilter = state.config.postflopFamilies || null;
+            if (!pfFamFilter && state.config.positions && state.config.positions.length > 0) {
+                const posSet = new Set(state.config.positions);
+                pfFamFilter = [...HERO_HAND_AWARE_3BP_DEFEND_FAMILIES].filter(fam => {
+                    const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+                    return fi && posSet.has(fi.heroPos);
+                });
+                if (pfFamFilter.length === 0) pfFamFilter = null;
+            }
+            const spot = generate3BPTurnDefendSpot(25, pfFamFilter);
+            state.postflop = spot;
+            state.currentPos = spot.heroPos;
+            state.oppPos = spot.villainPos;
+        } else if (state.scenario === 'POSTFLOP_3BP_RIVER_CBET') {
+            let pfFamFilter = state.config.postflopFamilies || null;
+            if (!pfFamFilter && state.config.positions && state.config.positions.length > 0) {
+                const posSet = new Set(state.config.positions);
+                pfFamFilter = [...HERO_HAND_AWARE_3BP_FAMILIES].filter(fam => {
+                    const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+                    return fi && posSet.has(fi.heroPos);
+                });
+                if (pfFamFilter.length === 0) pfFamFilter = null;
+            }
+            const spot = generate3BPRiverSpot(25, pfFamFilter);
+            state.postflop = spot;
+            state.currentPos = spot.heroPos;
+            state.oppPos = spot.villainPos;
+        } else if (state.scenario === 'POSTFLOP_3BP_RIVER_DEFEND') {
+            let pfFamFilter = state.config.postflopFamilies || null;
+            if (!pfFamFilter && state.config.positions && state.config.positions.length > 0) {
+                const posSet = new Set(state.config.positions);
+                pfFamFilter = [...HERO_HAND_AWARE_3BP_DEFEND_FAMILIES].filter(fam => {
+                    const fi = POSTFLOP_PREFLOP_FAMILIES[fam];
+                    return fi && posSet.has(fi.heroPos);
+                });
+                if (pfFamFilter.length === 0) pfFamFilter = null;
+            }
+            const spot = generate3BPRiverDefendSpot(25, pfFamFilter);
             state.postflop = spot;
             state.currentPos = spot.heroPos;
             state.oppPos = spot.villainPos;
@@ -3223,7 +3295,7 @@ function generateNextRound() {
         return;
     }
     // POSTFLOP TURN CBET: PFR deciding barrel or check on turn
-    if (state.scenario === 'POSTFLOP_TURN_CBET' && state.postflop) {
+    if ((state.scenario === 'POSTFLOP_TURN_CBET' || state.scenario === 'POSTFLOP_3BP_TURN_CBET') && state.postflop) {
         clearToast();
         const spot = state.postflop;
         state.currentHand = spot.heroHand || null;
@@ -3236,7 +3308,7 @@ function generateNextRound() {
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
         // Villain checked turn — show check indicator
         try { renderVillainCheck(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos); } catch(_) {}
-        try { _renderTurnContext(spot, 'POSTFLOP_TURN_CBET'); } catch(_) {}
+        try { _renderTurnContext(spot, state.scenario); } catch(_) {}
         renderTurnCBetButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -3248,7 +3320,7 @@ function generateNextRound() {
         return;
     }
     // POSTFLOP TURN DEFEND: BB deciding fold/call/raise facing PFR's turn barrel
-    if (state.scenario === 'POSTFLOP_TURN_DEFEND' && state.postflop) {
+    if ((state.scenario === 'POSTFLOP_TURN_DEFEND' || state.scenario === 'POSTFLOP_3BP_TURN_DEFEND') && state.postflop) {
         clearToast();
         const spot = state.postflop;
         state.currentHand = spot.heroHand || null;
@@ -3261,7 +3333,7 @@ function generateNextRound() {
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
         // Villain bet turn — show bet chip near their seat
         try { const _pot = getScenarioPot$(state.scenario); renderVillainBet(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos, Math.round(_pot * 0.5)); } catch(_) {}
-        try { _renderTurnContext(spot, 'POSTFLOP_TURN_DEFEND'); } catch(_) {}
+        try { _renderTurnContext(spot, state.scenario); } catch(_) {}
         renderTurnDefenderButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -3375,7 +3447,7 @@ function generateNextRound() {
         return;
     }
     // POSTFLOP RIVER CBET: PFR deciding barrel or check on river
-    if (state.scenario === 'POSTFLOP_RIVER_CBET' && state.postflop) {
+    if ((state.scenario === 'POSTFLOP_RIVER_CBET' || state.scenario === 'POSTFLOP_3BP_RIVER_CBET') && state.postflop) {
         clearToast();
         const spot = state.postflop;
         state.currentHand = spot.heroHand || null;
@@ -3387,7 +3459,7 @@ function generateNextRound() {
         const blRC = document.getElementById('bets-layer'); if (blRC) blRC.innerHTML = '';
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
         try { renderVillainCheck(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos); } catch(_) {}
-        try { _renderPostflopContext(spot, 'POSTFLOP_RIVER_CBET'); } catch(_) {}
+        try { _renderPostflopContext(spot, state.scenario); } catch(_) {}
         renderRiverCBetButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -3399,7 +3471,7 @@ function generateNextRound() {
         return;
     }
     // POSTFLOP RIVER DEFEND: BB deciding fold/call/raise facing PFR's river barrel
-    if (state.scenario === 'POSTFLOP_RIVER_DEFEND' && state.postflop) {
+    if ((state.scenario === 'POSTFLOP_RIVER_DEFEND' || state.scenario === 'POSTFLOP_3BP_RIVER_DEFEND') && state.postflop) {
         clearToast();
         const spot = state.postflop;
         state.currentHand = spot.heroHand || null;
@@ -3411,7 +3483,7 @@ function generateNextRound() {
         const blRD = document.getElementById('bets-layer'); if (blRD) blRD.innerHTML = '';
         try { updateTable(spot.heroPos, spot.villainPos); } catch(_) {}
         try { const _pot = getScenarioPot$(state.scenario); renderVillainBet(document.getElementById('bets-layer'), spot.heroPos, spot.villainPos, Math.round(_pot * 0.5)); } catch(_) {}
-        try { _renderPostflopContext(spot, 'POSTFLOP_RIVER_DEFEND'); } catch(_) {}
+        try { _renderPostflopContext(spot, state.scenario); } catch(_) {}
         renderRiverDefenderButtons(true);
         setTimeout(() => {
             if (state.currentHand) {
@@ -4055,7 +4127,11 @@ const _POSTFLOP_SPOT_LABELS = {
     POSTFLOP_RIVER_TURN_CHECK_CBET:   'River Barrel (TCC)',
     POSTFLOP_RIVER_TURN_CHECK_DEFEND: 'River Defense (TCC)',
     POSTFLOP_RIVER_PROBE_CALL_BET:    'River 2nd Barrel (Probe)',
-    POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River Defense (Probe 2B)'
+    POSTFLOP_RIVER_PROBE_CALL_DEFEND: 'River Defense (Probe 2B)',
+    POSTFLOP_3BP_TURN_CBET:    '3BP Turn Barrel',
+    POSTFLOP_3BP_TURN_DEFEND:  '3BP Turn Defense',
+    POSTFLOP_3BP_RIVER_CBET:   '3BP River Barrel',
+    POSTFLOP_3BP_RIVER_DEFEND: '3BP River Defense'
 };
 // Backward-compat alias — callers still using the old name continue to work.
 const _TURN_SPOT_LABELS = _POSTFLOP_SPOT_LABELS;
@@ -4337,7 +4413,7 @@ function renderTurnDefenderButtons(hidden) {
 
 function handleTurnCBetInput(action) {
     _resolvePostflopAction({
-        action, scoreFn: scoreTurnAction, scenario: 'POSTFLOP_TURN_CBET',
+        action, scoreFn: scoreTurnAction, scenario: state.scenario || 'POSTFLOP_TURN_CBET',
         feedbackFn: showTurnCBetFeedback,
         srDiscriminator: _postflopSRDiscriminator,
         correctActionFn: (a, r) => r.correct ? a : (a === 'BARREL' ? 'CHECK' : 'BARREL'),
@@ -4347,7 +4423,7 @@ function handleTurnCBetInput(action) {
 
 function handleTurnDefenderInput(action) {
     _resolvePostflopAction({
-        action, scoreFn: scoreTurnDefenderAction, scenario: 'POSTFLOP_TURN_DEFEND',
+        action, scoreFn: scoreTurnDefenderAction, scenario: state.scenario || 'POSTFLOP_TURN_DEFEND',
         feedbackFn: showTurnDefenderFeedback,
         srDiscriminator: _postflopSRDiscriminator,
         correctActionFn: (a, r) => r.correct ? a : r.preferredLabel.toLowerCase(),
@@ -4473,7 +4549,7 @@ function renderRiverCBetButtons(hidden) {
 
 function handleRiverCBetInput(action) {
     _resolvePostflopAction({
-        action, scoreFn: scoreRiverAction, scenario: 'POSTFLOP_RIVER_CBET',
+        action, scoreFn: scoreRiverAction, scenario: state.scenario || 'POSTFLOP_RIVER_CBET',
         feedbackFn: showRiverCBetFeedback,
         srDiscriminator: _postflopSRDiscriminator,
         correctActionFn: (a, r) => r.correct ? a : (a === 'BARREL' ? 'CHECK' : 'BARREL'),
@@ -4527,7 +4603,7 @@ function renderRiverDefenderButtons(hidden) {
 
 function handleRiverDefenderInput(action) {
     _resolvePostflopAction({
-        action, scoreFn: scoreRiverDefenderAction, scenario: 'POSTFLOP_RIVER_DEFEND',
+        action, scoreFn: scoreRiverDefenderAction, scenario: state.scenario || 'POSTFLOP_RIVER_DEFEND',
         feedbackFn: showRiverDefenderFeedback,
         srDiscriminator: _postflopSRDiscriminator,
         correctActionFn: (a, r) => r.correct ? a : r.preferredLabel.toLowerCase(),
