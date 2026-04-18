@@ -34,7 +34,7 @@ Last updated: 2026-04-17
 **Status:** Done. `_log`/`_warn` helpers in `engine.js`. All diagnostic console calls in `engine.js`, `training.js`, `cloud.js` gated behind `window.PC_DEBUG`.
 
 ### 🔄 2.3 Incomplete Postflop Hero-Hand Awareness
-**Status:** Partial. BTN vs BB and CO vs BB are hero-hand-aware. HJ/LJ/UTG2/UTG1/UTG vs BB and OOP spots (BB vs BTN, SB vs BB) still use fallback logic. Tracked in Claude.md Known Issues.
+**Status:** Partial. **3BP is now fully hero-hand-aware across flop + turn + river** (Pass B, 2026-04-17): 13 bettor families, 5 defender families, 4 new strategy registries. SRP remains partial: BTN_vs_BB and CO_vs_BB are hero-hand-aware; HJ/LJ/UTG2/UTG1/UTG vs BB and OOP SRP spots still use fallback logic. SRP defender families expanded to 8 (Pass A). Tracked in Claude.md Known Issues.
 
 ### ✅ 2.4 Challenge Path v2
 **Status:** Done. 24-node DAG, 8 tiers, pass/silver/gold medals live in `challenge.js`. Progress in `gto_challenge_v2` with v1 migration.
@@ -84,7 +84,7 @@ Last updated: 2026-04-17
 | # | Item | Risk | Effort |
 |---|---|---|---|
 | 3.1 | Global state isolation (158 mutations) | High | High |
-| 2.3 | Expand postflop hero-hand awareness | Medium | Medium |
+| 2.3 | Expand SRP hero-hand awareness (3BP complete) | Medium | Medium |
 | 4.4 | Split `ranges.js` | Low | Low |
 | 1.1 | XSS/innerHTML audit | Medium | Medium |
 | — | `UI_CONFIG` animation constants | Low | Low |

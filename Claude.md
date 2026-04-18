@@ -21,9 +21,9 @@ All files loaded via `defer` script tags in this exact order:
 
 **Postflop (flop):** `POSTFLOP_CBET`, `POSTFLOP_3BP_CBET`, `POSTFLOP_DEFEND`, `POSTFLOP_3BP_DEFEND`
 
-**Postflop (turn):** `POSTFLOP_TURN_CBET`, `POSTFLOP_TURN_DEFEND`, `POSTFLOP_TURN_DELAYED_CBET`, `POSTFLOP_TURN_DELAYED_DEFEND`, `POSTFLOP_TURN_PROBE`, `POSTFLOP_TURN_PROBE_DEFEND`
+**Postflop (turn):** `POSTFLOP_TURN_CBET`, `POSTFLOP_TURN_DEFEND`, `POSTFLOP_TURN_DELAYED_CBET`, `POSTFLOP_TURN_DELAYED_DEFEND`, `POSTFLOP_TURN_PROBE`, `POSTFLOP_TURN_PROBE_DEFEND`, `POSTFLOP_3BP_TURN_CBET`, `POSTFLOP_3BP_TURN_DEFEND`
 
-**Postflop (river):** `POSTFLOP_RIVER_CBET`, `POSTFLOP_RIVER_DEFEND`, `POSTFLOP_RIVER_DELAYED_CBET`, `POSTFLOP_RIVER_DELAYED_DEFEND`, `POSTFLOP_RIVER_PROBE`, `POSTFLOP_RIVER_PROBE_BET`, `POSTFLOP_RIVER_TURN_CHECK_CBET`, `POSTFLOP_RIVER_TURN_CHECK_DEFEND`, `POSTFLOP_RIVER_PROBE_CALL_BET`, `POSTFLOP_RIVER_PROBE_CALL_DEFEND`
+**Postflop (river):** `POSTFLOP_RIVER_CBET`, `POSTFLOP_RIVER_DEFEND`, `POSTFLOP_RIVER_DELAYED_CBET`, `POSTFLOP_RIVER_DELAYED_DEFEND`, `POSTFLOP_RIVER_PROBE`, `POSTFLOP_RIVER_PROBE_BET`, `POSTFLOP_RIVER_TURN_CHECK_CBET`, `POSTFLOP_RIVER_TURN_CHECK_DEFEND`, `POSTFLOP_RIVER_PROBE_CALL_BET`, `POSTFLOP_RIVER_PROBE_CALL_DEFEND`, `POSTFLOP_3BP_RIVER_CBET`, `POSTFLOP_3BP_RIVER_DEFEND`
 
 ## Positions
 `UTG / UTG1 / UTG2 / LJ / HJ / CO / BTN / SB / BB`
@@ -33,7 +33,7 @@ All files loaded via `defer` script tags in this exact order:
 - **Full Hand Mode** — live. Plays a full street-by-street SRP hand via `sim.js`. All 9 lanes supported: BTN/CO/HJ/LJ/UTG2/UTG1/UTG vs BB (IP), plus BB vs BTN (OOP) and SB vs BB. Session Mode (persistent stack across hands) also live.
 - **Math & Decision Drills** — live in `drills.js`. Drill types: POT_MATH, POT_ODDS, BET_SIZE, OUT_COUNT, RULE_42, and MIXED. SR-keyed per bucket.
 - **Challenge Path v2** — live in `challenge.js`. 24-node DAG, 8 tiers, pass/silver/gold medals. Progress stored in `gto_challenge_v2` with v1 migration.
-- **Postflop training** — hero-hand-aware system active for BTN vs BB and CO vs BB SRP IP spots. Remaining SRP families (HJ/LJ/UTG2/UTG1/UTG vs BB, OOP spots) not yet hero-hand-aware.
+- **Postflop training** — 3BP training is now fully hero-hand-aware across flop + turn + river (13 bettor families via `HERO_HAND_AWARE_3BP_FAMILIES`; 5 defender families via `HERO_HAND_AWARE_3BP_DEFEND_FAMILIES`). SRP hero-hand-aware system covers BTN vs BB and CO vs BB IP spots; remaining SRP PFR families (HJ/LJ/UTG2/UTG1/UTG vs BB, OOP spots) still use HERO_HAND_AWARE_FAMILIES (not full hero-hand class logic). SRP defender coverage expanded to 8 families (Pass A): BTN_vs_BB, CO_vs_BB, SB_vs_BB, HJ_vs_BB, LJ_vs_BB, UTG_vs_BB, BTN_vs_SB, CO_vs_BTN.
 - **Strategy Library** has Preflop and Postflop tabs (Overview, Matrix, Archetypes views).
 
 ## Hardening — Completed Passes
@@ -45,8 +45,13 @@ All files loaded via `defer` script tags in this exact order:
 - **Cloud sync UX** (`cloud.js`) — amber "● Unsynced" dot on dirty state; red "● Sync failing" after 3 consecutive failures; resets on successful save.
 - **Tailwind CSS** — CDN replaced with local purged build (`tailwind.min.css`, ~10 KB). Rebuild: `npx tailwindcss -i src/input.css -o tailwind.min.css --minify`.
 - **onclick migration** (`index.html` + `ui.js`) — all 57 inline `onclick=` attributes removed; event listeners registered in `initEventListeners()` called from `window.onload`.
+- **Pass A — SRP defender expansion** (`ranges.js`, `training.js`) — `DEFENDER_FAMILIES` expanded from 2 to 8 families: BTN_vs_BB, CO_vs_BB, SB_vs_BB, HJ_vs_BB, LJ_vs_BB, UTG_vs_BB, BTN_vs_SB, CO_vs_BTN. All 8 now have `POSTFLOP_DEFEND_STRATEGY` and `POSTFLOP_TURN_DEFEND_STRATEGY` coverage.
+- **Pass B — 3BP turn + river** (`ranges.js`, `training.js`, `ui.js`) — Extended 3BP postflop from flop-only to full turn + river. Added 4 strategy registries (`POSTFLOP_3BP_TURN_STRATEGY`, `POSTFLOP_3BP_TURN_DEFEND_STRATEGY`, `POSTFLOP_3BP_RIVER_STRATEGY`, `POSTFLOP_3BP_RIVER_DEFEND_STRATEGY`) and 4 generators (`generate3BPTurnSpot`, `generate3BPTurnDefendSpot`, `generate3BPRiverSpot`, `generate3BPRiverDefendSpot`). Four new training scenarios live; pot sizing in `ui.js` uses 1.66× and 3.3× multipliers over the 3BP flop pot. SR keys encode `potType:'3BP'` to prevent mastery misattribution vs SRP.
 
 ## Key Principles — Follow These Always
+
+### Branch strategy
+Always push directly to `main`. Do not create feature branches unless the user explicitly requests one.
 
 ### Surgical changes only
 - Do NOT restructure core functions: `generateNextRound`, SR engine, boot flow, `initEventListeners` wiring, cloud/storage behavior — unless explicitly scoped.
@@ -101,8 +106,8 @@ SR keys must include all relevant context (scenario, position, bucket, hand) to 
 - Run the build command above whenever Tailwind classes change. The CDN is no longer used.
 
 ## Known Issues / On The Horizon
-- **Expand hero-hand-aware postflop** — HJ/LJ/UTG2/UTG1/UTG vs BB and OOP spots (BB vs BTN, SB vs BB) still use non-hero-hand-aware postflop logic.
+- **SRP hero-hand-aware expansion** — SRP PFR turn/river training uses `HERO_HAND_AWARE_FAMILIES` (only the two hero-hand-aware SRP families: BTN_vs_BB, CO_vs_BB). Remaining SRP families (HJ/LJ/UTG2/UTG1/UTG vs BB and all OOP spots) still use non-hero-hand-aware flop fallback logic. 3BP is now fully covered across all streets.
 - **XSS via innerHTML** — `.innerHTML` with template literals is used throughout (`training.js`, `ui.js`, `drills.js`, `sim.js`). Current data is internal so no active vector, but needs a dedicated audit pass before any user-derived data touches these paths.
 - **Global state isolation** — 158 direct mutations to the shared `state` object across 5 files. Needs own dedicated pass (high regression risk).
 - **Hardcoded animation values** in `ui.js` (bet sizes, chip amounts, timeouts) — known audit needed; replace with `UI_CONFIG` constants block.
-- **Split `ranges.js`** — 7,800+ LOC single file; candidate for splitting into `ranges-preflop.js`, `ranges-postflop.js`, `push-fold.js`.
+- **Split `ranges.js`** — ~9,000+ LOC single file (grown with Pass A + Pass B); candidate for splitting into `ranges-preflop.js`, `ranges-postflop.js`, `push-fold.js`.
