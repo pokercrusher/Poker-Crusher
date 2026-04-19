@@ -91,14 +91,32 @@ Implementation: frequency scalar multipliers on GTO ranges for preflop; postflop
 **Speed of play:** Global configurable speed slider (Slow / Normal / Fast) affecting ALL action animations — preflop, postflop, and spectator alike.
 
 **AI player types:**
-- Each seat is fixed (configured once per table setup) but the player should NOT be able to instantly identify types just by looking at the table.
-- Types are randomized on new table setup — not always the same seat = same type.
-- Player can click a seat to inspect that villain's player type.
-- Live VPIP/PFR stats visible per seat (accumulate during the session).
+- Default: fully random assignment across all archetypes on each new table.
+- Also configurable via **Room Profiles** — presets that set the distribution of types to simulate different environments. Examples:
+  - "Vegas Strip" → mostly NITs/TAGs, few FISH
+  - "Local Room" → heavy FISH/CALLING STATION, few TAGs
+  - "Online Reg" → LAG/AGGRO heavy
+  - "Custom" → user sets their own type pool/weights
+- Types are NOT visible on the table by default — player clicks a seat to inspect that villain (popup showing name, avatar, player type, session stats).
+- Live VPIP/PFR stats shown in the per-seat popup only (not always-visible on table).
+
+**UI placement:** New top-level tab — "Poker Room" — alongside Train Now, Daily Run, Challenge Mode.
+
+**Buy-in ranges (standard casino):**
+| Stake | Min | Max |
+|-------|-----|-----|
+| 1/2 | $100 (50BB) | $300 (150BB) |
+| 1/3 | $100 (~33BB) | $500 (~167BB) |
+| 2/5 | $200 (40BB) | $1,000 (200BB) |
+| 5/10 | $500 (50BB) | $2,000 (200BB) |
+
+Villain starting stacks randomized within each stake's range at session start (not all 100BB).
 
 ### UI Sections
-- **Lobby**: Stake selector, bankroll display, seat configurator (name + avatar only visible by default), "Sit Down"
-- **Table**: 9-seat view, villain names/avatars/stacks/live stats, hero action buttons + sizing slider, pot odds display
+- **Poker Room tab**: Top-level nav entry point
+- **Lobby**: Stake selector, room profile picker, bankroll display, "Sit Down"
+- **Table**: 9-seat view, villain names/avatars/stacks visible; click any seat → popup with player type, avatar, VPIP/PFR for session
+- **Action controls**: Hero fold/check/call/bet/raise buttons + sizing slider + pot odds display
 - **Spectator**: After hero folds, remaining action animates to completion; realistic showdown/muck reveal
 - **Hand History Panel**: Collapsible, last 10 hands with result summary
 - **Session Stats Bar**: Hands, net BB, net $, hero VPIP/PFR
