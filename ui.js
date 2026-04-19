@@ -3190,11 +3190,9 @@ function _simShowRecapDrawer(h) {
 // ---------------------------------------------------------------------------
 function launchConfiguredSession() {
     if (typeof sessionBuilder !== 'undefined' && sessionBuilder.fullHandMode) {
-        if (sessionBuilder.sessionMode && typeof startSimSession === 'function') {
+        // Full Hand / Live Table always runs as a session: rotation + stack tracking
+        if (typeof startSimSession === 'function') {
             startSimSession(sessionBuilder.sessionStack || 100);
-        } else {
-            // Non-session mode: reset rotation to BTN so every fresh play starts there
-            if (typeof simSession !== 'undefined') simSession.currentLaneIndex = 0;
         }
         startSimulator('FULL_TABLE');
     } else {
