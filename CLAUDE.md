@@ -104,9 +104,13 @@ Tiebreakers within same category use simple high-card hole card comparison. Full
 
 **Buy-in:** Player chooses within a stake-scaled range (e.g. 40–200BB). Prompted on sit-down.
 
-**Bankroll:** Single global bankroll in dollars. Persists across sessions. When hero busts → prompt to rebuy (with optional toggle for auto-rebuy).
+**Bankroll:** Single global bankroll in dollars. Persists across sessions. Default starting bankroll: $1,000. When hero busts → prompt to rebuy (deducted from bankroll) or top up bankroll.
 
-**Villain stacks:** Do NOT persist between sessions. On new session, randomize starting stacks realistically (e.g. 60–150BB range) — not all 100BB.
+**Villain stacks:** Do NOT persist between sessions. On new session, randomize starting stacks realistically (e.g. 60–150BB range) — not all 100BB. No per-villain persistence across sessions (keep it simple).
+
+**Hero seat:** Fixed physical seat position (same as existing sim.js/ui.js convention). No seat selection in lobby.
+
+**Between hands:** Auto-deal after a short pause (~2s) — no tap-to-deal required. Keeps the table feeling live.
 
 **Showdown / muck rules:** Realistic. Called hand must show; uncalled hand can muck. Winner shows if everyone folds to them. Cards shown in last-aggressor order at showdown.
 
