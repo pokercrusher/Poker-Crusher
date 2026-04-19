@@ -3251,7 +3251,7 @@ function _rawToTrainerBucket(rawResult, heroCards, boardCards) {
         if (heroPairedRank === bDistinct[0]) return 'TOP_PAIR';
         if (bDistinct[1] !== undefined && heroPairedRank === bDistinct[1]) return 'SECOND_PAIR';
         if (bDistinct[2] !== undefined && heroPairedRank === bDistinct[2]) return 'THIRD_PAIR';
-        return 'UNDERPAIR';
+        return 'THIRD_PAIR';
     }
 
     // --- Rank 2: one pair — distinguish OVERPAIR / TOP_PAIR / SECOND_PAIR / THIRD_PAIR / UNDERPAIR ---
@@ -3288,7 +3288,7 @@ function _rawToTrainerBucket(rawResult, heroCards, boardCards) {
         if (pairedRank === bDistinct[0]) return 'TOP_PAIR';
         if (bDistinct[1] !== undefined && pairedRank === bDistinct[1]) return 'SECOND_PAIR';
         if (bDistinct[2] !== undefined && pairedRank === bDistinct[2]) return 'THIRD_PAIR';
-        return 'UNDERPAIR'; // shouldn't normally reach here with well-formed input
+        return 'THIRD_PAIR'; // 4th+ board rank paired on turn/river — treat as bottom pair
     }
 
     // --- Rank 1: high card — no pair at all, classify as AIR ---

@@ -1472,7 +1472,10 @@ function hasOESD(allRanks) {
         const window = unique.slice(i, i + 4);
         if (window[3] - window[0] === 3 && window.length === 4) {
             const low = window[0], high = window[3];
-            if (low > 1 && high < 14) return true;
+            if (low > 1 && high < 14) {
+                // Guard: if a completing rank is already present, this is a made straight, not a draw
+                if (!unique.includes(low - 1) && !unique.includes(high + 1)) return true;
+            }
         }
     }
     return false;

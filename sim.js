@@ -1175,6 +1175,25 @@ function advanceStreet(handRun) {
         return hr;
     }
 
+    // Override heroHandClass on the training spot with the actual hero hand classification.
+    // Training spot generators deal random practice hands; their heroHandClass is not the hero's actual hand.
+    if (hr.postflopSpot && heroSeat.holeCards && heroSeat.holeCards.length === 2) {
+        try {
+            const _heroCards = heroSeat.holeCards.map(function(c) { return { rank: c[0], suit: c[1] }; });
+            const _heroHand = { cards: _heroCards };
+            const _board = gs.board;
+            let _actualClass = null;
+            if (nextStreet === 'flop' && _board.length >= 3) {
+                _actualClass = classifyFlopHand(_heroHand, _board.slice(0, 3));
+            } else if (nextStreet === 'turn' && _board.length >= 4) {
+                _actualClass = classifyTurnHand(_heroHand, _board.slice(0, 3), _board[3]);
+            } else if (nextStreet === 'river' && _board.length >= 5) {
+                _actualClass = classifyRiverHand(_heroHand, _board.slice(0, 3), _board[3], _board[4]);
+            }
+            if (_actualClass) hr.postflopSpot.heroHandClass = _actualClass;
+        } catch (_e) { /* classify failed; keep original spot heroHandClass */ }
+    }
+
     // Step 5: Determine firstToActIndex — OOP player acts first postflop
     // IP hero (BTN/CO) → villain (OOP) acts first; OOP hero (BB/SB) → hero acts first
     const heroActsFirst = !_heroIsIP(hr);
