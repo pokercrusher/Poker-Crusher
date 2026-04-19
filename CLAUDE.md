@@ -98,7 +98,7 @@ Tiebreakers within same category use simple high-card hole card comparison. Full
 
 ### Confirmed Design Decisions
 
-**Table size:** 9-handed primary (matches live play focus). Easy toggle for 6-max / other sizes is desirable if low effort.
+**Table size:** Configurable — player selects number of seats (2–9) in the lobby before sitting down. Defaults to 9. Seat coords and deal order scale to active seat count. Position labels always assigned from full 9-seat set (BTN, CO, HJ, etc.) trimmed to the selected count.
 
 **Antes:** Not in v1.
 
