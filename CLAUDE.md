@@ -92,11 +92,7 @@ Implementation: frequency scalar multipliers on GTO ranges for preflop; postflop
 
 **AI player types:**
 - Default: fully random assignment across all archetypes on each new table.
-- Also configurable via **Room Profiles** — presets that set the distribution of types to simulate different environments. Examples:
-  - "Vegas Strip" → mostly NITs/TAGs, few FISH
-  - "Local Room" → heavy FISH/CALLING STATION, few TAGs
-  - "Online Reg" → LAG/AGGRO heavy
-  - "Custom" → user sets their own type pool/weights
+- Player can optionally adjust the **type distribution** before sitting down — simple controls to weight certain archetypes higher (e.g. more FISH, fewer NITs). No named presets.
 - Types are NOT visible on the table by default — player clicks a seat to inspect that villain (popup showing name, avatar, player type, session stats).
 - Live VPIP/PFR stats shown in the per-seat popup only (not always-visible on table).
 
@@ -114,7 +110,7 @@ Villain starting stacks randomized within each stake's range at session start (n
 
 ### UI Sections
 - **Poker Room tab**: Top-level nav entry point
-- **Lobby**: Stake selector, room profile picker, bankroll display, "Sit Down"
+- **Lobby**: Stake selector, optional type distribution editor, bankroll display, "Sit Down"
 - **Table**: 9-seat view, villain names/avatars/stacks visible; click any seat → popup with player type, avatar, VPIP/PFR for session
 - **Action controls**: Hero fold/check/call/bet/raise buttons + sizing slider + pot odds display
 - **Spectator**: After hero folds, remaining action animates to completion; realistic showdown/muck reveal
