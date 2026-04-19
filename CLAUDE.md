@@ -74,10 +74,32 @@ Implementation: frequency scalar multipliers on GTO ranges for preflop; postflop
 }
 ```
 
+### Confirmed Design Decisions
+
+**Table size:** 9-handed primary (matches live play focus). Easy toggle for 6-max / other sizes is desirable if low effort.
+
+**Antes:** Not in v1.
+
+**Buy-in:** Player chooses within a stake-scaled range (e.g. 40–200BB). Prompted on sit-down.
+
+**Bankroll:** Single global bankroll in dollars. Persists across sessions. When hero busts → prompt to rebuy (with optional toggle for auto-rebuy).
+
+**Villain stacks:** Do NOT persist between sessions. On new session, randomize starting stacks realistically (e.g. 60–150BB range) — not all 100BB.
+
+**Showdown / muck rules:** Realistic. Called hand must show; uncalled hand can muck. Winner shows if everyone folds to them. Cards shown in last-aggressor order at showdown.
+
+**Speed of play:** Global configurable speed slider (Slow / Normal / Fast) affecting ALL action animations — preflop, postflop, and spectator alike.
+
+**AI player types:**
+- Each seat is fixed (configured once per table setup) but the player should NOT be able to instantly identify types just by looking at the table.
+- Types are randomized on new table setup — not always the same seat = same type.
+- Player can click a seat to inspect that villain's player type.
+- Live VPIP/PFR stats visible per seat (accumulate during the session).
+
 ### UI Sections
-- **Lobby**: Stake selector, bankroll display, seat configurator, "Sit Down"
-- **Table**: 9-seat view, villain names/avatars/stacks, hero action buttons + sizing slider, pot odds display
-- **Spectator**: After hero folds, remaining action animates to completion; showdown reveals villain cards
+- **Lobby**: Stake selector, bankroll display, seat configurator (name + avatar only visible by default), "Sit Down"
+- **Table**: 9-seat view, villain names/avatars/stacks/live stats, hero action buttons + sizing slider, pot odds display
+- **Spectator**: After hero folds, remaining action animates to completion; realistic showdown/muck reveal
 - **Hand History Panel**: Collapsible, last 10 hands with result summary
 - **Session Stats Bar**: Hands, net BB, net $, hero VPIP/PFR
 
