@@ -119,8 +119,7 @@ let sessionBuilder = {
     displayMode: 'dollars',    // 'dollars' | 'bb'
     pfStacks: [5,8,10,13,15,20], // active push/fold stack depths
     fullHandMode: false,       // true = Full Hand mode — always uses live table rotation
-    sessionMode: false,        // true = persistent stack session across hands
-    sessionStack: 100          // starting stack in bb for session mode
+    sessionStack: 100          // starting stack in bb (session always active in live table)
 };
 
 // ============================================================
@@ -226,12 +225,6 @@ function _simRecordHandToSession(h) {
     try { localStorage.setItem('gto_sim_session_active_v1', JSON.stringify(simSession)); } catch(e) {}
 }
 
-function toggleSessionMode() {
-    sessionBuilder.sessionMode = !sessionBuilder.sessionMode;
-    saveSessionConfig();
-    renderSessionBuilderUI();
-}
-
 function setSessionStack(val) {
     var n = parseInt(val, 10);
     if (!isNaN(n) && n >= 10 && n <= 999) {
@@ -245,21 +238,15 @@ function renderSessionModeUI() {
     if (!container) return;
     if (!sessionBuilder.fullHandMode) { container.classList.add('hidden'); return; }
     container.classList.remove('hidden');
-    var on = sessionBuilder.sessionMode;
+    // Live Table always runs as a session — just expose starting stack
     container.innerHTML =
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;">' +
-        '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#64748b;">Session mode</span>' +
-        '<button onclick="toggleSessionMode()" style="position:relative;width:44px;height:24px;border-radius:999px;border:none;cursor:pointer;background:' + (on ? '#6366f1' : '#334155') + ';transition:background 0.2s;flex-shrink:0;">' +
-        '<span style="position:absolute;top:3px;left:' + (on ? '23px' : '3px') + ';width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;display:block;"></span>' +
-        '</button></div>' +
-        (on ?
         '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">' +
         '<span style="font-size:11px;color:#64748b;font-weight:600;">Starting stack</span>' +
         '<input type="number" min="10" max="999" value="' + (sessionBuilder.sessionStack || 100) + '" ' +
         'onchange="setSessionStack(this.value)" ' +
         'style="width:64px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-weight:700;font-size:13px;padding:4px 8px;text-align:center;">' +
         '<span style="font-size:11px;color:#64748b;">bb</span>' +
-        '</div>' : '');
+        '</div>';
 }
 
 // Which modules currently have at least one active family?
@@ -1183,7 +1170,6 @@ function saveSessionConfig() {
             displayMode: sessionBuilder.displayMode,
             pfStacks: sessionBuilder.pfStacks,
             fullHandMode: sessionBuilder.fullHandMode,
-            sessionMode: sessionBuilder.sessionMode,
             sessionStack: sessionBuilder.sessionStack
         }));
     } catch(e) {}
@@ -1200,7 +1186,6 @@ function loadSessionConfig() {
             if (c.displayMode === 'dollars' || c.displayMode === 'bb') sessionBuilder.displayMode = c.displayMode;
             if (Array.isArray(c.pfStacks) && c.pfStacks.length) sessionBuilder.pfStacks = c.pfStacks;
             if (c.fullHandMode === true) sessionBuilder.fullHandMode = true;
-            if (c.sessionMode === true) sessionBuilder.sessionMode = true;
             if (c.sessionStack && Number.isFinite(c.sessionStack) && c.sessionStack >= 10) sessionBuilder.sessionStack = c.sessionStack;
         }
     } catch(e) {}
@@ -1398,9 +1383,7 @@ function renderSessionBuilderUI() {
     if (sdBlock) renderStakeDisplayUI(sdBlock);
     // CTA button label
     const startBtn = document.getElementById('cfg-start-btn');
-    if (startBtn) startBtn.textContent = sessionBuilder.fullHandMode
-        ? (sessionBuilder.sessionMode ? 'START SESSION' : 'PLAY FULL HAND')
-        : 'START TRAINING';
+    if (startBtn) startBtn.textContent = sessionBuilder.fullHandMode ? 'START SESSION' : 'START TRAINING';
     validatePool();
 }
 
