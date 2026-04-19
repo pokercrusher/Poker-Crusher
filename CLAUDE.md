@@ -35,7 +35,7 @@ A separate, non-graded mode where the user plays real poker hands against AI opp
 | Trainer | Play vs AI |
 |---------|-----------|
 | Collapses to 2-player postflop | Full multi-player postflop |
-| Grades vs GTO | No grading — just play |
+| Grades vs GTO | Lightweight accuracy indicator (non-blocking) |
 | Hand ends when hero folds | Spectator mode continues hand |
 | No persistent bankroll | Persistent bankroll + stacks |
 | GTO villains only | 6 AI archetypes |
@@ -51,12 +51,34 @@ A separate, non-graded mode where the user plays real poker hands against AI opp
 | MANIAC | 40%+, always 3-bets | Very high aggression, random bluffs |
 | AGGRO | Top 25%, 3-bet light | High c-bet, check-raise often |
 
-Implementation: frequency scalar multipliers on GTO ranges for preflop; postflop frequency tables `{ cbet, checkRaise, barrelTurn, bluffRiver }` per archetype.
+**Preflop:** frequency scalar multipliers on GTO ranges (Pass 2).
+**Postflop:** hand strength gates action first; archetype frequencies modify within realistic bounds.
+- Strong hands (SET, TWO_PAIR+, OVERPAIR) never fold to a single bet — archetype controls HOW they continue
+- Weak/air hands are where archetype bluff/fold frequencies apply
+- This mirrors the existing preflop logic: ranges set hard limits, frequencies fine-tune within them
 
-### New Engine Functions (new file: `poker-room.js`, ~600 LOC)
-- `_resolveFullStreet(tableState)` — multi-player street loop, handles reraises, closes action
-- `_evalMultiWayShowdown(seats, board)` — 5-card evaluation, side pots, split pots
-- `_runSpectatorStreets(tableState)` — animates villain action when hero has folded
+### Accuracy Feedback (non-intrusive)
+- After each hero decision: small indicator (✓ / ~ / ✗) based on GTO assessment
+- Does NOT pause gameplay — hero can ignore it
+- Tap/click indicator for one-line explanation
+- End-of-hand "Review Hand" panel shows all decisions with assessment
+- Session stats bar tracks running accuracy % across all decisions
+- Pot odds + equity estimate always visible in action controls (live math context)
+- No spaced repetition — spots are unique, SR doesn't apply here
+
+### New Engine File: `poker-room.js` (~750 LOC)
+**Naming:** All functions prefixed `PR_`.
+**Reused globals from sim.js (do not rewrite):**
+- `_freshDeck`, `_shuffle`, `_dealBoardCards`, `_cardsToHandNotation`, `_buildCommittedBB`, `_deepCopy`
+- `_resolveVillainPreflopAction`, `FULL_TABLE_POSITIONS`
+**Reused globals from ranges.js:**
+- `evaluateRawHand` (sim.js:3133) — takes `(heroCards, boardCards)` both `{rank,suit}[]`, returns `{rank:1–9, label}`
+- `classifyFlopHand`, `classifyTurnHand`, `classifyRiverHand`, `checkRangeHelper`, `RANKS`
+**Reused from engine.js:**
+- `computeCorrectAction` — used by `PR_gradeHeroAction` for preflop grading
+
+**Known Pass 1 limitation:** `evaluateRawHand` returns hand category (rank 1–9) but no kicker data.
+Tiebreakers within same category use simple high-card hole card comparison. Full kicker comparison deferred to a later pass.
 
 ### Persistence Schema (`pc_poker_room_v1` in localStorage)
 ```js
@@ -115,20 +137,22 @@ Villain starting stacks randomized within each stake's range at session start (n
 - **Action controls**: Hero fold/check/call/bet/raise buttons + sizing slider + pot odds display
 - **Spectator**: After hero folds, remaining action animates to completion; realistic showdown/muck reveal
 - **Hand History Panel**: Collapsible, last 10 hands with result summary
-- **Session Stats Bar**: Hands, net BB, net $, hero VPIP/PFR
+- **Session Stats Bar**: Hands, net BB, net $, hero VPIP/PFR, decision accuracy %
 
 ### Reused Existing Pieces
-- `_runPreflopTableLoop()` — preflop sim (unchanged)
-- `classifyFlopHand()` / `classifyTurnHand()` / `classifyRiverHand()` — all villain hand eval
+- `_resolveVillainPreflopAction()` — preflop villain logic (sim.js:339)
+- `classifyFlopHand()` / `classifyTurnHand()` / `classifyRiverHand()` — villain hand eval (ranges.js)
+- `evaluateRawHand()` — showdown hand category (ranges.js:3133)
+- `computeCorrectAction()` — hero preflop grading (engine.js)
 - `STAKE_PRESETS` — dollar/BB conversion
 - `animateChip()`, `showActionBadge()` — spectator animations
 - `SEAT_COORDS_DESKTOP/MOBILE` — seat positioning
 - `safeGet()` / `safeSet()` — storage helpers
 
 ### Implementation Phases
-1. **Phase 1** — Core engine: multi-player street resolver, showdown eval, spectator loop (`poker-room.js`)
-2. **Phase 2** — AI archetypes: 5 new profiles added to `ranges.js`
-3. **Phase 3** — Persistence: new storage schema + seat editor save/load
+1. **Phase 1** — Core engine (`poker-room.js`): dealing, preflop loop, multi-player street resolver, showdown eval, spectator loop, hero accuracy grading
+2. **Phase 2** — AI archetypes: 5 new preflop profiles added to `ranges.js`
+3. **Phase 3** — Persistence: `pc_poker_room_v1` storage schema + seat editor save/load
 4. **Phase 4** — UI: lobby, table view, action controls, spectator driver, hand history
 
 Estimated scope: ~2,000–2,500 lines new code across 2–3 files.
