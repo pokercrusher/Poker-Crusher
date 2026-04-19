@@ -12,7 +12,10 @@
       "Bash(wc:*)",
       "Bash(python3:*)",
       "Bash(\"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\\\\ui.js\":*)",
-      "Bash(ls \"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\"/*.js)"
+      "Bash(ls \"C:\\\\Files\\\\Sam\\\\PokerCrusher\\\\Poker-Crusher\"/*.js)",
+      "Bash(npm test *)",
+      "Bash(npx vitest *)",
+      "Bash(npm install *)"
     ]
   }
 }

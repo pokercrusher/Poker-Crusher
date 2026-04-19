@@ -477,7 +477,83 @@ function _runPreflopTableLoop(hr) {
         }
     }
 
-    // Capture table context for UI display
+    // Phase 1 complete. Store tableState for _finishPreflopLoop, which runs after
+    // hero's preflop action is recorded in applyHeroAction.
+    hr._preflopTableState    = tableState;
+    hr._preflopHeroOrderIdx  = heroOrderIdx;
+}
+
+// ---------------------------------------------------------------------------
+// _finishPreflopLoop — Phase 2 of the FULL_TABLE preflop simulation.
+// Called from applyHeroAction once hero's preflop action is recorded.
+// Simulates all seats that act AFTER hero, then collapses to 2-player.
+// heroAction: 'fold'|'call'|'raise'|'3bet'|'limp'
+// heroSizingBB: amount hero committed this action (already deducted from stackBB)
+// ---------------------------------------------------------------------------
+function _finishPreflopLoop(hr, heroAction, heroSizingBB) {
+    var tableState   = hr._preflopTableState;
+    var heroOrderIdx = hr._preflopHeroOrderIdx;
+    var heroSeat     = hr.seats[hr.heroSeatIndex];
+    var heroPos      = heroSeat.label;
+    var ss           = hr.gameState.streetState;
+    var openSizeBB   = tableState.openSizeBB;
+
+    // Update tableState to reflect hero's action
+    if (heroAction === 'raise') {
+        tableState.opener  = heroPos;
+        tableState.limpers = [];
+    } else if (heroAction === '3bet') {
+        tableState.threeBettor = heroPos;
+    } else if (heroAction === 'call') {
+        if (tableState.opener || tableState.limpers.length > 0) tableState.callers.push(heroPos);
+    } else if (heroAction === 'limp') {
+        tableState.limpers.push(heroPos);
+    }
+
+    // Phase 2: simulate each seat that acts after hero in position order
+    if (heroAction !== 'fold') {
+        for (var i = heroOrderIdx + 1; i < FULL_TABLE_POSITIONS.length; i++) {
+            var seat = hr.seats[i];
+            if (!seat) continue;
+            var result = _resolveVillainPreflopAction(seat, tableState, 'GTO');
+            // 3-bets from behind after hero raised would require hero to re-act — not
+            // supported in this trainer, so downgrade to fold to keep the hand moving.
+            if (result.action === '3bet' && tableState.opener === heroPos) {
+                result = { action: 'fold', sizingBB: 0 };
+            }
+            switch (result.action) {
+                case 'raise':
+                    tableState.opener  = seat.label;
+                    tableState.limpers = [];
+                    ss.betMadeThisStreet = true;
+                    ss.actions.push({ seatLabel: seat.label, action: 'raise', sizingBB: result.sizingBB });
+                    seat.stackBB = parseFloat((seat.stackBB - result.sizingBB).toFixed(2));
+                    break;
+                case '3bet':
+                    tableState.threeBettor = seat.label;
+                    ss.betMadeThisStreet = true;
+                    ss.actions.push({ seatLabel: seat.label, action: '3bet', sizingBB: result.sizingBB });
+                    seat.stackBB = parseFloat((seat.stackBB - result.sizingBB).toFixed(2));
+                    break;
+                case 'call':
+                    tableState.callers.push(seat.label);
+                    ss.actions.push({ seatLabel: seat.label, action: 'call', sizingBB: result.sizingBB });
+                    seat.stackBB = parseFloat((seat.stackBB - result.sizingBB).toFixed(2));
+                    break;
+                case 'limp':
+                    tableState.limpers.push(seat.label);
+                    ss.actions.push({ seatLabel: seat.label, action: 'limp', sizingBB: 1 });
+                    seat.stackBB = parseFloat((seat.stackBB - 1).toFixed(2));
+                    break;
+                default:
+                    ss.actions.push({ seatLabel: seat.label, action: 'fold', sizingBB: 0 });
+                    seat.folded = true;
+                    break;
+            }
+        }
+    }
+
+    // Capture full table context for UI display (now includes hero + Phase 2 actions)
     hr.preflopContext = {
         heroPos:      heroPos,
         opener:       tableState.opener,
@@ -488,11 +564,9 @@ function _runPreflopTableLoop(hr) {
         tableActions: ss.actions.map(function(a) { return { seatLabel: a.seatLabel, action: a.action }; })
     };
 
-    // Choose the surviving villain:
-    //   3-bet exists  → 3-bettor is the villain (last aggressor)
-    //   open exists   → opener is the villain
-    //   no open       → BB responds to hero's open
-    var villainLabel = tableState.threeBettor || tableState.opener || 'BB';
+    // Choose the surviving villain (last aggressor, or BB by default; never hero)
+    var villainLabel = [tableState.threeBettor, tableState.opener, 'BB']
+        .find(function(l) { return l && l !== heroPos; }) || 'BB';
 
     // Collapse to 2-player — null out everyone except hero and villain
     hr.seats = hr.seats.map(function(seat) {
@@ -503,15 +577,14 @@ function _runPreflopTableLoop(hr) {
     });
 
     // Derive lane for postflop engine
-    if (tableState.opener === null) {
-        // Hero opens first (no one raised before hero)
+    if (!tableState.opener || tableState.opener === heroPos) {
+        // Hero is the opener (or no open) — hero acts last postflop
         var openDerived = heroPos + '_vs_BB_SRP';
         hr.lane = SIM_SUPPORTED_LANES.includes(openDerived) ? openDerived : 'BTN_vs_BB_SRP';
     } else if (heroPos === 'BB') {
-        // Hero is BB defending against an open (or 3-bet)
         hr.lane = 'BB_vs_BTN_SRP';
     } else {
-        // Hero faces an open (or cold-faces a 3-bet) from earlier position
+        // Hero called or 3-bet an earlier open
         var defDerived = heroPos + '_vs_BB_SRP';
         hr.lane = SIM_SUPPORTED_LANES.includes(defDerived) ? defDerived : 'BTN_vs_BB_SRP';
     }
@@ -519,14 +592,18 @@ function _runPreflopTableLoop(hr) {
     // Rebuild committedBB for the two surviving seats
     ss.committedBB = _buildCommittedBB(hr.seats);
 
-    // Restore opener's committed stack so postflop sizing logic is correct
-    if (tableState.opener !== null) {
+    // Restore hero's committed amount (set before this call in applyHeroAction)
+    if (heroAction !== 'fold' && heroSizingBB > 0) {
+        ss.committedBB[heroPos] = heroSizingBB;
+    }
+    // Restore opener's committed stack
+    if (tableState.opener !== null && tableState.opener !== heroPos) {
         ss.committedBB[tableState.opener] = openSizeBB;
         var openerSeat = hr.seats.find(function(s) { return s && s.label === tableState.opener; });
         if (openerSeat) openerSeat.stackBB = parseFloat((100 - openSizeBB).toFixed(2));
     }
     // Restore 3-bettor's committed stack
-    if (tableState.threeBettor) {
+    if (tableState.threeBettor && tableState.threeBettor !== heroPos) {
         var tbAct = ss.actions.find(function(a) { return a.action === '3bet'; });
         if (tbAct) {
             var tbSeat = hr.seats.find(function(s) { return s && s.label === tableState.threeBettor; });
@@ -536,6 +613,9 @@ function _runPreflopTableLoop(hr) {
             }
         }
     }
+
+    delete hr._preflopTableState;
+    delete hr._preflopHeroOrderIdx;
 }
 
 // Street is complete when all active players have resolved per spec Part 5
@@ -1296,6 +1376,11 @@ function applyHeroAction(handRun, action, heroSizingBB) {
     if (sizingBB > 0) {
         ss.committedBB[heroSeat.label] = (ss.committedBB[heroSeat.label] || 0) + sizingBB;
         heroSeat.stackBB = parseFloat((heroSeat.stackBB - sizingBB).toFixed(2));
+    }
+
+    // FULL_TABLE preflop: run Phase 2 (seats after hero) then collapse to 2-player
+    if (street === 'preflop' && hr._preflopTableState) {
+        _finishPreflopLoop(hr, action, sizingBB);
     }
 
     // Mirror street
