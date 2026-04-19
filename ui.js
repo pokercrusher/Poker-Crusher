@@ -3348,7 +3348,67 @@ function _simRenderRound() {
         }
     } catch(_) {}
 
+    // Persistent per-seat bet chips for current street
+    try { _simRenderStreetBetChips(h); } catch(_) {}
+
     _simRenderActionArea(h);
+}
+
+// ---------------------------------------------------------------------------
+// _simRenderStreetBetChips — render a persistent chip near each seat that has
+// committed chips this street. Removes old chips first so this is idempotent.
+// ---------------------------------------------------------------------------
+function _simRenderStreetBetChips(h) {
+    const betsLayer = document.getElementById('bets-layer');
+    if (!betsLayer) return;
+
+    // Remove previous per-seat chips (leave pot-badge alone)
+    Array.from(betsLayer.querySelectorAll('.sim-street-chip')).forEach(function(el) { el.remove(); });
+
+    const ss = h.gameState && h.gameState.streetState;
+    if (!ss || !ss.committedBB) return;
+
+    const heroPos = h.seats[h.heroSeatIndex] ? h.seats[h.heroSeatIndex].label : null;
+    const isMob = (SEAT_COORDS === SEAT_COORDS_MOBILE);
+    const bOff = isMob ? 11 : 14;
+
+    Object.keys(ss.committedBB).forEach(function(seatLabel) {
+        var amtBB = ss.committedBB[seatLabel];
+        if (!amtBB || amtBB <= 0) return;
+
+        var coords = (typeof getSeatCoords === 'function' && heroPos)
+            ? getSeatCoords(heroPos, seatLabel)
+            : null;
+        if (!coords) return;
+
+        var origL = parseFloat(coords.left), origT = parseFloat(coords.top);
+        var betL = origL, betT = origT;
+
+        // Nudge toward table center
+        if (betL < 45) betL += bOff; else if (betL > 55) betL -= bOff;
+        if (betT < 45) betT += bOff; else if (betT > 55) betT -= bOff;
+        if (origT > (isMob ? 80 : 84)) betT -= (isMob ? 10 : 12);
+        if (origT < (isMob ? 12 : 10)) betT += (isMob ? 8 : 10);
+        if (origL < (isMob ? 8 : 6)) betL += (isMob ? 10 : 12);
+        if (origL > (isMob ? 92 : 94)) betL -= (isMob ? 10 : 12);
+        if (typeof BET_JITTER !== 'undefined' && BET_JITTER[seatLabel] != null) betL += BET_JITTER[seatLabel];
+
+        betL = Math.max(isMob ? 10 : 8, Math.min(isMob ? 90 : 92, betL));
+        betT = Math.max(isMob ? 12 : 10, Math.min(isMob ? 88 : 90, betT));
+
+        var isHero = (seatLabel === heroPos);
+        var chipColor = isHero ? '#4f46e5' : '#be123c';
+        var amtLabel = (typeof bbTo$ === 'function') ? bbTo$(amtBB) : (amtBB + 'bb');
+
+        var chip = document.createElement('div');
+        chip.className = 'sim-street-chip absolute flex items-center gap-1 z-30 pointer-events-none -translate-x-1/2 -translate-y-1/2';
+        chip.style.left = betL + '%';
+        chip.style.top = betT + '%';
+        chip.innerHTML =
+            '<div style="width:var(--chip-size,16px);height:var(--chip-size,16px);border-radius:50%;background:' + chipColor + ';border:2px solid rgba(255,255,255,0.3);flex-shrink:0;"></div>' +
+            '<span style="font-size:var(--chip-font,9px);font-weight:900;color:#fde68a;background:rgba(0,0,0,0.55);padding:1px 4px;border-radius:4px;white-space:nowrap;">' + amtLabel + '</span>';
+        betsLayer.appendChild(chip);
+    });
 }
 
 // ---------------------------------------------------------------------------
