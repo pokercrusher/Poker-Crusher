@@ -1092,7 +1092,8 @@ function advanceStreet(handRun) {
 
     const laneFamily = LANE_FAMILY[hr.lane] || 'BTN_vs_BB';
     const familyFilter = LANE_POSTFLOP_FAMILY[hr.lane] || ['BTN_vs_BB'];
-    const heroLabel = hr.seats[hr.heroSeatIndex].label;
+    const heroSeat = hr.seats[hr.heroSeatIndex];
+    const heroLabel = heroSeat.label;
     const villainSeatForGen = hr.seats.find(s => s !== null && !s.isHero);
     const villainLabelForGen = villainSeatForGen ? villainSeatForGen.label : 'BB';
 
