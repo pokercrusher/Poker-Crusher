@@ -832,3 +832,149 @@ describe('Poker Room — Pass 1 Engine', () => {
         expect(result.explanation).toContain('RAISE');
     });
 });
+
+// =============================================================================
+// Poker Room — Pass 2 Archetype Tests
+// Inline copies of _PR_handStrengthScore + PR_ARCHETYPE_PREFLOP + resolver logic.
+// All tests are fully deterministic (no Monte Carlo sampling).
+// =============================================================================
+
+function _PR_handStrengthScore_test(holeCards) {
+    const RV = { 2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14 };
+    const r1 = RV[holeCards[0].rank];
+    const r2 = RV[holeCards[1].rank];
+    const hi = Math.max(r1, r2);
+    const lo = Math.min(r1, r2);
+    if (hi === lo) return 50 + (hi - 2) * 4;
+    const h = (hi - 2) / 12;
+    const k = (lo - 2) / 12;
+    const suited = holeCards[0].suit === holeCards[1].suit ? 1 : 0;
+    const connBonus = Math.max(0, 4 - (hi - lo - 1));
+    return Math.round(20 + h * 35 + k * 18 + suited * 8 + connBonus * 3);
+}
+
+const PR_ARCHETYPE_PREFLOP_TEST = {
+    NIT:    { openThreshold:55, extraOpenThreshold:999, threeBetThreshold:82, extraThreeBetThreshold:999, callThreshold:60, looseCallThreshold:999, callVs3BetThreshold:88, fourBetThreshold:95 },
+    TAG:    { openThreshold:42, extraOpenThreshold:999, threeBetThreshold:70, extraThreeBetThreshold:999, callThreshold:48, looseCallThreshold:999, callVs3BetThreshold:75, fourBetThreshold:93 },
+    LAG:    { openThreshold:35, extraOpenThreshold:62,  threeBetThreshold:55, extraThreeBetThreshold:70,  callThreshold:40, looseCallThreshold:999, callVs3BetThreshold:62, fourBetThreshold:91 },
+    FISH:   { openThreshold:30, extraOpenThreshold:45,  threeBetThreshold:88, extraThreeBetThreshold:999, callThreshold:30, looseCallThreshold:38,  callVs3BetThreshold:45, fourBetThreshold:97 },
+    MANIAC: { openThreshold:30, extraOpenThreshold:48,  threeBetThreshold:40, extraThreeBetThreshold:52,  callThreshold:45, looseCallThreshold:999, callVs3BetThreshold:48, fourBetThreshold:82 },
+    AGGRO:  { openThreshold:38, extraOpenThreshold:70,  threeBetThreshold:60, extraThreeBetThreshold:72,  callThreshold:44, looseCallThreshold:999, callVs3BetThreshold:68, fourBetThreshold:91 },
+};
+
+// Minimal resolver mirroring PR_resolveVillainPreflopAction (no _resolveVillainPreflopAction dependency)
+function resolveArchetype_test(holeCards, gtoAction, gtoSizing, tableState, seatLabel, type) {
+    const arch = PR_ARCHETYPE_PREFLOP_TEST[type];
+    if (!arch) return { action: gtoAction, sizingBB: gtoSizing }; // GTO passthrough
+    const score = _PR_handStrengthScore_test(holeCards);
+    const openSizeBB = tableState.openSizeBB || 2.5;
+
+    if (tableState.threeBettor) {
+        if (score >= arch.fourBetThreshold) return { action: '4bet', sizingBB: Math.round(openSizeBB * 2.2 * 10) / 10 };
+        if (score >= arch.callVs3BetThreshold) return { action: 'call', sizingBB: openSizeBB * 3 };
+        return { action: 'fold', sizingBB: 0 };
+    }
+    if (!tableState.opener && tableState.limpers.length === 0) {
+        if (gtoAction === 'raise') return score >= arch.openThreshold ? { action: gtoAction, sizingBB: gtoSizing } : { action: 'fold', sizingBB: 0 };
+        if (arch.extraOpenThreshold < 999 && score >= arch.extraOpenThreshold) return { action: 'raise', sizingBB: openSizeBB };
+        return { action: 'fold', sizingBB: 0 };
+    }
+    if (tableState.opener && !tableState.threeBettor) {
+        if (gtoAction === '3bet') {
+            if (score >= arch.threeBetThreshold) return { action: '3bet', sizingBB: gtoSizing };
+            if (score >= arch.callThreshold) return { action: 'call', sizingBB: openSizeBB };
+            return { action: 'fold', sizingBB: 0 };
+        }
+        if (gtoAction === 'call') {
+            if (arch.extraThreeBetThreshold < 999 && score >= arch.extraThreeBetThreshold) {
+                const tbSize = Math.round(openSizeBB * (['SB','BB'].includes(seatLabel) ? 4 : 3) * 10) / 10;
+                return { action: '3bet', sizingBB: tbSize };
+            }
+            return score >= arch.callThreshold ? { action: 'call', sizingBB: openSizeBB } : { action: 'fold', sizingBB: 0 };
+        }
+        if (arch.looseCallThreshold < 999 && score >= arch.looseCallThreshold) return { action: 'call', sizingBB: openSizeBB };
+        return { action: 'fold', sizingBB: 0 };
+    }
+    return { action: gtoAction, sizingBB: gtoSizing };
+}
+
+// Convenience: build a 2-card array from rank strings + suits
+function cards2(r1, s1, r2, s2) { return [{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }]; }
+
+describe('Poker Room — Pass 2 Archetypes', () => {
+
+    it('test 1: AA scores 98, 22 scores 50 (pair formula)', () => {
+        expect(_PR_handStrengthScore_test(cards2('A','s','A','h'))).toBe(98);
+        expect(_PR_handStrengthScore_test(cards2('2','s','2','h'))).toBe(50);
+    });
+
+    it('test 2: suited connectors score higher than same-rank offsuit (AKs > AKo, T9s > T9o)', () => {
+        const aksScore = _PR_handStrengthScore_test(cards2('A','s','K','s'));
+        const akoScore = _PR_handStrengthScore_test(cards2('A','s','K','h'));
+        expect(aksScore).toBeGreaterThan(akoScore);
+
+        const t9sScore = _PR_handStrengthScore_test(cards2('T','s','9','s'));
+        const t9oScore = _PR_handStrengthScore_test(cards2('T','s','9','h'));
+        expect(t9sScore).toBeGreaterThan(t9oScore);
+    });
+
+    it('test 3: NIT opens KK (score 94 ≥ openThreshold 55) but folds 22 (score 50 < 55)', () => {
+        const tsRFI = { opener: null, threeBettor: null, limpers: [], openSizeBB: 2.5 };
+        const kkResult = resolveArchetype_test(cards2('K','s','K','h'), 'raise', 2.5, tsRFI, 'BTN', 'NIT');
+        const pairResult = resolveArchetype_test(cards2('2','s','2','h'), 'raise', 2.5, tsRFI, 'BTN', 'NIT');
+        expect(kkResult.action).toBe('raise');
+        expect(pairResult.action).toBe('fold');
+    });
+
+    it('test 4: FISH loose-calls GTO-fold hand (T7o score ≈ 57 ≥ looseCallThreshold 38)', () => {
+        const ts = { opener: 'UTG', threeBettor: null, limpers: [], openSizeBB: 2.5 };
+        const t7oScore = _PR_handStrengthScore_test(cards2('T','s','7','h'));
+        expect(t7oScore).toBeGreaterThanOrEqual(38); // verify the score assumption
+        const result = resolveArchetype_test(cards2('T','s','7','h'), 'fold', 0, ts, 'BTN', 'FISH');
+        expect(result.action).toBe('call');
+    });
+
+    it('test 5: MANIAC converts GTO-call into 3-bet (KQs score ≈ 87 ≥ extraThreeBetThreshold 52)', () => {
+        const ts = { opener: 'UTG', threeBettor: null, limpers: [], openSizeBB: 2.5 };
+        const kqsScore = _PR_handStrengthScore_test(cards2('K','s','Q','s'));
+        expect(kqsScore).toBeGreaterThanOrEqual(52);
+        const result = resolveArchetype_test(cards2('K','s','Q','s'), 'call', 2.5, ts, 'BTN', 'MANIAC');
+        expect(result.action).toBe('3bet');
+    });
+
+    it('test 6: NIT folds vs 3-bet with 22 (score 50 < callVs3BetThreshold 88)', () => {
+        const ts = { opener: 'UTG', threeBettor: 'CO', limpers: [], openSizeBB: 2.5 };
+        const result = resolveArchetype_test(cards2('2','s','2','h'), 'call', 2.5, ts, 'BTN', 'NIT');
+        expect(result.action).toBe('fold');
+    });
+
+    it('test 7: all archetypes 4-bet with AA vs a 3-bet', () => {
+        const ts = { opener: 'UTG', threeBettor: 'CO', limpers: [], openSizeBB: 2.5 };
+        const types = ['NIT','TAG','LAG','FISH','MANIAC','AGGRO'];
+        for (const type of types) {
+            const result = resolveArchetype_test(cards2('A','s','A','h'), 'raise', 2.5, ts, 'BTN', type);
+            expect(result.action).toBe('4bet');
+        }
+    });
+
+    it('test 8: FISH calls 3-bet with 66 (score 66 ≥ callVs3BetThreshold 45, < fourBetThreshold 97)', () => {
+        const ts = { opener: 'UTG', threeBettor: 'CO', limpers: [], openSizeBB: 2.5 };
+        const result = resolveArchetype_test(cards2('6','s','6','h'), 'call', 2.5, ts, 'BTN', 'FISH');
+        expect(result.action).toBe('call');
+    });
+
+    it('test 9: NIT downgrades GTO 3-bet bluff (A5s score ≈ 68) to call (68 ≥ callThreshold 60, < threeBetThreshold 82)', () => {
+        const ts = { opener: 'UTG', threeBettor: null, limpers: [], openSizeBB: 2.5 };
+        const a5sScore = _PR_handStrengthScore_test(cards2('A','s','5','s'));
+        expect(a5sScore).toBeGreaterThanOrEqual(60);
+        expect(a5sScore).toBeLessThan(82);
+        const result = resolveArchetype_test(cards2('A','s','5','s'), '3bet', 8.0, ts, 'BTN', 'NIT');
+        expect(result.action).toBe('call');
+    });
+
+    it('test 10: GTO type returns gto action unchanged (no arch → passthrough)', () => {
+        const ts = { opener: null, threeBettor: null, limpers: [], openSizeBB: 2.5 };
+        const result = resolveArchetype_test(cards2('7','s','2','h'), 'raise', 2.5, ts, 'BTN', 'GTO');
+        expect(result.action).toBe('raise');
+    });
+});

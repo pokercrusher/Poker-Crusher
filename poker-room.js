@@ -362,11 +362,101 @@ function PR_runPreflopToHero(prHand) {
     return prHand;
 }
 
+// Score a hole-card holding 0–99.
+// Pairs: 50 + (rank-2)*4  →  22=50, 33=54 … AA=98.
+// Non-pairs: base 20 + high-card contribution + low-card contribution
+//            + suitedness bonus + connectivity bonus.
+function _PR_handStrengthScore(holeCards) {
+    const RV = { 2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14 };
+    const r1 = RV[holeCards[0].rank];
+    const r2 = RV[holeCards[1].rank];
+    const hi = Math.max(r1, r2);
+    const lo = Math.min(r1, r2);
+    if (hi === lo) return 50 + (hi - 2) * 4;
+    const h = (hi - 2) / 12;
+    const k = (lo - 2) / 12;
+    const suited = holeCards[0].suit === holeCards[1].suit ? 1 : 0;
+    const connBonus = Math.max(0, 4 - (hi - lo - 1));
+    return Math.round(20 + h * 35 + k * 18 + suited * 8 + connBonus * 3);
+}
+
+// Per-archetype preflop thresholds (score-based, deterministic).
+// Each archetype folds the WEAKEST part of GTO's range, not random hands.
+//   openThreshold         : min score for a GTO-open to actually open (NIT folds marginal hands)
+//   extraOpenThreshold    : min score to open when GTO says fold (widens beyond GTO; 999 = never)
+//   threeBetThreshold     : min score for a GTO-3bet hand to 3-bet (below threshold → call or fold)
+//   extraThreeBetThreshold: min score to 3-bet when GTO says call (light squeeze; 999 = never)
+//   callThreshold         : min score for GTO-call or downgraded-3bet hand to call (below → fold)
+//   looseCallThreshold    : min score to call when GTO says fold (passive overcall; 999 = never)
+//   callVs3BetThreshold   : min score to continue vs a 3-bet (below → fold)
+//   fourBetThreshold      : min score to 4-bet instead of calling a 3-bet
+const PR_ARCHETYPE_PREFLOP = {
+    NIT:    { openThreshold:55, extraOpenThreshold:999, threeBetThreshold:82, extraThreeBetThreshold:999, callThreshold:60, looseCallThreshold:999, callVs3BetThreshold:88, fourBetThreshold:95 },
+    TAG:    { openThreshold:42, extraOpenThreshold:999, threeBetThreshold:70, extraThreeBetThreshold:999, callThreshold:48, looseCallThreshold:999, callVs3BetThreshold:75, fourBetThreshold:93 },
+    LAG:    { openThreshold:35, extraOpenThreshold:62,  threeBetThreshold:55, extraThreeBetThreshold:70,  callThreshold:40, looseCallThreshold:999, callVs3BetThreshold:62, fourBetThreshold:91 },
+    FISH:   { openThreshold:30, extraOpenThreshold:45,  threeBetThreshold:88, extraThreeBetThreshold:999, callThreshold:30, looseCallThreshold:38,  callVs3BetThreshold:45, fourBetThreshold:97 },
+    MANIAC: { openThreshold:30, extraOpenThreshold:48,  threeBetThreshold:40, extraThreeBetThreshold:52,  callThreshold:45, looseCallThreshold:999, callVs3BetThreshold:48, fourBetThreshold:82 },
+    AGGRO:  { openThreshold:38, extraOpenThreshold:70,  threeBetThreshold:60, extraThreeBetThreshold:72,  callThreshold:44, looseCallThreshold:999, callVs3BetThreshold:68, fourBetThreshold:91 },
+};
+
 // ---------------------------------------------------------------------------
-// PR_resolveVillainPreflopAction — delegate to sim.js, stub for Pass 2 archetypes
+// PR_resolveVillainPreflopAction — GTO baseline + archetype score-gate modifier
 // ---------------------------------------------------------------------------
 function PR_resolveVillainPreflopAction(seat, tableState, playerType) {
-    return _resolveVillainPreflopAction(seat, tableState, playerType || 'GTO');
+    const type = playerType || seat.type || 'GTO';
+    const gto = _resolveVillainPreflopAction(seat, tableState, 'GTO');
+    const arch = PR_ARCHETYPE_PREFLOP[type];
+    if (!arch) return gto; // GTO passthrough
+
+    const score = _PR_handStrengthScore(seat.holeCards);
+    const openSizeBB = tableState.openSizeBB || 2.5;
+
+    // --- Facing a 3-bet: score gates 4-bet / call / fold ---
+    if (tableState.threeBettor) {
+        if (score >= arch.fourBetThreshold) {
+            const fbSize = Math.round(openSizeBB * 2.2 * 10) / 10;
+            return { action: '4bet', sizingBB: fbSize };
+        }
+        if (score >= arch.callVs3BetThreshold) {
+            return { action: 'call', sizingBB: tableState.threeBetSize || openSizeBB * 3 };
+        }
+        return { action: 'fold', sizingBB: 0 };
+    }
+
+    // --- No open yet: RFI ---
+    if (!tableState.opener && tableState.limpers.length === 0) {
+        if (gto.action === 'raise') {
+            return score >= arch.openThreshold ? gto : { action: 'fold', sizingBB: 0 };
+        }
+        if (arch.extraOpenThreshold < 999 && score >= arch.extraOpenThreshold) {
+            return { action: 'raise', sizingBB: openSizeBB };
+        }
+        return { action: 'fold', sizingBB: 0 };
+    }
+
+    // --- Facing an open ---
+    if (tableState.opener && !tableState.threeBettor) {
+        if (gto.action === '3bet') {
+            if (score >= arch.threeBetThreshold) return gto;
+            if (score >= arch.callThreshold) return { action: 'call', sizingBB: openSizeBB };
+            return { action: 'fold', sizingBB: 0 };
+        }
+        if (gto.action === 'call') {
+            if (arch.extraThreeBetThreshold < 999 && score >= arch.extraThreeBetThreshold) {
+                const tbSize = Math.round(openSizeBB * (['SB','BB'].includes(seat.label) ? 4 : 3) * 10) / 10;
+                return { action: '3bet', sizingBB: tbSize };
+            }
+            return score >= arch.callThreshold ? gto : { action: 'fold', sizingBB: 0 };
+        }
+        // GTO says fold — loose call for passive archetypes
+        if (arch.looseCallThreshold < 999 && score >= arch.looseCallThreshold) {
+            return { action: 'call', sizingBB: openSizeBB };
+        }
+        return { action: 'fold', sizingBB: 0 };
+    }
+
+    // --- Limpers present ---
+    return gto;
 }
 
 // ---------------------------------------------------------------------------
