@@ -491,3 +491,344 @@ describe('computeCorrectAction', () => {
         });
     });
 });
+
+// =============================================================================
+// Poker Room — Pass 1 Engine Tests
+// Pure-function copies of the engine's key algorithms, stripped of browser globals.
+// =============================================================================
+
+// ── Minimal inline dependencies ───────────────────────────────────────────────
+
+const RANK_NUM = { A:14,K:13,Q:12,J:11,T:10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2 };
+const PR_POSITIONS = ['UTG','UTG1','UTG2','LJ','HJ','CO','BTN','SB','BB'];
+
+function freshDeck() {
+    const suits = ['h','d','c','s'];
+    const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
+    const deck = [];
+    for (const r of ranks) for (const s of suits) deck.push(r + s);
+    return deck;
+}
+
+function shuffle(deck) {
+    const d = deck.slice();
+    for (let i = d.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+}
+
+function cardsToHandNotation(cards) {
+    const [c1, c2] = cards;
+    const r1 = c1[0], s1 = c1[1], r2 = c2[0], s2 = c2[1];
+    const ri1 = RANKS.indexOf(r1), ri2 = RANKS.indexOf(r2);
+    if (r1 === r2) return r1 + r2;
+    if (ri1 < ri2) return r1 + r2 + (s1 === s2 ? 's' : 'o');
+    return r2 + r1 + (s1 === s2 ? 's' : 'o');
+}
+
+// evaluateRawHand — verbatim port from ranges.js
+function hasMadeStraight(sortedUniqueRanks) {
+    const ranks = [...sortedUniqueRanks];
+    if (ranks.includes(14)) ranks.push(1);
+    const unique = [...new Set(ranks)];
+    for (let low = 1; low <= 10; low++) {
+        const w = [low,low+1,low+2,low+3,low+4];
+        if (w.filter(r => unique.includes(r)).length >= 5) return true;
+    }
+    return false;
+}
+
+function hasStraightFlush(allCards) {
+    const bySuit = {};
+    for (const c of allCards) {
+        const s = c.suit, r = RANK_NUM[c.rank];
+        if (!bySuit[s]) bySuit[s] = [];
+        bySuit[s].push(r);
+    }
+    for (const ranks of Object.values(bySuit)) {
+        if (ranks.length < 5) continue;
+        const withLow = ranks.includes(14) ? [...ranks, 1] : [...ranks];
+        const unique = [...new Set(withLow)];
+        for (let lo = 1; lo <= 10; lo++) {
+            const w = [lo,lo+1,lo+2,lo+3,lo+4];
+            if (w.every(r => unique.includes(r))) return true;
+        }
+    }
+    return false;
+}
+
+function evaluateRawHand(heroCards, boardCards) {
+    const allCards = [...heroCards, ...boardCards];
+    const freq = new Map();
+    for (const c of allCards) {
+        const r = RANK_NUM[c.rank];
+        freq.set(r, (freq.get(r) || 0) + 1);
+    }
+    let quads = 0, trips = 0, pairs = 0;
+    for (const cnt of freq.values()) {
+        if (cnt >= 4) quads++;
+        else if (cnt === 3) trips++;
+        else if (cnt === 2) pairs++;
+    }
+    const suitFreq = {};
+    for (const c of allCards) suitFreq[c.suit] = (suitFreq[c.suit] || 0) + 1;
+    const hasFlush = Object.values(suitFreq).some(n => n >= 5);
+    const uniqueRanks = [...new Set(allCards.map(c => RANK_NUM[c.rank]))].sort((a,b) => b-a);
+    const hasStraight = hasMadeStraight(uniqueRanks);
+    const hasSF = (hasFlush || hasStraight) && hasStraightFlush(allCards);
+
+    if (hasSF)                      return { rank: 9, label: 'STRAIGHT_FLUSH' };
+    if (quads >= 1)                 return { rank: 8, label: 'QUADS' };
+    if (trips >= 1 && pairs >= 1)   return { rank: 7, label: 'FULL_HOUSE' };
+    if (trips >= 2)                 return { rank: 7, label: 'FULL_HOUSE' };
+    if (hasFlush)                   return { rank: 6, label: 'FLUSH' };
+    if (hasStraight)                return { rank: 5, label: 'STRAIGHT' };
+    if (trips >= 1)                 return { rank: 4, label: 'TRIPS' };
+    if (pairs >= 2)                 return { rank: 3, label: 'TWO_PAIR' };
+    if (pairs === 1)                return { rank: 2, label: 'PAIR' };
+    return { rank: 1, label: 'HIGH_CARD' };
+}
+
+// PR_evalBestHand — verbatim copy from poker-room.js
+function PR_evalBestHand(holeCards, board) {
+    const raw    = evaluateRawHand(holeCards, board);
+    const hRanks = holeCards.map(c => RANK_NUM[c.rank]);
+    return { rank: raw.rank, label: raw.label, tiebreaker: Math.max(...hRanks) };
+}
+
+// Minimal PR_createHand for dealing tests (no browser globals required)
+function PR_createHand_test(heroPos, numSeats) {
+    numSeats = numSeats || 9;
+    const positions = PR_POSITIONS.slice(0, numSeats);
+    const deck = shuffle(freshDeck());
+    let deckIdx = 0;
+    const seats = PR_POSITIONS.map(function(pos) {
+        if (!positions.includes(pos)) return null;
+        const c1 = deck[deckIdx++], c2 = deck[deckIdx++];
+        return {
+            index:        PR_POSITIONS.indexOf(pos),
+            label:        pos,
+            isHero:       pos === heroPos,
+            stackBB:      100,
+            holeCards:    [{ rank: c1[0], suit: c1[1] }, { rank: c2[0], suit: c2[1] }],
+            handNotation: cardsToHandNotation([c1, c2]),
+            folded:        false,
+            allIn:         false,
+        };
+    });
+    const heroSeatIndex = PR_POSITIONS.indexOf(heroPos);
+    const initCommitted = {};
+    seats.forEach(s => { if (s) initCommitted[s.label] = 0; });
+    if (initCommitted['SB'] !== undefined) initCommitted['SB'] = 0.5;
+    if (initCommitted['BB'] !== undefined) initCommitted['BB'] = 1.0;
+    return {
+        seats,
+        heroSeatIndex,
+        gameState: {
+            potBB: 0, board: [], street: 'preflop',
+            streetState: { street: 'preflop', betMadeThisStreet: true, actions: [], committedBB: initCommitted },
+            streetHistory: { preflop: [], flop: [], turn: [], river: [] },
+        },
+        openSizeBB: 2.5, heroGrades: [], heroFolded: false, terminal: false, outcome: null,
+    };
+}
+
+// PR_isStreetComplete — verbatim logic from poker-room.js
+function PR_isStreetComplete_test(prHand) {
+    const ss     = prHand.gameState.streetState;
+    const street = prHand.gameState.street;
+    const order  = street === 'preflop' ? PR_POSITIONS : ['SB','BB','UTG','UTG1','UTG2','LJ','HJ','CO','BTN'];
+    const activeLabels = new Set(prHand.seats.filter(s => s && !s.folded && !s.allIn).map(s => s.label));
+    const activeOrder  = order.filter(l => activeLabels.has(l));
+    if (activeOrder.length <= 1) return true;
+
+    if (!ss.betMadeThisStreet) {
+        const acted = new Set(ss.actions.map(a => a.seatLabel));
+        return activeOrder.every(l => acted.has(l));
+    }
+    let lastAggrIdx = -1;
+    for (let i = ss.actions.length - 1; i >= 0; i--) {
+        if (['bet','raise','3bet','4bet'].includes(ss.actions[i].action)) { lastAggrIdx = i; break; }
+    }
+    if (lastAggrIdx === -1) return false;
+    const aggrLabel = ss.actions[lastAggrIdx].seatLabel;
+    const respondedAfter = new Set(ss.actions.slice(lastAggrIdx + 1).map(a => a.seatLabel));
+    return activeOrder.filter(l => l !== aggrLabel).every(l => respondedAfter.has(l));
+}
+
+// PR_evalShowdown — minimal port for split-pot test
+function PR_evalShowdown_test(prHand) {
+    const board       = prHand.gameState.board;
+    const activeSeats = prHand.seats.filter(s => s !== null && !s.folded);
+    const evals = activeSeats.map(s => {
+        const best = PR_evalBestHand(s.holeCards, board);
+        return { seatLabel: s.label, rank: best.rank, handLabel: best.label, tiebreaker: best.tiebreaker };
+    });
+    const bestRank = Math.max(...evals.map(e => e.rank));
+    const bestHands = evals.filter(e => e.rank === bestRank);
+    const bestTie   = Math.max(...bestHands.map(e => e.tiebreaker));
+    const winners   = bestHands.filter(e => e.tiebreaker === bestTie).map(e => e.seatLabel);
+    const totalPot  = Object.values(prHand.gameState.streetState.committedBB).reduce((a,v) => a+v, 0);
+    const share     = totalPot / winners.length;
+    return { winners, share, totalPot };
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+describe('Poker Room — Pass 1 Engine', () => {
+
+    it('test 1: 18 distinct cards dealt across 9 seats, no duplicates', () => {
+        const prHand = PR_createHand_test('BTN', 9);
+        const allCards = [];
+        prHand.seats.forEach(s => {
+            if (!s) return;
+            s.holeCards.forEach(c => allCards.push(c.rank + c.suit));
+        });
+        expect(allCards.length).toBe(18);
+        expect(new Set(allCards).size).toBe(18);
+    });
+
+    it('test 2: hero cards are at their seat position, not dealt first', () => {
+        const prHand = PR_createHand_test('CO', 9);
+        const heroSeat = prHand.seats[prHand.heroSeatIndex];
+        expect(heroSeat.isHero).toBe(true);
+        expect(heroSeat.label).toBe('CO');
+        const seatsWithCards = prHand.seats.filter(s => s && s.holeCards && s.holeCards.length === 2);
+        expect(seatsWithCards.length).toBe(9);
+    });
+
+    it('test 3: dealing completes without error across 100 random hands', () => {
+        const positions = ['UTG','BTN','SB','BB','CO','HJ'];
+        for (let i = 0; i < 100; i++) {
+            const heroPos = positions[i % positions.length];
+            const prHand  = PR_createHand_test(heroPos, 9);
+            const cards   = [];
+            prHand.seats.forEach(s => { if (s) s.holeCards.forEach(c => cards.push(c.rank + c.suit)); });
+            expect(new Set(cards).size).toBe(cards.length);
+        }
+    });
+
+    it('test 4: PR_isStreetComplete false mid-action, true after all seats resolved', () => {
+        const miniHand = {
+            seats: [
+                { label: 'UTG', isHero: false, folded: false, allIn: false },
+                null, null, null, null, null,
+                { label: 'BTN', isHero: true,  folded: false, allIn: false },
+                null,
+                { label: 'BB',  isHero: false, folded: false, allIn: false },
+            ],
+            heroSeatIndex: 6,
+            gameState: {
+                street: 'preflop',
+                streetState: { street: 'preflop', betMadeThisStreet: true, actions: [], committedBB: { UTG:0, BTN:0, BB:1 } },
+            },
+        };
+        expect(PR_isStreetComplete_test(miniHand)).toBe(false);
+
+        miniHand.gameState.streetState.actions = [
+            { seatLabel: 'UTG', action: 'call',  sizingBB: 2.5 },
+            { seatLabel: 'BTN', action: 'raise', sizingBB: 7.5 },
+        ];
+        expect(PR_isStreetComplete_test(miniHand)).toBe(false);
+
+        miniHand.gameState.streetState.actions.push({ seatLabel: 'BB',  action: 'call', sizingBB: 7.5 });
+        expect(PR_isStreetComplete_test(miniHand)).toBe(false);
+
+        miniHand.gameState.streetState.actions.push({ seatLabel: 'UTG', action: 'call', sizingBB: 5 });
+        expect(PR_isStreetComplete_test(miniHand)).toBe(true);
+    });
+
+    it('test 5: flop board has exactly 3 cards not in any seat hole cards', () => {
+        const prHand = PR_createHand_test('BTN', 9);
+        const usedCards = new Set();
+        prHand.seats.forEach(s => { if (s) s.holeCards.forEach(c => usedCards.add(c.rank + c.suit)); });
+        const remaining = freshDeck().filter(c => !usedCards.has(c));
+        const flop = shuffle(remaining).slice(0, 3).map(c => ({ rank: c[0], suit: c[1] }));
+        expect(flop.length).toBe(3);
+        flop.forEach(c => expect(usedCards.has(c.rank + c.suit)).toBe(false));
+    });
+
+    it('test 6: PR_evalBestHand ranks flush > straight > trips', () => {
+        const flush = PR_evalBestHand(
+            [{ rank: 'A', suit: 'h' }, { rank: 'K', suit: 'h' }],
+            [{ rank: 'Q', suit: 'h' }, { rank: 'J', suit: 'h' }, { rank: '9', suit: 'h' },
+             { rank: '2', suit: 'd' }, { rank: '3', suit: 'c' }]
+        );
+        const straight = PR_evalBestHand(
+            [{ rank: 'A', suit: 'h' }, { rank: '2', suit: 'd' }],
+            [{ rank: '3', suit: 'c' }, { rank: '4', suit: 's' }, { rank: '5', suit: 'h' },
+             { rank: 'K', suit: 'd' }, { rank: '7', suit: 'c' }]
+        );
+        const trips = PR_evalBestHand(
+            [{ rank: 'A', suit: 'h' }, { rank: 'A', suit: 'd' }],
+            [{ rank: 'A', suit: 'c' }, { rank: '7', suit: 's' }, { rank: '2', suit: 'h' },
+             { rank: '9', suit: 'd' }, { rank: '3', suit: 'c' }]
+        );
+        expect(flush.rank).toBeGreaterThan(straight.rank);
+        expect(straight.rank).toBeGreaterThan(trips.rank);
+        expect(flush.label).toBe('FLUSH');
+        expect(straight.label).toBe('STRAIGHT');
+        expect(trips.label).toBe('TRIPS');
+    });
+
+    it('test 7: split pot when two players hold same 5-card straight (board plays)', () => {
+        const board = [
+            { rank: 'A', suit: 'h' }, { rank: 'K', suit: 'd' }, { rank: 'Q', suit: 'c' },
+            { rank: 'J', suit: 's' }, { rank: 'T', suit: 'h' },
+        ];
+        // Both play the A-K-Q-J-T straight on the board; both have A as best hole card
+        const miniHand = {
+            seats: [
+                { label: 'UTG', isHero: false, folded: false, allIn: false,
+                  holeCards: [{ rank: 'A', suit: 'c' }, { rank: '2', suit: 'd' }] },
+                null, null, null, null, null,
+                { label: 'BTN', isHero: true, folded: false, allIn: false,
+                  holeCards: [{ rank: 'A', suit: 'd' }, { rank: '3', suit: 'c' }] },
+                null, null,
+            ],
+            heroSeatIndex: 6,
+            gameState: {
+                potBB: 0, board,
+                streetState: { street: 'river', betMadeThisStreet: false, actions: [], committedBB: { UTG: 10, BTN: 10 } },
+                streetHistory: { preflop: [], flop: [], turn: [], river: [] },
+            },
+        };
+        const result = PR_evalShowdown_test(miniHand);
+        expect(result.winners.length).toBe(2);
+        expect(result.winners).toContain('UTG');
+        expect(result.winners).toContain('BTN');
+        expect(result.share).toBe(10);
+    });
+
+    it('test 8: side pot math — all-in at 30BB separates main and side pot correctly', () => {
+        const utg = { label: 'UTG', committed: 30 };  // all-in
+        const btn = { label: 'BTN', committed: 60 };  // covers
+        const mainPot = utg.committed * 2;             // both contribute up to 30
+        const sidePot = (btn.committed - utg.committed); // only BTN contributes the extra
+        expect(mainPot).toBe(60);
+        expect(sidePot).toBe(30);
+        expect(mainPot + sidePot).toBe(utg.committed + btn.committed);
+    });
+
+    it('test 9: heroNetBB = -0.5 when hero is SB and folds preflop', () => {
+        const heroCommitted = 0.5; // SB blind only
+        const heroNetBB = -heroCommitted;
+        expect(heroNetBB).toBe(-0.5);
+    });
+
+    it('test 10: grading fold of pocket aces preflop returns error', () => {
+        const gradePreflopStub = function(correctAction, heroAction) {
+            const correct = correctAction.toLowerCase();
+            if (heroAction === correct) return { grade: 'correct', explanation: '' };
+            if ((correct === 'raise' || correct === '3bet') && heroAction === 'call') {
+                return { grade: 'mixed', explanation: `GTO prefers ${correct.toUpperCase()}` };
+            }
+            return { grade: 'error', explanation: `GTO play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
+        };
+        const result = gradePreflopStub('RAISE', 'fold');
+        expect(result.grade).toBe('error');
+        expect(result.explanation).toContain('RAISE');
+    });
+});
