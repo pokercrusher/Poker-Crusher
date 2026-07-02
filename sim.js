@@ -1325,7 +1325,15 @@ function advanceStreet(handRun) {
 function isTerminal(handRun) {
     if (handRun.terminal) return true;
     if (handRun.street === 'showdown') return true;
-    if (handRun.seats.some(s => s !== null && s.folded)) return true;
+    // Hand ends when hero folds, or when fewer than 2 players remain.
+    // NOT "any seat folded" — FULL_TABLE hands legitimately carry villain
+    // folds from the preflop loop while the hand is still live; that check
+    // made every non-UTG hero position instantly terminal and sent the live
+    // table spinning through auto-completed hands.
+    const heroSeat = handRun.seats[handRun.heroSeatIndex];
+    if (heroSeat && heroSeat.folded) return true;
+    const active = handRun.seats.filter(s => s !== null && !s.folded);
+    if (active.length < 2) return true;
     return false;
 }
 
