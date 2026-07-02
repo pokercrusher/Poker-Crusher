@@ -1,93 +1,33 @@
 /**
  * tests/engine.test.js
  *
- * Unit tests for the three core pure functions in engine.js:
- *   - checkRangeHelper  — hand-in-range membership
- *   - buildSRKey        — SR key construction
- *   - computeCorrectAction — correct preflop action derivation
+ * Tests run against PRODUCTION code loaded via tests/helpers/load-production.js
+ * (ranges.js + engine.js + sim.js + poker-room.js executed in a node:vm context
+ * with minimal browser stubs). Do NOT copy production functions into this file —
+ * copies drift silently and mask bugs (a copied PR_evalShowdown with different
+ * field names hid a production bug where showdown pots were never awarded).
  *
- * checkRangeHelper and buildSRKey/buildSpotKey are copied verbatim from
- * engine.js. Any divergence will surface as a failing test.
- *
- * computeCorrectAction is adapted to accept injected range tables so it
- * can run in Node without browser globals; the branch logic is identical
- * to the production version.
+ * The one exception: computeCorrectAction below is an adapted copy that accepts
+ * injected range tables, so its branch logic can be tested against small fixtures
+ * instead of the full production range data. Branch logic is identical to
+ * production; production computeCorrectAction is exercised with real ranges via
+ * the Poker Room grading tests.
  *
  * Run: npm test
  */
 import { describe, it, expect } from 'vitest';
+import { loadProduction } from './helpers/load-production.js';
 
-// ── RANKS — must match ranges.js ─────────────────────────────────────────────
-const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+const PROD = loadProduction();
 
-// ── checkRangeHelper — verbatim copy from engine.js ──────────────────────────
-function checkRangeHelper(hand, list) {
-    if (!list) return false;
-    const r1 = hand[0], r2 = hand[1], type = hand[2] || '';
-    const ri1 = RANKS.indexOf(r1), ri2 = RANKS.indexOf(r2);
-
-    for (let item of list) {
-        if (item === hand) return true;
-        if (item.length === 2 && !item.endsWith('+')) {
-            const ir1 = item[0], ir2 = item[1];
-            if (r1 === ir1 && r2 === ir2 && r1 !== r2) return true;
-        }
-        if (item.endsWith('+')) {
-            const base = item.slice(0, -1);
-            const bSuffix = base.endsWith('s') ? 's' : base.endsWith('o') ? 'o' : '';
-            const bR1 = base[0], bR2 = base[1];
-            const bRi1 = RANKS.indexOf(bR1), bRi2 = RANKS.indexOf(bR2);
-            if (bR1 === bR2 && bSuffix === '') {
-                if (r1 === r2 && type === '' && ri1 <= bRi1) return true;
-            } else if (bSuffix === 's') {
-                if (type === 's' && r1 === bR1 && ri2 <= bRi2) return true;
-            } else if (bSuffix === 'o') {
-                if (type === 'o' && r1 === bR1 && ri2 <= bRi2) return true;
-            } else {
-                if (r1 === bR1 && r2 === bR2 && ri2 <= bRi2) return true;
-            }
-        }
-        if (item.includes('-') && !item.endsWith('+')) {
-            const dashIdx = item.indexOf('-');
-            const s = item.slice(0, dashIdx);
-            const e = item.slice(dashIdx + 1);
-            const sSuffix = s.endsWith('s') ? 's' : s.endsWith('o') ? 'o' : '';
-            const eSuffix = e.endsWith('s') ? 's' : e.endsWith('o') ? 'o' : '';
-            const sR1 = s[0], sR2 = s[1];
-            const eR1 = e[0], eR2 = e[1];
-            const sRi1 = RANKS.indexOf(sR1), sRi2 = RANKS.indexOf(sR2);
-            const eRi1 = RANKS.indexOf(eR1), eRi2 = RANKS.indexOf(eR2);
-            if (sR1 === sR2 && sSuffix === '' && eR1 === eR2 && eSuffix === '') {
-                if (r1 === r2 && type === '' && ri1 >= sRi1 && ri1 <= eRi1) return true;
-            } else if (sSuffix === 's' && eSuffix === 's' && sR1 === eR1) {
-                if (type === 's' && r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
-            } else if (sSuffix === 'o' && eSuffix === 'o' && sR1 === eR1) {
-                if (type === 'o' && r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
-            } else if (sSuffix === '' && eSuffix === '' && sR1 !== sR2) {
-                if (r1 === sR1 && ri2 >= sRi2 && ri2 <= eRi2) return true;
-            }
-        }
-    }
-    return false;
-}
-
-// ── buildSpotKey + buildSRKey — verbatim copy from engine.js ─────────────────
-function buildSpotKey(scenario, heroPos, oppPos, limperBucket, stackBB) {
-    if (scenario === 'RFI') return `${scenario}|${heroPos}`;
-    if (scenario === 'VS_LIMP') return `${scenario}|${heroPos}_vs_${oppPos}_Limp|${limperBucket || '1L'}`;
-    if (scenario === 'SQUEEZE' || scenario === 'SQUEEZE_2C') return `${scenario}|${oppPos}`;
-    if (scenario === 'PUSH_FOLD') return `${scenario}|${heroPos}|${stackBB}BB`;
-    return `${scenario}|${heroPos}_vs_${oppPos}`;
-}
-
-function buildSRKey(scenario, heroPos, oppPos, limperBucket, stackBB, hand) {
-    return `${buildSpotKey(scenario, heroPos, oppPos, limperBucket, stackBB)}|${hand}`;
-}
+// Production globals under test
+const { checkRangeHelper, buildSRKey, buildSpotKey } = PROD;
 
 // ── computeCorrectAction — adapted for injection (branch logic identical) ────
 // The production function reads from browser globals (rfiRanges, PF_PUSH, etc.)
 // and state.stackBB. Here those are passed as a single `tables` argument so
-// the function can run in Node. Every branch is present and unmodified.
+// branch behavior can be pinned with small fixtures. Every branch is present
+// and unmodified.
 function computeCorrectAction(hand, scenario, heroPos, oppPos, limperBucket, tables) {
     const { rfiRanges, facingRfiRanges, squeezeRanges, squeezeVsRfiTwoCallers,
             allFacingLimps, rfiVs3BetRanges, vs4BetRanges, PF_PUSH, stackBB } = tables;
@@ -493,194 +433,27 @@ describe('computeCorrectAction', () => {
 });
 
 // =============================================================================
-// Poker Room — Pass 1 Engine Tests
-// Pure-function copies of the engine's key algorithms, stripped of browser globals.
+// Poker Room — production engine tests
+// Every function below is the real one from poker-room.js (loaded via
+// tests/helpers/load-production.js), running against the real range data.
 // =============================================================================
 
-// ── Minimal inline dependencies ───────────────────────────────────────────────
+const C = (rank, suit) => ({ rank, suit });
+const cards2 = (r1, s1, r2, s2) => [C(r1, s1), C(r2, s2)];
 
-const RANK_NUM = { A:14,K:13,Q:12,J:11,T:10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2 };
-const PR_POSITIONS = ['UTG','UTG1','UTG2','LJ','HJ','CO','BTN','SB','BB'];
-
-function freshDeck() {
-    const suits = ['h','d','c','s'];
-    const ranks = ['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
-    const deck = [];
-    for (const r of ranks) for (const s of suits) deck.push(r + s);
-    return deck;
+function makeSeats(labels = PROD.PR_POSITIONS, stackBB = 100) {
+    return labels.map(l => ({ label: l, type: 'GTO', name: l, stackBB }));
 }
 
-function shuffle(deck) {
-    const d = deck.slice();
-    for (let i = d.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [d[i], d[j]] = [d[j], d[i]];
-    }
-    return d;
+// Villain seat shape expected by PR_resolveVillainPreflopAction
+function villainSeat(label, holeCards, handNotation) {
+    return { label, holeCards, handNotation };
 }
 
-function cardsToHandNotation(cards) {
-    const [c1, c2] = cards;
-    const r1 = c1[0], s1 = c1[1], r2 = c2[0], s2 = c2[1];
-    const ri1 = RANKS.indexOf(r1), ri2 = RANKS.indexOf(r2);
-    if (r1 === r2) return r1 + r2;
-    if (ri1 < ri2) return r1 + r2 + (s1 === s2 ? 's' : 'o');
-    return r2 + r1 + (s1 === s2 ? 's' : 'o');
-}
-
-// evaluateRawHand — verbatim port from ranges.js
-function hasMadeStraight(sortedUniqueRanks) {
-    const ranks = [...sortedUniqueRanks];
-    if (ranks.includes(14)) ranks.push(1);
-    const unique = [...new Set(ranks)];
-    for (let low = 1; low <= 10; low++) {
-        const w = [low,low+1,low+2,low+3,low+4];
-        if (w.filter(r => unique.includes(r)).length >= 5) return true;
-    }
-    return false;
-}
-
-function hasStraightFlush(allCards) {
-    const bySuit = {};
-    for (const c of allCards) {
-        const s = c.suit, r = RANK_NUM[c.rank];
-        if (!bySuit[s]) bySuit[s] = [];
-        bySuit[s].push(r);
-    }
-    for (const ranks of Object.values(bySuit)) {
-        if (ranks.length < 5) continue;
-        const withLow = ranks.includes(14) ? [...ranks, 1] : [...ranks];
-        const unique = [...new Set(withLow)];
-        for (let lo = 1; lo <= 10; lo++) {
-            const w = [lo,lo+1,lo+2,lo+3,lo+4];
-            if (w.every(r => unique.includes(r))) return true;
-        }
-    }
-    return false;
-}
-
-function evaluateRawHand(heroCards, boardCards) {
-    const allCards = [...heroCards, ...boardCards];
-    const freq = new Map();
-    for (const c of allCards) {
-        const r = RANK_NUM[c.rank];
-        freq.set(r, (freq.get(r) || 0) + 1);
-    }
-    let quads = 0, trips = 0, pairs = 0;
-    for (const cnt of freq.values()) {
-        if (cnt >= 4) quads++;
-        else if (cnt === 3) trips++;
-        else if (cnt === 2) pairs++;
-    }
-    const suitFreq = {};
-    for (const c of allCards) suitFreq[c.suit] = (suitFreq[c.suit] || 0) + 1;
-    const hasFlush = Object.values(suitFreq).some(n => n >= 5);
-    const uniqueRanks = [...new Set(allCards.map(c => RANK_NUM[c.rank]))].sort((a,b) => b-a);
-    const hasStraight = hasMadeStraight(uniqueRanks);
-    const hasSF = (hasFlush || hasStraight) && hasStraightFlush(allCards);
-
-    if (hasSF)                      return { rank: 9, label: 'STRAIGHT_FLUSH' };
-    if (quads >= 1)                 return { rank: 8, label: 'QUADS' };
-    if (trips >= 1 && pairs >= 1)   return { rank: 7, label: 'FULL_HOUSE' };
-    if (trips >= 2)                 return { rank: 7, label: 'FULL_HOUSE' };
-    if (hasFlush)                   return { rank: 6, label: 'FLUSH' };
-    if (hasStraight)                return { rank: 5, label: 'STRAIGHT' };
-    if (trips >= 1)                 return { rank: 4, label: 'TRIPS' };
-    if (pairs >= 2)                 return { rank: 3, label: 'TWO_PAIR' };
-    if (pairs === 1)                return { rank: 2, label: 'PAIR' };
-    return { rank: 1, label: 'HIGH_CARD' };
-}
-
-// PR_evalBestHand — verbatim copy from poker-room.js
-function PR_evalBestHand(holeCards, board) {
-    const raw    = evaluateRawHand(holeCards, board);
-    const hRanks = holeCards.map(c => RANK_NUM[c.rank]);
-    return { rank: raw.rank, label: raw.label, tiebreaker: Math.max(...hRanks) };
-}
-
-// Minimal PR_createHand for dealing tests (no browser globals required)
-function PR_createHand_test(heroPos, numSeats) {
-    numSeats = numSeats || 9;
-    const positions = PR_POSITIONS.slice(0, numSeats);
-    const deck = shuffle(freshDeck());
-    let deckIdx = 0;
-    const seats = PR_POSITIONS.map(function(pos) {
-        if (!positions.includes(pos)) return null;
-        const c1 = deck[deckIdx++], c2 = deck[deckIdx++];
-        return {
-            index:        PR_POSITIONS.indexOf(pos),
-            label:        pos,
-            isHero:       pos === heroPos,
-            stackBB:      100,
-            holeCards:    [{ rank: c1[0], suit: c1[1] }, { rank: c2[0], suit: c2[1] }],
-            handNotation: cardsToHandNotation([c1, c2]),
-            folded:        false,
-            allIn:         false,
-        };
-    });
-    const heroSeatIndex = PR_POSITIONS.indexOf(heroPos);
-    const initCommitted = {};
-    seats.forEach(s => { if (s) initCommitted[s.label] = 0; });
-    if (initCommitted['SB'] !== undefined) initCommitted['SB'] = 0.5;
-    if (initCommitted['BB'] !== undefined) initCommitted['BB'] = 1.0;
-    return {
-        seats,
-        heroSeatIndex,
-        gameState: {
-            potBB: 0, board: [], street: 'preflop',
-            streetState: { street: 'preflop', betMadeThisStreet: true, actions: [], committedBB: initCommitted },
-            streetHistory: { preflop: [], flop: [], turn: [], river: [] },
-        },
-        openSizeBB: 2.5, heroGrades: [], heroFolded: false, terminal: false, outcome: null,
-    };
-}
-
-// PR_isStreetComplete — verbatim logic from poker-room.js
-function PR_isStreetComplete_test(prHand) {
-    const ss     = prHand.gameState.streetState;
-    const street = prHand.gameState.street;
-    const order  = street === 'preflop' ? PR_POSITIONS : ['SB','BB','UTG','UTG1','UTG2','LJ','HJ','CO','BTN'];
-    const activeLabels = new Set(prHand.seats.filter(s => s && !s.folded && !s.allIn).map(s => s.label));
-    const activeOrder  = order.filter(l => activeLabels.has(l));
-    if (activeOrder.length <= 1) return true;
-
-    if (!ss.betMadeThisStreet) {
-        const acted = new Set(ss.actions.map(a => a.seatLabel));
-        return activeOrder.every(l => acted.has(l));
-    }
-    let lastAggrIdx = -1;
-    for (let i = ss.actions.length - 1; i >= 0; i--) {
-        if (['bet','raise','3bet','4bet'].includes(ss.actions[i].action)) { lastAggrIdx = i; break; }
-    }
-    if (lastAggrIdx === -1) return false;
-    const aggrLabel = ss.actions[lastAggrIdx].seatLabel;
-    const respondedAfter = new Set(ss.actions.slice(lastAggrIdx + 1).map(a => a.seatLabel));
-    return activeOrder.filter(l => l !== aggrLabel).every(l => respondedAfter.has(l));
-}
-
-// PR_evalShowdown — minimal port for split-pot test
-function PR_evalShowdown_test(prHand) {
-    const board       = prHand.gameState.board;
-    const activeSeats = prHand.seats.filter(s => s !== null && !s.folded);
-    const evals = activeSeats.map(s => {
-        const best = PR_evalBestHand(s.holeCards, board);
-        return { seatLabel: s.label, rank: best.rank, handLabel: best.label, tiebreaker: best.tiebreaker };
-    });
-    const bestRank = Math.max(...evals.map(e => e.rank));
-    const bestHands = evals.filter(e => e.rank === bestRank);
-    const bestTie   = Math.max(...bestHands.map(e => e.tiebreaker));
-    const winners   = bestHands.filter(e => e.tiebreaker === bestTie).map(e => e.seatLabel);
-    const totalPot  = Object.values(prHand.gameState.streetState.committedBB).reduce((a,v) => a+v, 0);
-    const share     = totalPot / winners.length;
-    return { winners, share, totalPot };
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-describe('Poker Room — Pass 1 Engine', () => {
+describe('Poker Room — Pass 1 Engine (production)', () => {
 
     it('test 1: 18 distinct cards dealt across 9 seats, no duplicates', () => {
-        const prHand = PR_createHand_test('BTN', 9);
+        const prHand = PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats() });
         const allCards = [];
         prHand.seats.forEach(s => {
             if (!s) return;
@@ -690,8 +463,8 @@ describe('Poker Room — Pass 1 Engine', () => {
         expect(new Set(allCards).size).toBe(18);
     });
 
-    it('test 2: hero cards are at their seat position, not dealt first', () => {
-        const prHand = PR_createHand_test('CO', 9);
+    it('test 2: hero seat is at its position with cards; all 9 seats dealt', () => {
+        const prHand = PROD.PR_createHand({ heroPos: 'CO', seats: makeSeats() });
         const heroSeat = prHand.seats[prHand.heroSeatIndex];
         expect(heroSeat.isHero).toBe(true);
         expect(heroSeat.label).toBe('CO');
@@ -699,14 +472,16 @@ describe('Poker Room — Pass 1 Engine', () => {
         expect(seatsWithCards.length).toBe(9);
     });
 
-    it('test 3: dealing completes without error across 100 random hands', () => {
-        const positions = ['UTG','BTN','SB','BB','CO','HJ'];
+    it('test 3: dealing + preflop loop completes without error across 100 random hands', () => {
+        const positions = ['UTG', 'BTN', 'SB', 'BB', 'CO', 'HJ'];
         for (let i = 0; i < 100; i++) {
             const heroPos = positions[i % positions.length];
-            const prHand  = PR_createHand_test(heroPos, 9);
-            const cards   = [];
+            let prHand = PROD.PR_createHand({ heroPos, seats: makeSeats() });
+            prHand = PROD.PR_runPreflopToHero(prHand);
+            const cards = [];
             prHand.seats.forEach(s => { if (s) s.holeCards.forEach(c => cards.push(c.rank + c.suit)); });
             expect(new Set(cards).size).toBe(cards.length);
+            expect(prHand.preflopContext).toBeTruthy();
         }
     });
 
@@ -722,49 +497,46 @@ describe('Poker Room — Pass 1 Engine', () => {
             heroSeatIndex: 6,
             gameState: {
                 street: 'preflop',
-                streetState: { street: 'preflop', betMadeThisStreet: true, actions: [], committedBB: { UTG:0, BTN:0, BB:1 } },
+                streetState: { street: 'preflop', betMadeThisStreet: true, actions: [], committedBB: { UTG: 0, BTN: 0, BB: 1 } },
             },
         };
-        expect(PR_isStreetComplete_test(miniHand)).toBe(false);
+        expect(PROD.PR_isStreetComplete(miniHand)).toBe(false);
 
         miniHand.gameState.streetState.actions = [
             { seatLabel: 'UTG', action: 'call',  sizingBB: 2.5 },
             { seatLabel: 'BTN', action: 'raise', sizingBB: 7.5 },
         ];
-        expect(PR_isStreetComplete_test(miniHand)).toBe(false);
+        expect(PROD.PR_isStreetComplete(miniHand)).toBe(false);
 
-        miniHand.gameState.streetState.actions.push({ seatLabel: 'BB',  action: 'call', sizingBB: 7.5 });
-        expect(PR_isStreetComplete_test(miniHand)).toBe(false);
+        miniHand.gameState.streetState.actions.push({ seatLabel: 'BB', action: 'call', sizingBB: 7.5 });
+        expect(PROD.PR_isStreetComplete(miniHand)).toBe(false);
 
         miniHand.gameState.streetState.actions.push({ seatLabel: 'UTG', action: 'call', sizingBB: 5 });
-        expect(PR_isStreetComplete_test(miniHand)).toBe(true);
+        expect(PROD.PR_isStreetComplete(miniHand)).toBe(true);
     });
 
-    it('test 5: flop board has exactly 3 cards not in any seat hole cards', () => {
-        const prHand = PR_createHand_test('BTN', 9);
-        const usedCards = new Set();
-        prHand.seats.forEach(s => { if (s) s.holeCards.forEach(c => usedCards.add(c.rank + c.suit)); });
-        const remaining = freshDeck().filter(c => !usedCards.has(c));
-        const flop = shuffle(remaining).slice(0, 3).map(c => ({ rank: c[0], suit: c[1] }));
-        expect(flop.length).toBe(3);
-        flop.forEach(c => expect(usedCards.has(c.rank + c.suit)).toBe(false));
+    it('test 5: PR_advanceStreet deals a 3-card flop disjoint from all hole cards', () => {
+        const prHand = PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats() });
+        const used = new Set();
+        prHand.seats.forEach(s => { if (s) s.holeCards.forEach(c => used.add(c.rank + c.suit)); });
+        const next = PROD.PR_advanceStreet(prHand);
+        expect(next.gameState.board.length).toBe(3);
+        next.gameState.board.forEach(c => expect(used.has(c.rank + c.suit)).toBe(false));
+        expect(next.gameState.street).toBe('flop');
     });
 
     it('test 6: PR_evalBestHand ranks flush > straight > trips', () => {
-        const flush = PR_evalBestHand(
-            [{ rank: 'A', suit: 'h' }, { rank: 'K', suit: 'h' }],
-            [{ rank: 'Q', suit: 'h' }, { rank: 'J', suit: 'h' }, { rank: '9', suit: 'h' },
-             { rank: '2', suit: 'd' }, { rank: '3', suit: 'c' }]
+        const flush = PROD.PR_evalBestHand(
+            cards2('A', 'h', 'K', 'h'),
+            [C('Q', 'h'), C('J', 'h'), C('9', 'h'), C('2', 'd'), C('3', 'c')]
         );
-        const straight = PR_evalBestHand(
-            [{ rank: 'A', suit: 'h' }, { rank: '2', suit: 'd' }],
-            [{ rank: '3', suit: 'c' }, { rank: '4', suit: 's' }, { rank: '5', suit: 'h' },
-             { rank: 'K', suit: 'd' }, { rank: '7', suit: 'c' }]
+        const straight = PROD.PR_evalBestHand(
+            cards2('A', 'h', '2', 'd'),
+            [C('3', 'c'), C('4', 's'), C('5', 'h'), C('K', 'd'), C('7', 'c')]
         );
-        const trips = PR_evalBestHand(
-            [{ rank: 'A', suit: 'h' }, { rank: 'A', suit: 'd' }],
-            [{ rank: 'A', suit: 'c' }, { rank: '7', suit: 's' }, { rank: '2', suit: 'h' },
-             { rank: '9', suit: 'd' }, { rank: '3', suit: 'c' }]
+        const trips = PROD.PR_evalBestHand(
+            cards2('A', 'h', 'A', 'd'),
+            [C('A', 'c'), C('7', 's'), C('2', 'h'), C('9', 'd'), C('3', 'c')]
         );
         expect(flush.rank).toBeGreaterThan(straight.rank);
         expect(straight.rank).toBeGreaterThan(trips.rank);
@@ -773,208 +545,297 @@ describe('Poker Room — Pass 1 Engine', () => {
         expect(trips.label).toBe('TRIPS');
     });
 
-    it('test 7: split pot when two players hold same 5-card straight (board plays)', () => {
-        const board = [
-            { rank: 'A', suit: 'h' }, { rank: 'K', suit: 'd' }, { rank: 'Q', suit: 'c' },
-            { rank: 'J', suit: 's' }, { rank: 'T', suit: 'h' },
-        ];
-        // Both play the A-K-Q-J-T straight on the board; both have A as best hole card
-        const miniHand = {
+    it('test 7: split pot when the board plays for both players', () => {
+        const board = [C('A', 'h'), C('K', 'd'), C('Q', 'c'), C('J', 's'), C('T', 'h')];
+        const prHand = {
             seats: [
-                { label: 'UTG', isHero: false, folded: false, allIn: false,
-                  holeCards: [{ rank: 'A', suit: 'c' }, { rank: '2', suit: 'd' }] },
+                { label: 'UTG', isHero: false, folded: false, allIn: false, stackBB: 90,
+                  holeCards: cards2('A', 'c', '2', 'd') },
                 null, null, null, null, null,
-                { label: 'BTN', isHero: true, folded: false, allIn: false,
-                  holeCards: [{ rank: 'A', suit: 'd' }, { rank: '3', suit: 'c' }] },
+                { label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 90,
+                  holeCards: cards2('A', 'd', '3', 'c') },
                 null, null,
             ],
             heroSeatIndex: 6,
             gameState: {
-                potBB: 0, board,
-                streetState: { street: 'river', betMadeThisStreet: false, actions: [], committedBB: { UTG: 10, BTN: 10 } },
-                streetHistory: { preflop: [], flop: [], turn: [], river: [] },
+                potBB: 20, board, street: 'river',
+                streetState: { street: 'river', betMadeThisStreet: false, actions: [], committedBB: { UTG: 0, BTN: 0 } },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'UTG', action: 'bet',  sizingBB: 10 },
+                        { seatLabel: 'BTN', action: 'call', sizingBB: 10 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
             },
         };
-        const result = PR_evalShowdown_test(miniHand);
-        expect(result.winners.length).toBe(2);
-        expect(result.winners).toContain('UTG');
-        expect(result.winners).toContain('BTN');
-        expect(result.share).toBe(10);
+        PROD.PR_evalShowdown(prHand);
+        const pot = prHand.outcome.pots[0];
+        expect(pot.amount).toBe(20);
+        expect(pot.winners).toContain('UTG');
+        expect(pot.winners).toContain('BTN');
+        expect(pot.share).toBe(10);
+        expect(prHand.outcome.heroNetBB).toBe(0); // paid 10, got 10 back
     });
 
-    it('test 8: side pot math — all-in at 30BB separates main and side pot correctly', () => {
-        const utg = { label: 'UTG', committed: 30 };  // all-in
-        const btn = { label: 'BTN', committed: 60 };  // covers
-        const mainPot = utg.committed * 2;             // both contribute up to 30
-        const sidePot = (btn.committed - utg.committed); // only BTN contributes the extra
-        expect(mainPot).toBe(60);
-        expect(sidePot).toBe(30);
-        expect(mainPot + sidePot).toBe(utg.committed + btn.committed);
-    });
-
-    it('test 9: heroNetBB = -0.5 when hero is SB and folds preflop', () => {
-        const heroCommitted = 0.5; // SB blind only
-        const heroNetBB = -heroCommitted;
-        expect(heroNetBB).toBe(-0.5);
-    });
-
-    it('test 10: grading fold of pocket aces preflop returns error', () => {
-        const gradePreflopStub = function(correctAction, heroAction) {
-            const correct = correctAction.toLowerCase();
-            if (heroAction === correct) return { grade: 'correct', explanation: '' };
-            if ((correct === 'raise' || correct === '3bet') && heroAction === 'call') {
-                return { grade: 'mixed', explanation: `GTO prefers ${correct.toUpperCase()}` };
-            }
-            return { grade: 'error', explanation: `GTO play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
+    it('test 8: side pots — all-in at 30BB wins only the main pot', () => {
+        const board = [C('A', 'c'), C('7', 's'), C('2', 'h'), C('9', 'd'), C('3', 'c')];
+        const prHand = {
+            seats: [
+                { label: 'UTG', isHero: false, folded: false, allIn: true, stackBB: 0,
+                  holeCards: cards2('A', 's', 'A', 'h') },   // trips aces — best hand
+                null, null, null, null, null,
+                { label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 40,
+                  holeCards: cards2('K', 's', 'K', 'h') },   // pair of kings
+                null, null,
+            ],
+            heroSeatIndex: 6,
+            gameState: {
+                potBB: 90, board, street: 'river',
+                streetState: { street: 'river', betMadeThisStreet: false, actions: [], committedBB: { BTN: 0 } },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'UTG', action: 'raise', sizingBB: 30 },
+                        { seatLabel: 'BTN', action: 'raise', sizingBB: 60 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
+            },
         };
-        const result = gradePreflopStub('RAISE', 'fold');
-        expect(result.grade).toBe('error');
-        expect(result.explanation).toContain('RAISE');
+        PROD.PR_evalShowdown(prHand);
+        const pots = prHand.outcome.pots;
+        expect(pots.length).toBe(2);
+        expect(pots[0].amount).toBe(60);            // main pot: 30 matched by both
+        expect(pots[0].winners).toEqual(['UTG']);   // trips beat the pair
+        expect(pots[1].amount).toBe(30);            // side pot: BTN's unmatched 30
+        expect(pots[1].winners).toEqual(['BTN']);   // returned to BTN
+        expect(prHand.outcome.heroNetBB).toBe(-30); // paid 60, got side 30 back
+    });
+
+    it('test 9: heroNetBB = -0.5 when hero is SB and folds preflop (full engine path)', () => {
+        let prHand = PROD.PR_createHand({ heroPos: 'SB', seats: makeSeats(['SB', 'BB']) });
+        prHand = PROD.PR_runPreflopToHero(prHand);
+        const done = PROD.PR_applyHeroAction(prHand, 'fold', 0);
+        expect(done.terminal).toBe(true);
+        expect(done.outcome).toBeTruthy();
+        expect(done.outcome.winner).toBe('BB');
+        expect(done.outcome.heroNetBB).toBe(-0.5);
+    });
+
+    it('test 10: grading fold of pocket aces preflop returns error (real ranges)', () => {
+        let prHand = PROD.PR_createHand({ heroPos: 'UTG', seats: makeSeats() });
+        // Force hero's hand to AA (grading reads handNotation; duplicates elsewhere don't affect it)
+        const heroSeat = prHand.seats[prHand.heroSeatIndex];
+        heroSeat.holeCards = cards2('A', 's', 'A', 'h');
+        heroSeat.handNotation = 'AA';
+        prHand = PROD.PR_runPreflopToHero(prHand);
+        const done = PROD.PR_applyHeroAction(prHand, 'fold', 0);
+        expect(done.heroGrades.length).toBe(1);
+        expect(done.heroGrades[0].grade).toBe('error');
+        expect(done.heroGrades[0].explanation).toContain('RAISE');
     });
 });
 
 // =============================================================================
-// Poker Room — Pass 2 Archetype Tests
-// Inline copies of _PR_handStrengthScore + PR_ARCHETYPE_PREFLOP + resolver logic.
-// All tests are fully deterministic (no Monte Carlo sampling).
+// Poker Room — showdown awarding & chip conservation (production)
+// These invariants would have caught the shipped bug where PR_evalShowdown
+// never awarded a pot (seat label clobbered by hand label via object spread).
 // =============================================================================
 
-function _PR_handStrengthScore_test(holeCards) {
-    const RV = { 2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14 };
-    const r1 = RV[holeCards[0].rank];
-    const r2 = RV[holeCards[1].rank];
-    const hi = Math.max(r1, r2);
-    const lo = Math.min(r1, r2);
-    if (hi === lo) return 50 + (hi - 2) * 4;
-    const h = (hi - 2) / 12;
-    const k = (lo - 2) / 12;
-    const suited = holeCards[0].suit === holeCards[1].suit ? 1 : 0;
-    const connBonus = Math.max(0, 4 - (hi - lo - 1));
-    return Math.round(20 + h * 35 + k * 18 + suited * 8 + connBonus * 3);
-}
+describe('Poker Room — showdown awarding & chip conservation', () => {
 
-const PR_ARCHETYPE_PREFLOP_TEST = {
-    NIT:    { openThreshold:55, extraOpenThreshold:999, threeBetThreshold:82, extraThreeBetThreshold:999, callThreshold:60, looseCallThreshold:999, callVs3BetThreshold:88, fourBetThreshold:95 },
-    TAG:    { openThreshold:42, extraOpenThreshold:999, threeBetThreshold:70, extraThreeBetThreshold:999, callThreshold:48, looseCallThreshold:999, callVs3BetThreshold:75, fourBetThreshold:93 },
-    LAG:    { openThreshold:35, extraOpenThreshold:62,  threeBetThreshold:55, extraThreeBetThreshold:70,  callThreshold:40, looseCallThreshold:999, callVs3BetThreshold:62, fourBetThreshold:91 },
-    FISH:   { openThreshold:30, extraOpenThreshold:45,  threeBetThreshold:88, extraThreeBetThreshold:999, callThreshold:30, looseCallThreshold:38,  callVs3BetThreshold:45, fourBetThreshold:97 },
-    MANIAC: { openThreshold:30, extraOpenThreshold:48,  threeBetThreshold:40, extraThreeBetThreshold:52,  callThreshold:45, looseCallThreshold:999, callVs3BetThreshold:48, fourBetThreshold:82 },
-    AGGRO:  { openThreshold:38, extraOpenThreshold:70,  threeBetThreshold:60, extraThreeBetThreshold:72,  callThreshold:44, looseCallThreshold:999, callVs3BetThreshold:68, fourBetThreshold:91 },
-};
+    it('showdown awards the pot to the better hand', () => {
+        const board = [C('K', 's'), C('9', 'h'), C('4', 'c'), C('J', 'd'), C('3', 's')];
+        const prHand = {
+            seats: [
+                { label: 'UTG', isHero: false, folded: false, allIn: false, stackBB: 97.5,
+                  holeCards: cards2('A', 's', 'A', 'h') },   // pair of aces
+                null, null, null, null, null,
+                { label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 97.5,
+                  holeCards: cards2('7', 'c', '2', 'd') },   // high card
+                null, null,
+            ],
+            heroSeatIndex: 6,
+            gameState: {
+                potBB: 5, board, street: 'river',
+                streetState: { street: 'river', betMadeThisStreet: false, actions: [], committedBB: { UTG: 0, BTN: 0 } },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'BTN', action: 'call',  sizingBB: 2.5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
+            },
+        };
+        PROD.PR_evalShowdown(prHand);
+        expect(prHand.outcome.pots[0].winners).toEqual(['UTG']);
+        expect(prHand.outcome.pots[0].amount).toBe(5);
+        expect(prHand.outcome.heroNetBB).toBe(-2.5);
+        // showdown entries carry distinct seat + hand labels
+        const utgShow = prHand.outcome.showdown.find(e => e.seatLabel === 'UTG');
+        expect(utgShow).toBeTruthy();
+        expect(utgShow.handLabel).toBe('PAIR');
+        expect(utgShow.show).toBe(true); // winner + last aggressor must show
+    });
 
-// Minimal resolver mirroring PR_resolveVillainPreflopAction (no _resolveVillainPreflopAction dependency)
-function resolveArchetype_test(holeCards, gtoAction, gtoSizing, tableState, seatLabel, type) {
-    const arch = PR_ARCHETYPE_PREFLOP_TEST[type];
-    if (!arch) return { action: gtoAction, sizingBB: gtoSizing }; // GTO passthrough
-    const score = _PR_handStrengthScore_test(holeCards);
-    const openSizeBB = tableState.openSizeBB || 2.5;
+    it('property: chips are conserved across 300 random full hands', () => {
+        const types = ['GTO', 'NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO'];
+        const positions = PROD.PR_POSITIONS;
 
-    if (tableState.threeBettor) {
-        if (score >= arch.fourBetThreshold) return { action: '4bet', sizingBB: Math.round(openSizeBB * 2.2 * 10) / 10 };
-        if (score >= arch.callVs3BetThreshold) return { action: 'call', sizingBB: openSizeBB * 3 };
-        return { action: 'fold', sizingBB: 0 };
-    }
-    if (!tableState.opener && tableState.limpers.length === 0) {
-        if (gtoAction === 'raise') return score >= arch.openThreshold ? { action: gtoAction, sizingBB: gtoSizing } : { action: 'fold', sizingBB: 0 };
-        if (arch.extraOpenThreshold < 999 && score >= arch.extraOpenThreshold) return { action: 'raise', sizingBB: openSizeBB };
-        return { action: 'fold', sizingBB: 0 };
-    }
-    if (tableState.opener && !tableState.threeBettor) {
-        if (gtoAction === '3bet') {
-            if (score >= arch.threeBetThreshold) return { action: '3bet', sizingBB: gtoSizing };
-            if (score >= arch.callThreshold) return { action: 'call', sizingBB: openSizeBB };
-            return { action: 'fold', sizingBB: 0 };
-        }
-        if (gtoAction === 'call') {
-            if (arch.extraThreeBetThreshold < 999 && score >= arch.extraThreeBetThreshold) {
-                const tbSize = Math.round(openSizeBB * (['SB','BB'].includes(seatLabel) ? 4 : 3) * 10) / 10;
-                return { action: '3bet', sizingBB: tbSize };
+        for (let n = 0; n < 300; n++) {
+            const heroPos = positions[n % positions.length];
+            const seatCfgs = positions.map(l => ({
+                label: l,
+                type: types[Math.floor(Math.random() * types.length)],
+                name: l,
+                stackBB: 40 + Math.floor(Math.random() * 80),
+            }));
+            const startStacks = {};
+            seatCfgs.forEach(c => { startStacks[c.label] = c.label === heroPos ? 100 : c.stackBB; });
+
+            let hr = PROD.PR_createHand({ heroPos, seats: seatCfgs, heroStackBB: 100 });
+            hr = PROD.PR_runPreflopToHero(hr);
+
+            // Random hero preflop action
+            const pre = ['fold', 'call', 'raise'][Math.floor(Math.random() * 3)];
+            hr = PROD.PR_applyHeroAction(hr, pre, pre === 'raise' ? 7.5 : 0);
+
+            // Drive the hand to completion
+            let guard = 0;
+            while (!hr.terminal && guard++ < 500) {
+                if (PROD.PR_isStreetComplete(hr)) {
+                    hr = PROD.PR_advanceStreet(hr);
+                    continue;
+                }
+                const next = PROD._PR_nextActor(hr);
+                if (next === null) { hr = PROD.PR_advanceStreet(hr); continue; }
+                const heroLabel = hr.seats[hr.heroSeatIndex].label;
+                if (next === heroLabel) {
+                    const facing = PROD._PR_facingAmount(hr, heroLabel);
+                    const opts = facing > 0 ? ['fold', 'call'] : ['check', 'bet'];
+                    const act = opts[Math.floor(Math.random() * opts.length)];
+                    hr = PROD.PR_applyHeroAction(hr, act, act === 'bet' ? 3 : 0);
+                } else {
+                    hr = PROD.PR_applyVillainAction(hr);
+                }
             }
-            return score >= arch.callThreshold ? { action: 'call', sizingBB: openSizeBB } : { action: 'fold', sizingBB: 0 };
+            expect(guard).toBeLessThan(500);
+            expect(hr.terminal).toBe(true);
+            expect(hr.outcome).toBeTruthy();
+
+            const tc = hr.outcome.totalCommitted;
+
+            // Invariant 1: no seat's stack went negative
+            hr.seats.forEach(s => { if (s) expect(s.stackBB).toBeGreaterThanOrEqual(0); });
+
+            // Invariant 2: every chip that left a stack is accounted for in totalCommitted
+            hr.seats.forEach(s => {
+                if (!s) return;
+                const spent = startStacks[s.label] - s.stackBB;
+                expect(Math.abs(spent - (tc[s.label] || 0))).toBeLessThan(0.05);
+            });
+
+            // Invariant 3: the pots exactly redistribute what was committed
+            const committedSum = Object.values(tc).reduce((a, v) => a + v, 0);
+            const potSum = hr.outcome.pots.reduce((a, p) => a + p.amount, 0);
+            expect(Math.abs(potSum - committedSum)).toBeLessThan(0.05);
+
+            // Invariant 4: every non-empty pot has at least one winner
+            hr.outcome.pots.forEach(p => {
+                if (p.amount > 0) expect(p.winners.length).toBeGreaterThan(0);
+            });
+
+            // Invariant 5: hero net is coherent
+            expect(Number.isFinite(hr.outcome.heroNetBB)).toBe(true);
+            const heroLabel = hr.seats[hr.heroSeatIndex].label;
+            expect(hr.outcome.heroNetBB).toBeGreaterThanOrEqual(-(tc[heroLabel] || 0) - 0.05);
         }
-        if (arch.looseCallThreshold < 999 && score >= arch.looseCallThreshold) return { action: 'call', sizingBB: openSizeBB };
-        return { action: 'fold', sizingBB: 0 };
-    }
-    return { action: gtoAction, sizingBB: gtoSizing };
-}
+    });
+});
 
-// Convenience: build a 2-card array from rank strings + suits
-function cards2(r1, s1, r2, s2) { return [{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }]; }
+// =============================================================================
+// Poker Room — Pass 2 Archetypes (production, real range data)
+// GTO baselines asserted here were verified against the shipped ranges:
+//   22 @ BTN RFI = raise · KQs BTN vs UTG open = call · T7o BTN vs UTG = fold
+//   A5s BB vs BTN open = 3bet
+// =============================================================================
 
-describe('Poker Room — Pass 2 Archetypes', () => {
+describe('Poker Room — Pass 2 Archetypes (production)', () => {
+
+    const RFI_TS = () => ({ opener: null, threeBettor: null, callers: [], limpers: [], openSizeBB: 2.5 });
+    const VS_OPEN_TS = (opener) => ({ opener, threeBettor: null, callers: [], limpers: [], openSizeBB: 2.5 });
+    const VS_3BET_TS = () => ({ opener: 'UTG', threeBettor: 'CO', callers: [], limpers: [], openSizeBB: 2.5 });
 
     it('test 1: AA scores 98, 22 scores 50 (pair formula)', () => {
-        expect(_PR_handStrengthScore_test(cards2('A','s','A','h'))).toBe(98);
-        expect(_PR_handStrengthScore_test(cards2('2','s','2','h'))).toBe(50);
+        expect(PROD._PR_handStrengthScore(cards2('A', 's', 'A', 'h'))).toBe(98);
+        expect(PROD._PR_handStrengthScore(cards2('2', 's', '2', 'h'))).toBe(50);
     });
 
-    it('test 2: suited connectors score higher than same-rank offsuit (AKs > AKo, T9s > T9o)', () => {
-        const aksScore = _PR_handStrengthScore_test(cards2('A','s','K','s'));
-        const akoScore = _PR_handStrengthScore_test(cards2('A','s','K','h'));
-        expect(aksScore).toBeGreaterThan(akoScore);
-
-        const t9sScore = _PR_handStrengthScore_test(cards2('T','s','9','s'));
-        const t9oScore = _PR_handStrengthScore_test(cards2('T','s','9','h'));
-        expect(t9sScore).toBeGreaterThan(t9oScore);
+    it('test 2: suitedness raises the score (AKs > AKo, T9s > T9o)', () => {
+        expect(PROD._PR_handStrengthScore(cards2('A', 's', 'K', 's')))
+            .toBeGreaterThan(PROD._PR_handStrengthScore(cards2('A', 's', 'K', 'h')));
+        expect(PROD._PR_handStrengthScore(cards2('T', 's', '9', 's')))
+            .toBeGreaterThan(PROD._PR_handStrengthScore(cards2('T', 's', '9', 'h')));
     });
 
-    it('test 3: NIT opens KK (score 94 ≥ openThreshold 55) but folds 22 (score 50 < 55)', () => {
-        const tsRFI = { opener: null, threeBettor: null, limpers: [], openSizeBB: 2.5 };
-        const kkResult = resolveArchetype_test(cards2('K','s','K','h'), 'raise', 2.5, tsRFI, 'BTN', 'NIT');
-        const pairResult = resolveArchetype_test(cards2('2','s','2','h'), 'raise', 2.5, tsRFI, 'BTN', 'NIT');
-        expect(kkResult.action).toBe('raise');
-        expect(pairResult.action).toBe('fold');
+    it('test 3: NIT opens KK but folds 22 (both GTO opens at BTN)', () => {
+        const kk = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('K', 's', 'K', 'h'), 'KK'), RFI_TS(), 'NIT');
+        const deuces = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('2', 's', '2', 'h'), '22'), RFI_TS(), 'NIT');
+        expect(kk.action).toBe('raise');
+        expect(deuces.action).toBe('fold');
     });
 
-    it('test 4: FISH loose-calls GTO-fold hand (T7o score ≈ 57 ≥ looseCallThreshold 38)', () => {
-        const ts = { opener: 'UTG', threeBettor: null, limpers: [], openSizeBB: 2.5 };
-        const t7oScore = _PR_handStrengthScore_test(cards2('T','s','7','h'));
-        expect(t7oScore).toBeGreaterThanOrEqual(38); // verify the score assumption
-        const result = resolveArchetype_test(cards2('T','s','7','h'), 'fold', 0, ts, 'BTN', 'FISH');
+    it('test 4: FISH loose-calls a GTO-fold hand (T7o vs UTG open)', () => {
+        const score = PROD._PR_handStrengthScore(cards2('T', 's', '7', 'h'));
+        expect(score).toBeGreaterThanOrEqual(38); // ≥ FISH looseCallThreshold
+        const result = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('T', 's', '7', 'h'), 'T7o'), VS_OPEN_TS('UTG'), 'FISH');
         expect(result.action).toBe('call');
     });
 
-    it('test 5: MANIAC converts GTO-call into 3-bet (KQs score ≈ 87 ≥ extraThreeBetThreshold 52)', () => {
-        const ts = { opener: 'UTG', threeBettor: null, limpers: [], openSizeBB: 2.5 };
-        const kqsScore = _PR_handStrengthScore_test(cards2('K','s','Q','s'));
-        expect(kqsScore).toBeGreaterThanOrEqual(52);
-        const result = resolveArchetype_test(cards2('K','s','Q','s'), 'call', 2.5, ts, 'BTN', 'MANIAC');
+    it('test 5: MANIAC converts a GTO-call into a 3-bet (KQs vs UTG open)', () => {
+        const score = PROD._PR_handStrengthScore(cards2('K', 's', 'Q', 's'));
+        expect(score).toBeGreaterThanOrEqual(52); // ≥ MANIAC extraThreeBetThreshold
+        const result = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('K', 's', 'Q', 's'), 'KQs'), VS_OPEN_TS('UTG'), 'MANIAC');
         expect(result.action).toBe('3bet');
     });
 
-    it('test 6: NIT folds vs 3-bet with 22 (score 50 < callVs3BetThreshold 88)', () => {
-        const ts = { opener: 'UTG', threeBettor: 'CO', limpers: [], openSizeBB: 2.5 };
-        const result = resolveArchetype_test(cards2('2','s','2','h'), 'call', 2.5, ts, 'BTN', 'NIT');
+    it('test 6: NIT folds 22 vs a 3-bet (score 50 < callVs3BetThreshold 88)', () => {
+        const result = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('2', 's', '2', 'h'), '22'), VS_3BET_TS(), 'NIT');
         expect(result.action).toBe('fold');
     });
 
-    it('test 7: all archetypes 4-bet with AA vs a 3-bet', () => {
-        const ts = { opener: 'UTG', threeBettor: 'CO', limpers: [], openSizeBB: 2.5 };
-        const types = ['NIT','TAG','LAG','FISH','MANIAC','AGGRO'];
-        for (const type of types) {
-            const result = resolveArchetype_test(cards2('A','s','A','h'), 'raise', 2.5, ts, 'BTN', type);
+    it('test 7: all archetypes 4-bet AA vs a 3-bet', () => {
+        for (const type of ['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO']) {
+            const result = PROD.PR_resolveVillainPreflopAction(
+                villainSeat('BTN', cards2('A', 's', 'A', 'h'), 'AA'), VS_3BET_TS(), type);
             expect(result.action).toBe('4bet');
         }
     });
 
-    it('test 8: FISH calls 3-bet with 66 (score 66 ≥ callVs3BetThreshold 45, < fourBetThreshold 97)', () => {
-        const ts = { opener: 'UTG', threeBettor: 'CO', limpers: [], openSizeBB: 2.5 };
-        const result = resolveArchetype_test(cards2('6','s','6','h'), 'call', 2.5, ts, 'BTN', 'FISH');
+    it('test 8: FISH calls a 3-bet with 66 (score 66 in [45, 97))', () => {
+        const result = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('6', 's', '6', 'h'), '66'), VS_3BET_TS(), 'FISH');
         expect(result.action).toBe('call');
     });
 
-    it('test 9: NIT downgrades GTO 3-bet bluff (A5s score ≈ 68) to call (68 ≥ callThreshold 60, < threeBetThreshold 82)', () => {
-        const ts = { opener: 'UTG', threeBettor: null, limpers: [], openSizeBB: 2.5 };
-        const a5sScore = _PR_handStrengthScore_test(cards2('A','s','5','s'));
-        expect(a5sScore).toBeGreaterThanOrEqual(60);
-        expect(a5sScore).toBeLessThan(82);
-        const result = resolveArchetype_test(cards2('A','s','5','s'), '3bet', 8.0, ts, 'BTN', 'NIT');
+    it('test 9: NIT downgrades a GTO 3-bet bluff to a call (A5s BB vs BTN open)', () => {
+        const score = PROD._PR_handStrengthScore(cards2('A', 's', '5', 's'));
+        expect(score).toBeGreaterThanOrEqual(60); // ≥ NIT callThreshold
+        expect(score).toBeLessThan(82);           // < NIT threeBetThreshold
+        const result = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BB', cards2('A', 's', '5', 's'), 'A5s'), VS_OPEN_TS('BTN'), 'NIT');
         expect(result.action).toBe('call');
     });
 
-    it('test 10: GTO type returns gto action unchanged (no arch → passthrough)', () => {
-        const ts = { opener: null, threeBettor: null, limpers: [], openSizeBB: 2.5 };
-        const result = resolveArchetype_test(cards2('7','s','2','h'), 'raise', 2.5, ts, 'BTN', 'GTO');
+    it('test 10: GTO type is a pure passthrough of the GTO baseline (AA RFI = raise)', () => {
+        const result = PROD.PR_resolveVillainPreflopAction(
+            villainSeat('BTN', cards2('A', 's', 'A', 'h'), 'AA'), RFI_TS(), 'GTO');
         expect(result.action).toBe('raise');
     });
 });

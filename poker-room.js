@@ -164,7 +164,14 @@ function _PR_nextActor(prHand) {
             break;
         }
     }
-    if (lastAggrIdx === -1) return null;
+    if (lastAggrIdx === -1) {
+        // A bet is live but nobody in the log made it — preflop only: the BB's
+        // blind. Treat the BB as the implicit aggressor so the street isn't
+        // "complete" before anyone has acted.
+        if (prHand.gameState.street !== 'preflop') return null;
+        const acted = new Set(ss.actions.map(a => a.seatLabel));
+        return order.find(l => l !== 'BB' && !acted.has(l)) || null;
+    }
 
     const aggrLabel = ss.actions[lastAggrIdx].seatLabel;
     const respondedAfterAggr = new Set(
@@ -180,19 +187,35 @@ function _PR_nextActor(prHand) {
     return null; // everyone has responded
 }
 
-// Apply a resolved action to prHand state (mutates in place — caller deep-copies first)
+// Apply a resolved action to prHand state (mutates in place — caller deep-copies first).
+// Single choke point for chip movement: call/limp amounts are derived from the
+// facing amount here (resolver-provided sizes ignore blinds already committed),
+// every commitment is capped at the remaining stack, and a stack reaching zero
+// marks the seat all-in.
 function _PR_applyAction(prHand, seatLabel, action, sizingBB) {
     const seat = prHand.seats.find(s => s !== null && s.label === seatLabel);
     const ss = prHand.gameState.streetState;
 
-    ss.actions.push({ seatLabel, action, sizingBB });
+    let sizing = sizingBB || 0;
+    if (action === 'call' || action === 'limp') {
+        sizing = _PR_facingAmount(prHand, seatLabel);
+    }
+    if (seat && sizing > seat.stackBB) {
+        sizing = seat.stackBB;
+    }
+
+    ss.actions.push({ seatLabel, action, sizingBB: sizing });
 
     if (['bet', 'raise', '3bet', '4bet'].includes(action)) {
         ss.betMadeThisStreet = true;
     }
-    if (sizingBB > 0) {
-        ss.committedBB[seatLabel] = parseFloat(((ss.committedBB[seatLabel] || 0) + sizingBB).toFixed(2));
-        if (seat) seat.stackBB = parseFloat((seat.stackBB - sizingBB).toFixed(2));
+    if (sizing > 0 && seat) {
+        ss.committedBB[seatLabel] = parseFloat(((ss.committedBB[seatLabel] || 0) + sizing).toFixed(2));
+        seat.stackBB = parseFloat((seat.stackBB - sizing).toFixed(2));
+        if (seat.stackBB <= 0) {
+            seat.stackBB = 0;
+            seat.allIn = true;
+        }
     }
     if (action === 'fold' && seat) {
         seat.folded = true;
@@ -488,11 +511,14 @@ function PR_applyHeroAction(prHand, action, sizingBB) {
 
     if (action === 'fold') {
         hr.heroFolded = true;
-        if (street === 'preflop') {
-            // Complete Phase 2 preflop even after hero folds so table action is accurate
+        if (street === 'preflop' && hr._preflopTableState) {
+            // Complete Phase 2 preflop even after hero folds so table action is
+            // accurate (guard: hero may act twice preflop, e.g. facing a 3-bet,
+            // and Phase 2 has already run by then)
             _PR_finishPreflopPhase2(hr, action, sizing);
         }
         hr.terminal = !_PR_hasMultipleActive(hr); // terminal only if nobody else can contest
+        if (hr.terminal) PR_resolveOutcome(hr);   // hand over — award the uncontested pot
         // Allow spectator mode: not terminal if other players still active
         return hr;
     }
@@ -667,6 +693,9 @@ function PR_advanceStreet(prHand) {
 
     if (nextStreet === 'showdown') {
         gs.street = 'showdown';
+        // The final street was archived above — clear live streetState so the
+        // showdown accounting doesn't count those actions a second time.
+        gs.streetState = { street: 'showdown', betMadeThisStreet: false, actions: [], committedBB: {} };
         hr.terminal = true;
         PR_evalShowdown(hr);
         return hr;
@@ -684,6 +713,10 @@ function PR_advanceStreet(prHand) {
     // Check for immediate terminal (only one active player left)
     if (!_PR_hasMultipleActive(hr)) {
         hr.terminal = true;
+        // Previous street already archived — clear live state before resolving
+        // so its actions aren't counted twice.
+        gs.streetState = { street: nextStreet, betMadeThisStreet: false, actions: [], committedBB: {} };
+        gs.street = nextStreet;
         PR_resolveOutcome(hr);
         return hr;
     }
@@ -752,10 +785,12 @@ function PR_evalShowdown(prHand) {
         return;
     }
 
-    // Evaluate each active hand
+    // Evaluate each active hand. Seat identity and hand name are distinct
+    // fields — never share a key (a spread here once clobbered the seat
+    // label with the hand label, so no pot was ever awarded).
     const evals = activeSeat.map(function(s) {
         const best = PR_evalBestHand(s.holeCards, board);
-        return { label: s.label, seat: s, ...best };
+        return { seatLabel: s.label, seat: s, rank: best.rank, handLabel: best.label, tiebreaker: best.tiebreaker };
     });
 
     // Determine last aggressor (must show); everyone else can muck unless called
@@ -790,13 +825,13 @@ function PR_evalShowdown(prHand) {
 
     // Award each pot to the best hand among eligible players
     const potResults = pots.map(function(pot) {
-        const eligible = evals.filter(e => pot.eligible.includes(e.label));
+        const eligible = evals.filter(e => pot.eligible.includes(e.seatLabel));
         if (eligible.length === 0) return { ...pot, winners: [] };
 
         const bestRank = Math.max(...eligible.map(e => e.rank));
         const bestHands = eligible.filter(e => e.rank === bestRank);
         const bestTie   = Math.max(...bestHands.map(e => e.tiebreaker));
-        const winners   = bestHands.filter(e => e.tiebreaker === bestTie).map(e => e.label);
+        const winners   = bestHands.filter(e => e.tiebreaker === bestTie).map(e => e.seatLabel);
         const share     = parseFloat((pot.amount / winners.length).toFixed(2));
         return { ...pot, winners, share };
     });
@@ -809,8 +844,8 @@ function PR_evalShowdown(prHand) {
         pot.winners.forEach(function(l) { mustShow.add(l); });
     });
     const showdown = evals.map(function(e) {
-        return { label: e.label, holeCards: e.seat.holeCards, rank: e.rank, label: e.label,
-                 handLabel: e.label, show: mustShow.has(e.label) };
+        return { seatLabel: e.seatLabel, holeCards: e.seat.holeCards, rank: e.rank,
+                 handLabel: e.handLabel, show: mustShow.has(e.seatLabel) };
     });
 
     // Compute net for hero
