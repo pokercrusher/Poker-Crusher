@@ -697,9 +697,10 @@ describe('Poker Room — showdown awarding & chip conservation', () => {
             let hr = PROD.PR_createHand({ heroPos, seats: seatCfgs, heroStackBB: 100 });
             hr = PROD.PR_runPreflopToHero(hr);
 
-            // Random hero preflop action
-            const pre = ['fold', 'call', 'raise'][Math.floor(Math.random() * 3)];
-            hr = PROD.PR_applyHeroAction(hr, pre, pre === 'raise' ? 7.5 : 0);
+            if (!hr.terminal) { // terminal here = walk (everyone folded to hero)
+                const pre = ['fold', 'call', 'raise'][Math.floor(Math.random() * 3)];
+                hr = PROD.PR_applyHeroAction(hr, pre, pre === 'raise' ? 7.5 : 0);
+            }
 
             // Drive the hand to completion
             let guard = 0;
@@ -837,5 +838,134 @@ describe('Poker Room — Pass 2 Archetypes (production)', () => {
         const result = PROD.PR_resolveVillainPreflopAction(
             villainSeat('BTN', cards2('A', 's', 'A', 'h'), 'AA'), RFI_TS(), 'GTO');
         expect(result.action).toBe('raise');
+    });
+});
+
+// =============================================================================
+// Poker Room — 5-card evaluator (kicker-aware showdown)
+// =============================================================================
+
+describe('Poker Room — 5-card evaluator', () => {
+
+    // Direct winner comparison via tiebreaker arrays
+    function winner(holeA, holeB, board) {
+        const a = PROD.PR_evalBestHand(holeA, board);
+        const b = PROD.PR_evalBestHand(holeB, board);
+        const d = PROD._PR_compareRanks(a.tiebreaker, b.tiebreaker);
+        return d > 0 ? 'A' : d < 0 ? 'B' : 'chop';
+    }
+
+    it('kicker battle: AK beats AQ on an ace-high board', () => {
+        const board = [C('A', 'd'), C('7', 's'), C('4', 'c'), C('J', 'h'), C('2', 'd')];
+        expect(winner(cards2('A', 's', 'K', 'c'), cards2('A', 'h', 'Q', 'c'), board)).toBe('A');
+    });
+
+    it('board plays: two live hands chop a board straight regardless of hole cards', () => {
+        // Old max-hole-card tiebreak wrongly gave this to the king
+        const board = [C('2', 'd'), C('3', 's'), C('4', 'c'), C('5', 'h'), C('6', 'd')];
+        expect(winner(cards2('K', 's', '9', 'c'), cards2('Q', 'h', '8', 'c'), board)).toBe('chop');
+    });
+
+    it('wheel loses to a higher straight', () => {
+        const board = [C('3', 'd'), C('4', 's'), C('5', 'c'), C('6', 'h'), C('K', 'd')];
+        // A-2 makes 6-high straight; 7-8 makes 8-high straight
+        expect(winner(cards2('A', 's', '2', 'c'), cards2('7', 'h', '8', 'c'), board)).toBe('B');
+    });
+
+    it('pair kicker chain: second kicker decides when first ties', () => {
+        const board = [C('Q', 'd'), C('Q', 's'), C('7', 'c'), C('4', 'h'), C('2', 'd')];
+        // Both pair queens; A-K kickers beat A-J
+        expect(winner(cards2('A', 's', 'K', 'c'), cards2('A', 'h', 'J', 'c'), board)).toBe('A');
+    });
+
+    it('flush vs flush: highest flush card wins, not highest hole card', () => {
+        const board = [C('K', 'h'), C('9', 'h'), C('4', 'h'), C('J', 's'), C('2', 'c')];
+        // A-high flush (A2 of hearts... A♥ + board hearts) vs Q-high flush
+        expect(winner(cards2('A', 'h', '3', 'h'), cards2('Q', 'h', 'T', 'h'), board)).toBe('A');
+    });
+
+    it('two pair: higher second pair wins when top pair ties', () => {
+        const board = [C('K', 'd'), C('K', 's'), C('9', 'c'), C('5', 'h'), C('2', 'd')];
+        // Kings + nines (A kicker) vs kings + fives (A kicker)
+        expect(winner(cards2('9', 's', 'A', 'c'), cards2('5', 'c', 'A', 'h'), board)).toBe('A');
+    });
+
+    it('full house: bigger trips win; bigger pair breaks trip ties', () => {
+        const board = [C('8', 'd'), C('8', 's'), C('8', 'c'), C('K', 'h'), C('4', 'd')];
+        // Eights full of kings (KK in hole? no — K on board pairs with hole K) —
+        // A: K4 → 888KK; B: 44 → 888 + 44 → eights full of fours
+        expect(winner(cards2('K', 's', '4', 'c'), cards2('4', 's', '4', 'h'), board)).toBe('A');
+    });
+
+    it('category consistency: _PR_rank5 best-of-7 category always agrees with evaluateRawHand', () => {
+        for (let n = 0; n < 500; n++) {
+            const deck = PROD._shuffle(PROD._freshDeck());
+            const toObj = c => ({ rank: c[0], suit: c[1] });
+            const hole = [toObj(deck[0]), toObj(deck[1])];
+            const board = [toObj(deck[2]), toObj(deck[3]), toObj(deck[4]), toObj(deck[5]), toObj(deck[6])];
+            const best = PROD.PR_evalBestHand(hole, board);
+            // tiebreaker[0] is 0–8; evaluateRawHand rank is 1–9 for the same categories
+            expect(best.tiebreaker[0] + 1).toBe(best.rank);
+        }
+    });
+
+    it('showdown end-to-end: kicker decides the pot', () => {
+        const board = [C('A', 'd'), C('7', 's'), C('4', 'c'), C('J', 'h'), C('2', 'd')];
+        const prHand = {
+            seats: [
+                { label: 'UTG', isHero: false, folded: false, allIn: false, stackBB: 95,
+                  holeCards: cards2('A', 's', 'K', 'c') },   // aces, king kicker
+                null, null, null, null, null,
+                { label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 95,
+                  holeCards: cards2('A', 'h', 'Q', 'c') },   // aces, queen kicker
+                null, null,
+            ],
+            heroSeatIndex: 6,
+            gameState: {
+                potBB: 10, board, street: 'river',
+                streetState: { street: 'river', betMadeThisStreet: false, actions: [], committedBB: { UTG: 0, BTN: 0 } },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'UTG', action: 'raise', sizingBB: 5 },
+                        { seatLabel: 'BTN', action: 'call',  sizingBB: 5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
+            },
+        };
+        PROD.PR_evalShowdown(prHand);
+        expect(prHand.outcome.pots[0].winners).toEqual(['UTG']);
+        expect(prHand.outcome.heroNetBB).toBe(-5);
+    });
+});
+
+// =============================================================================
+// Poker Room — walk (everyone folds to hero)
+// =============================================================================
+
+describe('Poker Room — walk handling', () => {
+
+    it('everyone folds to hero in the BB → hand terminates, hero wins the SB', () => {
+        // Villains are forced onto 72o so they fold their RFI (a small random
+        // limp frequency exists, so retry until a clean walk occurs).
+        for (let t = 0; t < 200; t++) {
+            let hr = PROD.PR_createHand({ heroPos: 'BB', seats: makeSeats() });
+            hr.seats.forEach(s => {
+                if (s && !s.isHero) {
+                    s.holeCards = cards2('7', 's', '2', 'h');
+                    s.handNotation = '72o';
+                }
+            });
+            hr = PROD.PR_runPreflopToHero(hr);
+            const allFolded = hr.seats.filter(s => s && !s.isHero).every(s => s.folded);
+            if (!allFolded) continue; // a villain limped this time — try again
+
+            expect(hr.terminal).toBe(true);
+            expect(hr.outcome).toBeTruthy();
+            expect(hr.outcome.winner).toBe('BB');
+            expect(hr.outcome.heroNetBB).toBe(0.5); // wins the small blind
+            return;
+        }
+        throw new Error('no clean walk occurred in 200 attempts');
     });
 });

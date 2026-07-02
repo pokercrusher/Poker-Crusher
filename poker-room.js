@@ -382,6 +382,14 @@ function PR_runPreflopToHero(prHand) {
     };
     prHand._preflopTableState = tableState; // carried through for post-hero Phase 2
 
+    // Walk: everyone folded before hero — the hand is over and hero wins the
+    // blinds uncontested. Hero never gets (or needs) an action.
+    if (!_PR_hasMultipleActive(prHand)) {
+        prHand.terminal = true;
+        delete prHand._preflopTableState;
+        PR_resolveOutcome(prHand);
+    }
+
     return prHand;
 }
 
@@ -759,16 +767,83 @@ function _PR_hasMultipleActive(prHand) {
 }
 
 // ---------------------------------------------------------------------------
-// PR_evalBestHand — evaluate a seat's best 5-card hand
-// Returns { rank, label, tiebreaker } where tiebreaker is max hole card rank num
+// _PR_rank5 — score one exact 5-card hand.
+// Returns a comparable array [category, k1..k5] where category is
+// 8=straight flush, 7=quads, 6=full house, 5=flush, 4=straight, 3=trips,
+// 2=two pair, 1=pair, 0=high card, and k1..k5 are ordered kickers.
+// Two hands compare lexicographically: earlier element wins; full equality
+// means a genuine chop.
+// ---------------------------------------------------------------------------
+function _PR_rank5(cards) {
+    const ranks = cards.map(c => RANK_NUM[c.rank]).sort((a, b) => b - a);
+    const isFlush = cards.every(c => c.suit === cards[0].suit);
+
+    // Straight: 5 distinct descending ranks, window of 4; wheel A-5 counts as 5-high
+    let straightHigh = 0;
+    const distinct = [...new Set(ranks)];
+    if (distinct.length === 5) {
+        if (distinct[0] - distinct[4] === 4) straightHigh = distinct[0];
+        else if (distinct[0] === 14 && distinct[1] === 5 && distinct[1] - distinct[4] === 3) straightHigh = 5; // A-2-3-4-5
+    }
+
+    // Group ranks by count, order groups by (count desc, rank desc)
+    const freq = new Map();
+    for (const r of ranks) freq.set(r, (freq.get(r) || 0) + 1);
+    const groups = [...freq.entries()].sort((a, b) => (b[1] - a[1]) || (b[0] - a[0]));
+    const counts = groups.map(g => g[1]);
+
+    if (straightHigh && isFlush)            return [8, straightHigh, 0, 0, 0, 0];
+    if (counts[0] === 4)                    return [7, groups[0][0], groups[1][0], 0, 0, 0];
+    if (counts[0] === 3 && counts[1] === 2) return [6, groups[0][0], groups[1][0], 0, 0, 0];
+    if (isFlush)                            return [5, ...ranks];
+    if (straightHigh)                       return [4, straightHigh, 0, 0, 0, 0];
+    if (counts[0] === 3)                    return [3, groups[0][0], groups[1][0], groups[2][0], 0, 0];
+    if (counts[0] === 2 && counts[1] === 2) return [2, groups[0][0], groups[1][0], groups[2][0], 0, 0];
+    if (counts[0] === 2)                    return [1, groups[0][0], groups[1][0], groups[2][0], groups[3][0], 0];
+    return [0, ...ranks];
+}
+
+// Compare two _PR_rank5 arrays: positive if a wins, negative if b wins, 0 = chop
+function _PR_compareRanks(a, b) {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const d = (a[i] || 0) - (b[i] || 0);
+        if (d !== 0) return d;
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// PR_evalBestHand — evaluate a seat's best 5-card hand out of hole + board.
+// Iterates all C(7,5)=21 five-card combinations and keeps the best.
+// Returns { rank, label, tiebreaker } where:
+//   rank/label — category from evaluateRawHand (display + tier logic)
+//   tiebreaker — full comparable array from _PR_rank5 (kickers included)
 // ---------------------------------------------------------------------------
 function PR_evalBestHand(holeCards, board) {
-    const raw  = evaluateRawHand(holeCards, board);
-    const hRanks = holeCards.map(c => RANK_NUM[c.rank]);
+    const raw = evaluateRawHand(holeCards, board);
+    const all = [...holeCards, ...board];
+
+    let best = null;
+    if (all.length <= 5) {
+        best = _PR_rank5(all);
+    } else if (all.length === 6) {
+        for (let i = 0; i < 6; i++) {
+            const score = _PR_rank5(all.filter((_, k) => k !== i));
+            if (best === null || _PR_compareRanks(score, best) > 0) best = score;
+        }
+    } else { // 7 cards: exclude every pair of indices
+        for (let i = 0; i < all.length - 1; i++) {
+            for (let j = i + 1; j < all.length; j++) {
+                const score = _PR_rank5(all.filter((_, k) => k !== i && k !== j));
+                if (best === null || _PR_compareRanks(score, best) > 0) best = score;
+            }
+        }
+    }
+
     return {
         rank:        raw.rank,
         label:       raw.label,
-        tiebreaker:  Math.max(...hRanks),
+        tiebreaker:  best,
     };
 }
 
@@ -823,16 +898,20 @@ function PR_evalShowdown(prHand) {
 
     const pots = _PR_buildSidePots(activeSeat, totalCommitted, prHand.seats);
 
-    // Award each pot to the best hand among eligible players
+    // Award each pot to the best hand among eligible players.
+    // Winner selection uses the full kicker-aware tiebreaker arrays; an exact
+    // tie across every element is a genuine chop.
     const potResults = pots.map(function(pot) {
         const eligible = evals.filter(e => pot.eligible.includes(e.seatLabel));
         if (eligible.length === 0) return { ...pot, winners: [] };
 
-        const bestRank = Math.max(...eligible.map(e => e.rank));
-        const bestHands = eligible.filter(e => e.rank === bestRank);
-        const bestTie   = Math.max(...bestHands.map(e => e.tiebreaker));
-        const winners   = bestHands.filter(e => e.tiebreaker === bestTie).map(e => e.seatLabel);
-        const share     = parseFloat((pot.amount / winners.length).toFixed(2));
+        let best = eligible[0].tiebreaker;
+        for (const e of eligible) {
+            if (_PR_compareRanks(e.tiebreaker, best) > 0) best = e.tiebreaker;
+        }
+        const winners = eligible.filter(e => _PR_compareRanks(e.tiebreaker, best) === 0)
+                                .map(e => e.seatLabel);
+        const share   = parseFloat((pot.amount / winners.length).toFixed(2));
         return { ...pot, winners, share };
     });
 

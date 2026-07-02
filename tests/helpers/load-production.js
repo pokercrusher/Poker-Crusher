@@ -71,6 +71,7 @@ const EXPORT_NAMES = [
     'PR_isStreetComplete', 'PR_advanceStreet', 'PR_evalShowdown', 'PR_evalBestHand',
     'PR_resolveOutcome', 'PR_gradeHeroAction', 'PR_runSpectatorStreets',
     '_PR_handStrengthScore', '_PR_applyAction', '_PR_facingAmount', '_PR_nextActor',
+    '_PR_rank5', '_PR_compareRanks',
 ];
 
 let cached = null;
