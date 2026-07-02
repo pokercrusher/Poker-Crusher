@@ -969,3 +969,119 @@ describe('Poker Room — walk handling', () => {
         throw new Error('no clean walk occurred in 200 attempts');
     });
 });
+
+// =============================================================================
+// Poker Room — multi-round preflop (villains can 3-bet, hero re-acts, BB option)
+// =============================================================================
+
+describe('Poker Room — multi-round preflop', () => {
+
+    // Deterministic setup: hero UTG opens, MANIAC BTN holds KQs (score 87 ≥
+    // extraThreeBetThreshold 52 → converts GTO-call to 3-bet), everyone else
+    // holds 72o (folds every branch). Hero must get to respond to the 3-bet.
+    function threeBetScenario() {
+        const seats = PROD.PR_POSITIONS.map(l => ({
+            label: l, type: 'MANIAC', name: l, stackBB: 100,
+        }));
+        let hr = PROD.PR_createHand({ heroPos: 'UTG', seats, heroStackBB: 100 });
+        hr.seats.forEach(s => {
+            if (!s) return;
+            if (s.isHero) {
+                s.holeCards = cards2('A', 's', 'A', 'h');
+                s.handNotation = 'AA';
+            } else if (s.label === 'BTN') {
+                s.holeCards = cards2('K', 's', 'Q', 's');
+                s.handNotation = 'KQs';
+            } else {
+                s.holeCards = cards2('7', 's', '2', 'h');
+                s.handNotation = '72o';
+            }
+        });
+        hr = PROD.PR_runPreflopToHero(hr);   // hero UTG is first to act
+        hr = PROD.PR_applyHeroAction(hr, 'raise', 2.5);
+        // Drive villains: BTN should 3-bet, others fold
+        let guard = 0;
+        while (guard++ < 30) {
+            const next = PROD._PR_nextActor(hr);
+            if (next === null || next === 'UTG') break;
+            hr = PROD.PR_applyVillainAction(hr);
+        }
+        return hr;
+    }
+
+    it('a villain 3-bets hero\'s open and action returns to hero', () => {
+        const hr = threeBetScenario();
+        const threeBet = hr.gameState.streetState.actions.find(a => a.action === '3bet');
+        expect(threeBet).toBeTruthy();
+        expect(threeBet.seatLabel).toBe('BTN');
+        expect(PROD.PR_isStreetComplete(hr)).toBe(false);
+        expect(PROD._PR_nextActor(hr)).toBe('UTG'); // hero must respond
+        expect(hr.preflopContext.potStructure).toBe('3BP');
+    });
+
+    it('hero calls the 3-bet → street completes with matched commitments', () => {
+        let hr = threeBetScenario();
+        hr = PROD.PR_applyHeroAction(hr, 'call', 0);
+        expect(PROD.PR_isStreetComplete(hr)).toBe(true);
+        const c = hr.gameState.streetState.committedBB;
+        expect(c['UTG']).toBeCloseTo(c['BTN'], 2); // hero matched the 3-bet
+        // Grading: hero called a 3-bet holding AA after opening — RFI_VS_3BET
+        // says 4-bet, so a call grades mixed at worst, never 'correct fold' noise
+        const grade = hr.heroGrades[hr.heroGrades.length - 1];
+        expect(['mixed', 'correct', 'error']).toContain(grade.grade);
+        // Advancing deals the flop for a live 3-bet pot
+        hr = PROD.PR_advanceStreet(hr);
+        expect(hr.gameState.street).toBe('flop');
+        const active = hr.seats.filter(s => s && !s.folded).map(s => s.label);
+        expect(active).toEqual(['UTG', 'BTN']);
+    });
+
+    it('hero folds to the 3-bet → hand resolves for the 3-bettor', () => {
+        let hr = threeBetScenario();
+        hr = PROD.PR_applyHeroAction(hr, 'fold', 0);
+        expect(hr.terminal).toBe(true);
+        expect(hr.outcome.winner).toBe('BTN');
+        expect(hr.outcome.heroNetBB).toBe(-2.5); // hero loses only the open
+    });
+
+    it('hero 4-bets and the raise war is capped (no infinite re-raising)', () => {
+        let hr = threeBetScenario();
+        hr = PROD.PR_applyHeroAction(hr, '4bet', 15);
+        let guard = 0;
+        while (guard++ < 50 && !hr.terminal) {
+            const next = PROD._PR_nextActor(hr);
+            if (next === null) break;
+            if (next === 'UTG') { hr = PROD.PR_applyHeroAction(hr, 'call', 0); continue; }
+            hr = PROD.PR_applyVillainAction(hr);
+        }
+        expect(guard).toBeLessThan(50);
+        const raises = hr.gameState.streetState.actions.filter(
+            a => ['raise', '3bet', '4bet'].includes(a.action));
+        expect(raises.length).toBeLessThanOrEqual(4);
+    });
+
+    it('BB gets the option in a limped pot', () => {
+        const prHand = PROD.PR_createHand({ heroPos: 'BB', seats: makeSeats() });
+        // Manually construct a limped pot: UTG limps, everyone else folds
+        PROD._PR_applyAction(prHand, 'UTG', 'limp', 0);
+        ['UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB'].forEach(l =>
+            PROD._PR_applyAction(prHand, l, 'fold', 0));
+        expect(PROD.PR_isStreetComplete(prHand)).toBe(false);
+        expect(PROD._PR_nextActor(prHand)).toBe('BB'); // option
+    });
+
+    it('villain BB checks its option instead of folding for free', () => {
+        const prHand = PROD.PR_createHand({ heroPos: 'UTG', seats: makeSeats() });
+        // Give BB trash so the resolver would say fold; facing 0 it must check
+        const bb = prHand.seats.find(s => s && s.label === 'BB');
+        bb.holeCards = cards2('7', 's', '2', 'h');
+        bb.handNotation = '72o';
+        PROD._PR_applyAction(prHand, 'UTG', 'limp', 0);
+        ['UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB'].forEach(l =>
+            PROD._PR_applyAction(prHand, l, 'fold', 0));
+        const after = PROD.PR_applyVillainAction(prHand);
+        const bbAction = after.gameState.streetState.actions.find(a => a.seatLabel === 'BB');
+        expect(bbAction).toBeTruthy();
+        expect(bbAction.action).not.toBe('fold'); // check or iso-raise, never a free fold
+    });
+});

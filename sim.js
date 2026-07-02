@@ -515,12 +515,11 @@ function _finishPreflopLoop(hr, heroAction, heroSizingBB) {
         for (var i = heroOrderIdx + 1; i < FULL_TABLE_POSITIONS.length; i++) {
             var seat = hr.seats[i];
             if (!seat) continue;
+            // Villains behind hero may 3-bet hero's open — hero re-acts via the
+            // preflop_vs3bet decision node (applyHeroAction handles the flow).
+            // The resolver folds all seats once a threeBettor exists, so at most
+            // one 3-bet occurs per hand.
             var result = _resolveVillainPreflopAction(seat, tableState, 'GTO');
-            // 3-bets from behind after hero raised would require hero to re-act — not
-            // supported in this trainer, so downgrade to fold to keep the hand moving.
-            if (result.action === '3bet' && tableState.opener === heroPos) {
-                result = { action: 'fold', sizingBB: 0 };
-            }
             switch (result.action) {
                 case 'raise':
                     tableState.opener  = seat.label;
@@ -577,7 +576,18 @@ function _finishPreflopLoop(hr, heroAction, heroSizingBB) {
     });
 
     // Derive lane for postflop engine
-    if (!tableState.opener || tableState.opener === heroPos) {
+    if (tableState.threeBettor && tableState.opener === heroPos) {
+        // Hero opened and got 3-bet. If hero continues, this is a 3-bet pot —
+        // use the matching CALL_3BP defender lane when one exists, otherwise
+        // fall back to the SRP lane (postflop families proxy to SRP anyway).
+        var call3bpLane = heroPos + '_CALL_3BP_vs_' + tableState.threeBettor;
+        if (SIM_SUPPORTED_LANES.includes(call3bpLane)) {
+            hr.lane = call3bpLane;
+        } else {
+            var srpFallback = heroPos + '_vs_BB_SRP';
+            hr.lane = SIM_SUPPORTED_LANES.includes(srpFallback) ? srpFallback : 'BTN_vs_BB_SRP';
+        }
+    } else if (!tableState.opener || tableState.opener === heroPos) {
         // Hero is the opener (or no open) — hero acts last postflop
         var openDerived = heroPos + '_vs_BB_SRP';
         hr.lane = SIM_SUPPORTED_LANES.includes(openDerived) ? openDerived : 'BTN_vs_BB_SRP';
@@ -830,23 +840,43 @@ function resolveDecisionNode(handRun) {
         boardTexture = null;
         availableActions = getAvailableActions(hr);
 
-        // Hero (opener) facing villain's 3bet
-        const _facing3bet = ss.actions.some(function(a) { return a.seatLabel !== heroLabel && a.action === '3bet'; });
-        if (_facing3bet && heroLabel !== 'BB') {
+        // Hero facing a villain 3-bet
+        const _3betEntry = [...ss.actions].reverse().find(function(a) {
+            return a.seatLabel !== heroLabel && a.action === '3bet';
+        });
+        if (_3betEntry && heroLabel !== 'BB') {
+            const _threeBettorLabel = _3betEntry.seatLabel;
+            const _heroOpened = ss.actions.some(function(a) {
+                return a.seatLabel === heroLabel && a.action === 'raise';
+            });
             nodeId = 'preflop_vs3bet_' + heroLabel;
             spotType = 'RFI_VS_3BET';
             position = 'IP';
-            const rawAction = computeCorrectAction(heroHandNotation, 'RFI_VS_3BET', heroLabel,
-                villainSeat ? villainSeat.label : 'BB', null);
-            correctAction = rawAction === 'RAISE' ? '4bet' : rawAction === 'CALL' ? 'call' : 'fold';
-            const _3betEntry = [...ss.actions].reverse().find(function(a) { return a.action === '3bet'; });
-            callAmountBB = _3betEntry ? _3betEntry.sizingBB : 0;
+            callAmountBB = _3betEntry.sizingBB || 0;
             mixFrequency = null;
-            explanation = heroLabel + ' vs 3-bet: ' + (
-                correctAction === '4bet' ? 'hand is in 4-bet range.' :
-                correctAction === 'call' ? 'hand is in calling range vs 3-bet.' :
-                'hand is outside continuing range \u2014 fold.'
-            );
+            if (_heroOpened) {
+                // Hero opened and faces the 3-bet \u2014 rfiVs3BetRanges apply
+                const rawAction = computeCorrectAction(heroHandNotation, 'RFI_VS_3BET', heroLabel,
+                    _threeBettorLabel, null);
+                correctAction = rawAction === 'RAISE' ? '4bet' : rawAction === 'CALL' ? 'call' : 'fold';
+                explanation = heroLabel + ' vs ' + _threeBettorLabel + ' 3-bet: ' + (
+                    correctAction === '4bet' ? 'hand is in 4-bet range.' :
+                    correctAction === 'call' ? 'hand is in calling range vs 3-bet.' :
+                    'hand is outside continuing range \u2014 fold.'
+                );
+            } else {
+                // Cold vs a 3-bet (hero has not acted yet) \u2014 no range data for
+                // this spot; continue only with premium hands.
+                const _coldPremium = checkRangeHelper(heroHandNotation, ['QQ+', 'AKs', 'AKo']);
+                correctAction = _coldPremium
+                    ? (checkRangeHelper(heroHandNotation, ['KK+']) ? '4bet' : 'call')
+                    : 'fold';
+                explanation = heroLabel + ' cold vs ' + _threeBettorLabel + ' 3-bet: ' + (
+                    correctAction === 'fold'
+                        ? 'only premium hands (QQ+, AK) continue cold vs a 3-bet \u2014 fold.'
+                        : 'premium hand \u2014 ' + correctAction + ' is the standard play cold vs a 3-bet.'
+                );
+            }
 
         } else if (heroLabel === 'BB') {
             const _bbOpenerAct = ss.actions.find(function(a) { return a.action === 'raise'; });
@@ -1372,8 +1402,12 @@ function applyHeroAction(handRun, action, heroSizingBB) {
         const _3betEntry = [...ss.actions].reverse().find(a => a.action === '3bet');
         sizingBB = _3betEntry ? Math.round(_3betEntry.sizingBB * 2.2 * 10) / 10 : 22;
     } else if (action === 'call') {
-        const villainAggr = [...ss.actions].reverse().find(a => a.seatLabel !== heroSeat.label && (a.action === 'bet' || a.action === 'raise' || a.action === '3bet'));
-        sizingBB = villainAggr ? villainAggr.sizingBB : 0;
+        // Call the difference up to the highest commitment this street — hero
+        // may already have chips in (e.g. open-raise before facing a 3-bet).
+        const committedVals = Object.values(ss.committedBB);
+        const maxCommitted = committedVals.length ? Math.max(0, ...committedVals) : 0;
+        const heroCommitted = ss.committedBB[heroSeat.label] || 0;
+        sizingBB = Math.max(0, parseFloat((maxCommitted - heroCommitted).toFixed(2)));
     }
 
     // Record in streetState — append only
@@ -1415,6 +1449,15 @@ function applyHeroAction(handRun, action, heroSizingBB) {
             pendingNode.chosenSizingBucket = chosenBucket;
             pendingNode.sizeGrade = diff === 0 ? 'correct' : diff === 1 ? 'close' : 'error';
         }
+    }
+
+    // A villain 3-bet hero's open (FULL_TABLE Phase 2) — hero re-acts before
+    // the street can complete: present the vs-3bet decision node.
+    if (street === 'preflop' && action === 'raise' &&
+        ss.actions.some(a => a.seatLabel !== heroSeat.label && a.action === '3bet')) {
+        hr.nodeType = 'hero_decision';
+        resolveDecisionNode(hr);
+        return hr;
     }
 
     // Fold → terminal
@@ -1462,16 +1505,16 @@ function applyVillainAction(handRun) {
         // Villain opening preflop (e.g. BTN in BB_vs_BTN_SRP)
         sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
     } else if (action === 'call') {
-        if (street === 'preflop') {
-            // Match the last hero aggression — covers open raise and 4bet
-            const _heroAggr = [...ss.actions].reverse().find(a =>
-                a.seatLabel !== villainSeat.label && (a.action === 'raise' || a.action === '4bet')
-            );
-            sizingBB = _heroAggr ? _heroAggr.sizingBB
-                : (typeof getOpenSizeBB === 'function' ? getOpenSizeBB() : 2.5);
-        } else {
-            const heroBet = [...ss.actions].reverse().find(a => a.seatLabel !== villainSeat.label && (a.action === 'bet' || a.action === 'raise'));
-            sizingBB = heroBet ? heroBet.sizingBB : 0;
+        // Call the difference up to the highest commitment this street — the
+        // villain may already have chips in (e.g. its open or 3-bet before a
+        // hero re-raise). Matching the raiser's incremental size overpays.
+        const _cVals = Object.values(ss.committedBB);
+        const _cMax = _cVals.length ? Math.max(0, ..._cVals) : 0;
+        const _cMine = ss.committedBB[villainSeat.label] || 0;
+        sizingBB = Math.max(0, parseFloat((_cMax - _cMine).toFixed(2)));
+        if (sizingBB === 0 && street === 'preflop') {
+            // Legacy lanes may not track the open in committedBB — fall back
+            sizingBB = (typeof getOpenSizeBB === 'function') ? getOpenSizeBB() : 2.5;
         }
     } else if (action === 'bet') {
         sizingBB = Math.round(gs.potBB * 0.33 * 10) / 10;

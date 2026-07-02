@@ -167,10 +167,14 @@ function _PR_nextActor(prHand) {
     if (lastAggrIdx === -1) {
         // A bet is live but nobody in the log made it — preflop only: the BB's
         // blind. Treat the BB as the implicit aggressor so the street isn't
-        // "complete" before anyone has acted.
+        // "complete" before anyone has acted. In a limped pot the BB acts last
+        // and still gets the option.
         if (prHand.gameState.street !== 'preflop') return null;
         const acted = new Set(ss.actions.map(a => a.seatLabel));
-        return order.find(l => l !== 'BB' && !acted.has(l)) || null;
+        const nonBB = order.find(l => l !== 'BB' && !acted.has(l));
+        if (nonBB) return nonBB;
+        if (order.includes('BB') && !acted.has('BB')) return 'BB';
+        return null;
     }
 
     const aggrLabel = ss.actions[lastAggrIdx].seatLabel;
@@ -322,75 +326,98 @@ function PR_createHand(config) {
 }
 
 // ---------------------------------------------------------------------------
-// PR_runPreflopToHero — simulate villain actions until hero's turn
-// Mutates prHand's gameState. Returns prHand.
+// _PR_deriveTableState — derive the preflop table context purely from the
+// action log, so it's always current no matter how many betting rounds have
+// happened. threeBettor tracks the LATEST re-raiser (a 4-bettor takes the
+// slot), which is what the score-gated resolver needs to price a continue.
 // ---------------------------------------------------------------------------
-function PR_runPreflopToHero(prHand) {
-    const heroLabel = prHand.seats[prHand.heroSeatIndex].label;
-    const heroOrderIdx = PR_POSITIONS.indexOf(heroLabel);
-
-    // Build preflop tableState for _resolveVillainPreflopAction
-    const openSizeBB = prHand.openSizeBB || 2.5;
-    const tableState = {
+function _PR_deriveTableState(prHand) {
+    const ss = prHand.gameState.streetState;
+    const ts = {
         opener:      null,
         callers:     [],
         threeBettor: null,
         limpers:     [],
-        openSizeBB:  openSizeBB,
+        openSizeBB:  prHand.openSizeBB || 2.5,
+        raiseCount:  0,
+        committedBB: ss.committedBB,
     };
-
-    // Simulate each position before hero in preflop order
-    for (let i = 0; i < heroOrderIdx; i++) {
-        const seat = prHand.seats[i];
-        if (!seat) continue;
-
-        const result = PR_resolveVillainPreflopAction(seat, tableState, seat.type);
-        const sizingBB = result.sizingBB || 0;
-
-        switch (result.action) {
-            case 'raise':
-                tableState.opener  = seat.label;
-                tableState.limpers = [];
-                _PR_applyAction(prHand, seat.label, 'raise', sizingBB);
-                break;
-            case '3bet':
-                tableState.threeBettor = seat.label;
-                _PR_applyAction(prHand, seat.label, '3bet', sizingBB);
-                break;
-            case 'call':
-                tableState.callers.push(seat.label);
-                _PR_applyAction(prHand, seat.label, 'call', sizingBB);
-                break;
-            case 'limp':
-                tableState.limpers.push(seat.label);
-                _PR_applyAction(prHand, seat.label, 'limp', 1);
-                break;
-            default:
-                _PR_applyAction(prHand, seat.label, 'fold', 0);
-                break;
+    for (const a of ss.actions) {
+        if (a.action === 'raise') {
+            ts.raiseCount++;
+            if (!ts.opener) { ts.opener = a.seatLabel; ts.limpers = []; }
+            else ts.threeBettor = a.seatLabel;
+        } else if (a.action === '3bet' || a.action === '4bet') {
+            ts.raiseCount++;
+            ts.threeBettor = a.seatLabel;
+        } else if (a.action === 'call') {
+            if (ts.opener) ts.callers.push(a.seatLabel);
+            else ts.limpers.push(a.seatLabel);
+        } else if (a.action === 'limp') {
+            ts.limpers.push(a.seatLabel);
         }
     }
+    return ts;
+}
 
-    // Store preflop table context for UI display
-    prHand.preflopContext = {
-        heroPos:      heroLabel,
-        opener:       tableState.opener,
-        threeBettor:  tableState.threeBettor,
-        callers:      tableState.callers.slice(),
-        limpers:      tableState.limpers.slice(),
-        potStructure: tableState.threeBettor ? '3BP' : (tableState.limpers.length > 0 ? 'LIMP_POT' : 'SRP'),
+// Build the display/grading context from the current derived table state
+function _PR_buildPreflopContext(prHand) {
+    const ts = _PR_deriveTableState(prHand);
+    const heroSeat = prHand.seats[prHand.heroSeatIndex];
+    return {
+        heroPos:      heroSeat ? heroSeat.label : null,
+        opener:       ts.opener,
+        threeBettor:  ts.threeBettor,
+        callers:      ts.callers.slice(),
+        limpers:      ts.limpers.slice(),
+        potStructure: ts.threeBettor ? '3BP' : (ts.limpers.length > 0 ? 'LIMP_POT' : 'SRP'),
+        tableActions: prHand.gameState.streetState.actions.map(function(a) {
+            return { seatLabel: a.seatLabel, action: a.action };
+        }),
     };
-    prHand._preflopTableState = tableState; // carried through for post-hero Phase 2
+}
+
+// ---------------------------------------------------------------------------
+// PR_runPreflopToHero — run villain actions until it's hero's turn (or the
+// hand resolves without hero). Uses the same generic actor loop as postflop,
+// so multi-round action (3-bets, re-acts, BB option) works naturally.
+// Mutates prHand's gameState. Returns prHand.
+// ---------------------------------------------------------------------------
+function PR_runPreflopToHero(prHand) {
+    const heroLabel = prHand.seats[prHand.heroSeatIndex].label;
+
+    let guard = 0;
+    while (guard++ < 100) {
+        if (!_PR_hasMultipleActive(prHand)) break;
+        const next = _PR_nextActor(prHand);
+        if (next === null || next === heroLabel) break;
+        _PR_resolveAndApplyVillainPreflop(prHand, next);
+    }
+
+    prHand.preflopContext = _PR_buildPreflopContext(prHand);
 
     // Walk: everyone folded before hero — the hand is over and hero wins the
     // blinds uncontested. Hero never gets (or needs) an action.
     if (!_PR_hasMultipleActive(prHand)) {
         prHand.terminal = true;
-        delete prHand._preflopTableState;
         PR_resolveOutcome(prHand);
     }
 
     return prHand;
+}
+
+// Resolve one villain's preflop action from the derived table state and apply it.
+// A resolved "fold" with nothing to call becomes a check (e.g. BB option).
+function _PR_resolveAndApplyVillainPreflop(prHand, seatLabel) {
+    const seat = prHand.seats.find(s => s !== null && s.label === seatLabel);
+    if (!seat) return;
+    const ts = _PR_deriveTableState(prHand);
+    const result = PR_resolveVillainPreflopAction(seat, ts, seat.type);
+    let action = result.action;
+    if (action === 'fold' && _PR_facingAmount(prHand, seatLabel) <= 0) {
+        action = 'check';
+    }
+    _PR_applyAction(prHand, seatLabel, action, result.sizingBB || 0);
 }
 
 // Score a hole-card holding 0–99.
@@ -437,19 +464,47 @@ function PR_resolveVillainPreflopAction(seat, tableState, playerType) {
     const type = playerType || seat.type || 'GTO';
     const gto = _resolveVillainPreflopAction(seat, tableState, 'GTO');
     const arch = PR_ARCHETYPE_PREFLOP[type];
-    if (!arch) return gto; // GTO passthrough
+
+    const openSizeBB  = tableState.openSizeBB || 2.5;
+    const committed   = tableState.committedBB || {};
+    const myCommitted = committed[seat.label] || 0;
+    const maxCommitted = Math.max(openSizeBB, ...Object.values(committed));
+    // Cap raising wars: after open + 3-bet + 4-bet, remaining decisions are call/fold
+    const canReraise = (tableState.raiseCount || 0) < 3;
+    // "Raise to" → incremental commit for this seat
+    const raiseToSizing = function(toBB) {
+        return Math.max(1, Math.round((toBB - myCommitted) * 10) / 10);
+    };
+
+    if (!arch) {
+        // GTO passthrough — with one upgrade over the base resolver: an opener
+        // facing a re-raise continues via the real vs-3-bet ranges instead of
+        // always folding.
+        if (tableState.threeBettor && tableState.opener === seat.label &&
+            typeof rfiVs3BetRanges !== 'undefined') {
+            const data = rfiVs3BetRanges[seat.label + '_vs_' + tableState.threeBettor];
+            if (data) {
+                if (canReraise && checkRangeHelper(seat.handNotation, data['4-bet'] || [])) {
+                    return { action: '4bet', sizingBB: raiseToSizing(maxCommitted * 2.3) };
+                }
+                if (checkRangeHelper(seat.handNotation, data['Call'] || [])) {
+                    return { action: 'call', sizingBB: 0 }; // amount derived from facing
+                }
+            }
+            return { action: 'fold', sizingBB: 0 };
+        }
+        return gto;
+    }
 
     const score = _PR_handStrengthScore(seat.holeCards);
-    const openSizeBB = tableState.openSizeBB || 2.5;
 
-    // --- Facing a 3-bet: score gates 4-bet / call / fold ---
+    // --- Facing a 3-bet (or later re-raise): score gates 4-bet / call / fold ---
     if (tableState.threeBettor) {
-        if (score >= arch.fourBetThreshold) {
-            const fbSize = Math.round(openSizeBB * 2.2 * 10) / 10;
-            return { action: '4bet', sizingBB: fbSize };
+        if (canReraise && score >= arch.fourBetThreshold) {
+            return { action: '4bet', sizingBB: raiseToSizing(maxCommitted * 2.3) };
         }
         if (score >= arch.callVs3BetThreshold) {
-            return { action: 'call', sizingBB: tableState.threeBetSize || openSizeBB * 3 };
+            return { action: 'call', sizingBB: 0 }; // amount derived from facing
         }
         return { action: 'fold', sizingBB: 0 };
     }
@@ -491,9 +546,12 @@ function PR_resolveVillainPreflopAction(seat, tableState, playerType) {
 }
 
 // ---------------------------------------------------------------------------
-// PR_applyHeroAction — record hero's action, grade it, run Phase 2 preflop if needed
-// action: 'fold' | 'call' | 'raise' | '3bet' | 'check'
-// sizingBB: amount (0 for fold/check)
+// PR_applyHeroAction — record hero's action and grade it. Preflop, hero acts
+// exactly like any other seat in the actor loop: the caller then drives
+// villain responses via PR_applyVillainAction until PR_isStreetComplete or
+// _PR_nextActor returns hero again (e.g. a villain 3-bet hero's open).
+// action: 'fold' | 'check' | 'call' | 'raise' | '3bet' | '4bet' | 'bet'
+// sizingBB: amount (0 for fold/check; derived for call)
 // Returns updated prHand.
 // ---------------------------------------------------------------------------
 function PR_applyHeroAction(prHand, action, sizingBB) {
@@ -513,94 +571,23 @@ function PR_applyHeroAction(prHand, action, sizingBB) {
 
     _PR_applyAction(hr, heroLabel, action, sizing);
 
-    // Grade the hero's decision
-    const grade = PR_gradeHeroAction(prHand, action, sizing); // grade before applying
+    // Grade the hero's decision against the pre-action state
+    const grade = PR_gradeHeroAction(prHand, action, sizing);
     hr.heroGrades.push({ street, action, sizingBB: sizing, grade: grade.grade, explanation: grade.explanation });
+
+    if (street === 'preflop') {
+        hr.preflopContext = _PR_buildPreflopContext(hr);
+    }
 
     if (action === 'fold') {
         hr.heroFolded = true;
-        if (street === 'preflop' && hr._preflopTableState) {
-            // Complete Phase 2 preflop even after hero folds so table action is
-            // accurate (guard: hero may act twice preflop, e.g. facing a 3-bet,
-            // and Phase 2 has already run by then)
-            _PR_finishPreflopPhase2(hr, action, sizing);
-        }
         hr.terminal = !_PR_hasMultipleActive(hr); // terminal only if nobody else can contest
         if (hr.terminal) PR_resolveOutcome(hr);   // hand over — award the uncontested pot
         // Allow spectator mode: not terminal if other players still active
         return hr;
     }
 
-    // Preflop Phase 2: run remaining positions after hero
-    if (street === 'preflop' && hr._preflopTableState) {
-        _PR_finishPreflopPhase2(hr, action, sizing);
-    }
-
-    hr.gameState.street = hr.gameState.streetState.street;
     return hr;
-}
-
-// Run villain positions after hero in preflop order (Phase 2), then clean up
-function _PR_finishPreflopPhase2(hr, heroAction, heroSizingBB) {
-    const tableState   = hr._preflopTableState;
-    const heroLabel    = hr.seats[hr.heroSeatIndex].label;
-    const heroOrderIdx = PR_POSITIONS.indexOf(heroLabel);
-    const openSizeBB   = hr.openSizeBB || 2.5;
-
-    // Reflect hero's action in tableState
-    if (heroAction === 'raise')       { tableState.opener = heroLabel; tableState.limpers = []; }
-    else if (heroAction === '3bet')   { tableState.threeBettor = heroLabel; }
-    else if (heroAction === 'call')   { tableState.callers.push(heroLabel); }
-    else if (heroAction === 'limp')   { tableState.limpers.push(heroLabel); }
-
-    if (heroAction !== 'fold') {
-        for (let i = heroOrderIdx + 1; i < PR_POSITIONS.length; i++) {
-            const seat = hr.seats[i];
-            if (!seat) continue;
-            let result = PR_resolveVillainPreflopAction(seat, tableState, seat.type);
-            // If villain would 3-bet behind hero's open, cap at fold — hero can't re-act in this pass
-            if (result.action === '3bet' && tableState.opener === heroLabel) {
-                result = { action: 'fold', sizingBB: 0 };
-            }
-            switch (result.action) {
-                case 'raise':
-                    tableState.opener  = seat.label;
-                    tableState.limpers = [];
-                    _PR_applyAction(hr, seat.label, 'raise', result.sizingBB);
-                    break;
-                case '3bet':
-                    tableState.threeBettor = seat.label;
-                    _PR_applyAction(hr, seat.label, '3bet', result.sizingBB);
-                    break;
-                case 'call':
-                    tableState.callers.push(seat.label);
-                    _PR_applyAction(hr, seat.label, 'call', result.sizingBB);
-                    break;
-                case 'limp':
-                    tableState.limpers.push(seat.label);
-                    _PR_applyAction(hr, seat.label, 'limp', 1);
-                    break;
-                default:
-                    _PR_applyAction(hr, seat.label, 'fold', 0);
-                    break;
-            }
-        }
-    }
-
-    // Update preflopContext with full picture
-    hr.preflopContext = {
-        heroPos:      heroLabel,
-        opener:       tableState.opener,
-        threeBettor:  tableState.threeBettor,
-        callers:      tableState.callers.slice(),
-        limpers:      tableState.limpers.slice(),
-        potStructure: tableState.threeBettor ? '3BP' : (tableState.limpers.length > 0 ? 'LIMP_POT' : 'SRP'),
-        tableActions: hr.gameState.streetState.actions.map(function(a) {
-            return { seatLabel: a.seatLabel, action: a.action };
-        }),
-    };
-
-    delete hr._preflopTableState;
 }
 
 // ---------------------------------------------------------------------------
@@ -617,20 +604,15 @@ function PR_applyVillainAction(prHand) {
     if (!seat) return hr;
 
     const street = hr.gameState.street;
-    let action, sizing;
 
     if (street === 'preflop') {
-        // Shouldn't reach here for preflop (PR_runPreflopToHero handles pre-hero;
-        // _PR_finishPreflopPhase2 handles post-hero). Defensive fallback.
-        action  = 'fold';
-        sizing  = 0;
+        _PR_resolveAndApplyVillainPreflop(hr, nextLabel);
+        hr.preflopContext = _PR_buildPreflopContext(hr);
     } else {
         const result = PR_resolveVillainPostflopAction(seat, hr);
-        action  = result.action;
-        sizing  = result.sizingBB || 0;
+        _PR_applyAction(hr, nextLabel, result.action, result.sizingBB || 0);
     }
 
-    _PR_applyAction(hr, nextLabel, action, sizing);
     hr.gameState.street = hr.gameState.streetState.street;
     return hr;
 }
@@ -1114,9 +1096,22 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
     } else if (ctx.opener && !ctx.threeBettor) {
         scenario = 'FACING_RFI';
         oppPos   = ctx.opener;
-    } else if (ctx.threeBettor) {
+    } else if (ctx.threeBettor && ctx.opener === heroPos) {
+        // Hero opened and faces a 3-bet — the rfiVs3BetRanges keys apply
         scenario = 'RFI_VS_3BET';
         oppPos   = ctx.threeBettor;
+    } else if (ctx.threeBettor) {
+        // Cold vs a 3-bet (hero was not the opener) — no range data exists for
+        // this spot, so grade against a premium-continue heuristic.
+        const premium = checkRangeHelper(hand, ['QQ+', 'AKs', 'AKo']);
+        if (heroAction === 'fold') {
+            return premium
+                ? { grade: 'error',   explanation: 'Folding a premium hand cold vs a 3-bet is a significant error.' }
+                : { grade: 'correct', explanation: 'Cold vs a 3-bet, folding everything but premium hands is correct.' };
+        }
+        return premium
+            ? { grade: 'correct', explanation: 'Continuing cold vs a 3-bet with a premium hand is correct.' }
+            : { grade: 'error',   explanation: 'Cold vs a 3-bet, only premium hands (QQ+, AK) can continue.' };
     } else {
         return { grade: 'mixed', explanation: 'Complex spot — no GTO data available.' };
     }
