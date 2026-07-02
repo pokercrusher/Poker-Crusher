@@ -1177,3 +1177,232 @@ function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
     }
     return { grade: 'mixed', explanation: `Postflop GTO data not yet available for multiway spots.` };
 }
+
+// ===========================================================================
+// Pass 3 — Persistence: bankroll, sessions, table config
+// Storage: pc_poker_room_v1 (localStorage via safeGet/safeSet from engine.js).
+// All dollar amounts are numbers in dollars; BB conversion via PR_STAKE_CONFIG.
+// ===========================================================================
+
+const PR_STORAGE_KEY = 'pc_poker_room_v1';
+const PR_DEFAULT_BANKROLL = 1000;
+const PR_SESSION_HISTORY_CAP = 200; // guard localStorage quota
+
+const PR_VILLAIN_NAME_POOL = [
+    'Rocky', 'Layla', 'The Prof', 'Shark', 'Lucky', 'Grinder', 'Tex', 'Ace',
+    'Diamond', 'Cowboy', 'Slick', 'Maverick', 'Blaze', 'Dutch', 'Vega', 'Lola',
+    'Ghost', 'Stone', 'Remy', 'Duke', 'Sal', 'Monty', 'Chip', 'Ringo',
+    'Dex', 'Nova', 'Cash', 'Rio', 'Bear', 'Fox', 'Hawk', 'Cruz',
+    'Nate', 'Jules', 'Priest', 'Dagger', 'Smoke', 'Frost', 'King', 'Rook',
+];
+
+const PR_ARCHETYPE_KEYS = ['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO'];
+
+function PR_defaultRoomState() {
+    return {
+        version: 1,
+        bankroll: PR_DEFAULT_BANKROLL,
+        stake: '1/2',
+        tableConfig: null,          // built on sit-down via PR_generateTableConfig
+        sessionHistory: [],         // newest first: { date, handsPlayed, netBB, netDollars, stake }
+        allTimeStats: { handsPlayed: 0, biggestWin: 0, biggestLoss: 0, totalNetBB: 0 },
+    };
+}
+
+// Load persisted room state; malformed or missing data falls back per-field
+// so one bad key can never brick the room.
+function PR_loadRoomState() {
+    const raw = (typeof safeGet === 'function') ? safeGet(PR_STORAGE_KEY, null) : null;
+    const def = PR_defaultRoomState();
+    if (!raw || typeof raw !== 'object') return def;
+    return {
+        version: 1,
+        bankroll: (typeof raw.bankroll === 'number' && isFinite(raw.bankroll) && raw.bankroll >= 0)
+            ? raw.bankroll : def.bankroll,
+        stake: PR_STAKE_CONFIG[raw.stake] ? raw.stake : def.stake,
+        tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.seats)) ? raw.tableConfig : null,
+        sessionHistory: Array.isArray(raw.sessionHistory)
+            ? raw.sessionHistory.slice(0, PR_SESSION_HISTORY_CAP) : [],
+        allTimeStats: (raw.allTimeStats && typeof raw.allTimeStats === 'object')
+            ? {
+                handsPlayed: raw.allTimeStats.handsPlayed || 0,
+                biggestWin:  raw.allTimeStats.biggestWin  || 0,
+                biggestLoss: raw.allTimeStats.biggestLoss || 0,
+                totalNetBB:  raw.allTimeStats.totalNetBB  || 0,
+              }
+            : def.allTimeStats,
+    };
+}
+
+function PR_saveRoomState(state) {
+    if (state.sessionHistory && state.sessionHistory.length > PR_SESSION_HISTORY_CAP) {
+        state.sessionHistory.length = PR_SESSION_HISTORY_CAP;
+    }
+    if (typeof safeSet === 'function') safeSet(PR_STORAGE_KEY, state);
+    return state;
+}
+
+// ---------------------------------------------------------------------------
+// Villain generation
+// ---------------------------------------------------------------------------
+
+// N distinct names drawn from the pool (pool is larger than any table)
+function PR_randomVillainNames(count) {
+    const pool = _shuffle(PR_VILLAIN_NAME_POOL.slice());
+    return pool.slice(0, count);
+}
+
+// Random archetype honoring optional weights { NIT: 1, FISH: 3, ... }.
+// Default: uniform across all archetypes.
+function PR_randomArchetype(weights) {
+    const w = PR_ARCHETYPE_KEYS.map(k => Math.max(0, (weights && weights[k] !== undefined) ? weights[k] : 1));
+    const total = w.reduce((a, v) => a + v, 0);
+    if (total <= 0) return PR_ARCHETYPE_KEYS[Math.floor(Math.random() * PR_ARCHETYPE_KEYS.length)];
+    let roll = Math.random() * total;
+    for (let i = 0; i < PR_ARCHETYPE_KEYS.length; i++) {
+        roll -= w[i];
+        if (roll < 0) return PR_ARCHETYPE_KEYS[i];
+    }
+    return PR_ARCHETYPE_KEYS[PR_ARCHETYPE_KEYS.length - 1];
+}
+
+// Villain starting stack in BB, randomized within the stake's buy-in range
+function PR_randomVillainStackBB(stake) {
+    const cfg = PR_STAKE_CONFIG[stake] || PR_STAKE_CONFIG['1/2'];
+    const minBB = cfg.minBuy / cfg.bb;
+    const maxBB = cfg.maxBuy / cfg.bb;
+    return Math.round(minBB + Math.random() * (maxBB - minBB));
+}
+
+// Build a fresh table: hero seat + villains with random names/types/stacks.
+// seatCount: 2–9 (default 9). Positions assigned from the full set, trimmed.
+// typeWeights: optional archetype weight map for the distribution editor.
+function PR_generateTableConfig(stake, seatCount, typeWeights) {
+    const count = Math.min(9, Math.max(2, seatCount || 9));
+    const labels = PR_POSITIONS.slice(0, count);
+    const names = PR_randomVillainNames(count);
+    const seats = labels.map(function(label, i) {
+        return {
+            label,
+            name:    names[i],
+            type:    PR_randomArchetype(typeWeights),
+            avatar:  'default',
+            stackBB: PR_randomVillainStackBB(stake),
+            sessionStats: { handsDealt: 0, vpipHands: 0, pfrHands: 0 },
+        };
+    });
+    return { stake, seats };
+}
+
+// ---------------------------------------------------------------------------
+// Bankroll & session flow
+// ---------------------------------------------------------------------------
+
+// Validate and execute a buy-in. Returns { ok, error?, state?, session? }.
+function PR_buyIn(state, stake, buyInDollars) {
+    const cfg = PR_STAKE_CONFIG[stake];
+    if (!cfg) return { ok: false, error: 'Unknown stake: ' + stake };
+    if (buyInDollars < cfg.minBuy || buyInDollars > cfg.maxBuy) {
+        return { ok: false, error: 'Buy-in must be between $' + cfg.minBuy + ' and $' + cfg.maxBuy + '.' };
+    }
+    if (buyInDollars > state.bankroll) {
+        return { ok: false, error: 'Bankroll too small for this buy-in.' };
+    }
+    const next = { ...state, stake, bankroll: parseFloat((state.bankroll - buyInDollars).toFixed(2)) };
+    const session = {
+        stake,
+        buyInDollars,
+        stackBB: parseFloat((buyInDollars / cfg.bb).toFixed(2)),
+        handsPlayed: 0,
+        netBB: 0,
+        decisions: 0,
+        correctDecisions: 0,
+        startedAt: new Date().toISOString(),
+    };
+    return { ok: true, state: next, session };
+}
+
+// Apply one finished hand's result to the live session (does not persist).
+function PR_applySessionHandResult(session, heroNetBB) {
+    session.handsPlayed++;
+    session.netBB = parseFloat((session.netBB + heroNetBB).toFixed(2));
+    session.stackBB = parseFloat((session.stackBB + heroNetBB).toFixed(2));
+    if (session.stackBB < 0) session.stackBB = 0; // engine clamps all-ins; guard rounding
+    return session;
+}
+
+// Hero busted mid-session? (stack too short to post the big blind)
+function PR_isBusted(session) {
+    return session.stackBB < 1;
+}
+
+// Rebuy from bankroll during a session. Same bounds as a fresh buy-in.
+function PR_rebuy(state, session, rebuyDollars) {
+    const cfg = PR_STAKE_CONFIG[session.stake];
+    if (!cfg) return { ok: false, error: 'Unknown stake.' };
+    if (rebuyDollars < cfg.minBuy || rebuyDollars > cfg.maxBuy) {
+        return { ok: false, error: 'Rebuy must be between $' + cfg.minBuy + ' and $' + cfg.maxBuy + '.' };
+    }
+    if (rebuyDollars > state.bankroll) {
+        return { ok: false, error: 'Bankroll too small for this rebuy.' };
+    }
+    state.bankroll = parseFloat((state.bankroll - rebuyDollars).toFixed(2));
+    session.buyInDollars = parseFloat((session.buyInDollars + rebuyDollars).toFixed(2));
+    session.stackBB = parseFloat((session.stackBB + rebuyDollars / cfg.bb).toFixed(2));
+    return { ok: true, state, session };
+}
+
+// End the session: cash out the stack to the bankroll, append history,
+// roll up all-time stats, persist. Returns the persisted state.
+function PR_endSession(state, session) {
+    const cfg = PR_STAKE_CONFIG[session.stake] || PR_STAKE_CONFIG['1/2'];
+    const cashOut = parseFloat((session.stackBB * cfg.bb).toFixed(2));
+    const netDollars = parseFloat((cashOut - session.buyInDollars).toFixed(2));
+
+    state.bankroll = parseFloat((state.bankroll + cashOut).toFixed(2));
+    state.sessionHistory.unshift({
+        date: new Date().toISOString().slice(0, 10),
+        handsPlayed: session.handsPlayed,
+        netBB: session.netBB,
+        netDollars,
+        stake: session.stake,
+    });
+    if (state.sessionHistory.length > PR_SESSION_HISTORY_CAP) {
+        state.sessionHistory.length = PR_SESSION_HISTORY_CAP;
+    }
+
+    const at = state.allTimeStats;
+    at.handsPlayed = (at.handsPlayed || 0) + session.handsPlayed;
+    at.totalNetBB = parseFloat(((at.totalNetBB || 0) + session.netBB).toFixed(2));
+    if (netDollars > (at.biggestWin || 0)) at.biggestWin = netDollars;
+    if (netDollars < (at.biggestLoss || 0)) at.biggestLoss = netDollars;
+
+    return PR_saveRoomState(state);
+}
+
+// Top up the bankroll itself (bust recovery). Resets to the default amount.
+function PR_topUpBankroll(state) {
+    state.bankroll = PR_DEFAULT_BANKROLL;
+    return PR_saveRoomState(state);
+}
+
+// ---------------------------------------------------------------------------
+// Per-seat VPIP / PFR accumulation
+// Call once per completed hand with the hand's preflop action log.
+// VPIP: voluntarily put money in preflop (call/limp/raise — blinds excluded).
+// PFR:  raised preflop (raise/3bet/4bet).
+// ---------------------------------------------------------------------------
+function PR_accumulateSeatStats(tableConfig, prHand) {
+    if (!tableConfig || !prHand) return;
+    const preflopActions = (prHand.gameState.streetHistory.preflop || [])
+        .concat(prHand.gameState.street === 'preflop' ? prHand.gameState.streetState.actions : []);
+    tableConfig.seats.forEach(function(cfgSeat) {
+        const played = prHand.seats.some(s => s && s.label === cfgSeat.label);
+        if (!played) return;
+        const stats = cfgSeat.sessionStats || (cfgSeat.sessionStats = { handsDealt: 0, vpipHands: 0, pfrHands: 0 });
+        stats.handsDealt++;
+        const acts = preflopActions.filter(a => a.seatLabel === cfgSeat.label);
+        if (acts.some(a => ['call', 'limp', 'raise', '3bet', '4bet'].includes(a.action))) stats.vpipHands++;
+        if (acts.some(a => ['raise', '3bet', '4bet'].includes(a.action))) stats.pfrHands++;
+    });
+}

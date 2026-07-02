@@ -72,6 +72,12 @@ const EXPORT_NAMES = [
     'PR_resolveOutcome', 'PR_gradeHeroAction', 'PR_runSpectatorStreets',
     '_PR_handStrengthScore', '_PR_applyAction', '_PR_facingAmount', '_PR_nextActor',
     '_PR_rank5', '_PR_compareRanks',
+    // Pass 3 persistence
+    'PR_defaultRoomState', 'PR_loadRoomState', 'PR_saveRoomState',
+    'PR_randomVillainNames', 'PR_randomArchetype', 'PR_randomVillainStackBB',
+    'PR_generateTableConfig', 'PR_buyIn', 'PR_applySessionHandResult',
+    'PR_isBusted', 'PR_rebuy', 'PR_endSession', 'PR_topUpBankroll',
+    'PR_accumulateSeatStats', 'PR_STORAGE_KEY',
 ];
 
 let cached = null;

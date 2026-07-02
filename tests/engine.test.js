@@ -1085,3 +1085,141 @@ describe('Poker Room — multi-round preflop', () => {
         expect(bbAction.action).not.toBe('fold'); // check or iso-raise, never a free fold
     });
 });
+
+// =============================================================================
+// Poker Room — Pass 3 Persistence (bankroll, sessions, table config)
+// =============================================================================
+
+describe('Poker Room — Pass 3 persistence', () => {
+
+    it('default room state: $1,000 bankroll, 1/2 stake, empty history', () => {
+        const s = PROD.PR_defaultRoomState();
+        expect(s.bankroll).toBe(1000);
+        expect(s.stake).toBe('1/2');
+        expect(s.sessionHistory).toEqual([]);
+        expect(s.allTimeStats.handsPlayed).toBe(0);
+    });
+
+    it('load survives corrupt data field-by-field', () => {
+        PROD.PR_saveRoomState({ bankroll: 'garbage', stake: 'NOT_A_STAKE',
+                                sessionHistory: 'nope', allTimeStats: null });
+        const s = PROD.PR_loadRoomState();
+        expect(s.bankroll).toBe(1000);        // fell back
+        expect(s.stake).toBe('1/2');          // fell back
+        expect(s.sessionHistory).toEqual([]); // fell back
+        // and a good save round-trips
+        s.bankroll = 750.5;
+        s.stake = '2/5';
+        PROD.PR_saveRoomState(s);
+        const s2 = PROD.PR_loadRoomState();
+        expect(s2.bankroll).toBe(750.5);
+        expect(s2.stake).toBe('2/5');
+    });
+
+    it('buy-in validates the stake range and the bankroll', () => {
+        const s = PROD.PR_defaultRoomState();
+        expect(PROD.PR_buyIn(s, '1/2', 50).ok).toBe(false);    // below $100 min
+        expect(PROD.PR_buyIn(s, '1/2', 400).ok).toBe(false);   // above $300 max
+        expect(PROD.PR_buyIn(s, '5/10', 1500).ok).toBe(false); // exceeds $1,000 bankroll
+        const r = PROD.PR_buyIn(s, '1/2', 200);
+        expect(r.ok).toBe(true);
+        expect(r.state.bankroll).toBe(800);
+        expect(r.session.stackBB).toBe(100); // $200 at $2 BB
+    });
+
+    it('session results roll into stack, history, and all-time stats on cash-out', () => {
+        let s = PROD.PR_defaultRoomState();
+        const r = PROD.PR_buyIn(s, '1/2', 200);
+        s = r.state;
+        const session = r.session;
+        PROD.PR_applySessionHandResult(session, 12.5);
+        PROD.PR_applySessionHandResult(session, -4);
+        expect(session.handsPlayed).toBe(2);
+        expect(session.netBB).toBe(8.5);
+        expect(session.stackBB).toBe(108.5);
+
+        s = PROD.PR_endSession(s, session);
+        expect(s.bankroll).toBe(800 + 217);           // cash out 108.5BB × $2
+        expect(s.sessionHistory[0].netDollars).toBe(17);
+        expect(s.sessionHistory[0].handsPlayed).toBe(2);
+        expect(s.allTimeStats.handsPlayed).toBe(2);
+        expect(s.allTimeStats.biggestWin).toBe(17);
+    });
+
+    it('bust detection and rebuy', () => {
+        let s = PROD.PR_defaultRoomState();
+        const r = PROD.PR_buyIn(s, '1/2', 100);
+        s = r.state;
+        const session = r.session;
+        PROD.PR_applySessionHandResult(session, -49.8); // felted
+        expect(PROD.PR_isBusted(session)).toBe(true);
+        const rb = PROD.PR_rebuy(s, session, 100);
+        expect(rb.ok).toBe(true);
+        expect(s.bankroll).toBe(800);          // 1000 - 100 - 100
+        expect(session.stackBB).toBeCloseTo(50.2, 1);
+        expect(PROD.PR_isBusted(session)).toBe(false);
+    });
+
+    it('table config: distinct names, valid archetypes, stacks in stake range', () => {
+        const cfg = PROD.PR_generateTableConfig('2/5', 9, null);
+        expect(cfg.seats.length).toBe(9);
+        const names = cfg.seats.map(x => x.name);
+        expect(new Set(names).size).toBe(9); // no duplicate names
+        cfg.seats.forEach(seat => {
+            expect(['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO']).toContain(seat.type);
+            expect(seat.stackBB).toBeGreaterThanOrEqual(40);  // $200 / $5
+            expect(seat.stackBB).toBeLessThanOrEqual(200);    // $1,000 / $5
+        });
+    });
+
+    it('archetype weights bias the distribution', () => {
+        // All weight on FISH → every seat is FISH
+        for (let i = 0; i < 50; i++) {
+            const t = PROD.PR_randomArchetype({ NIT: 0, TAG: 0, LAG: 0, FISH: 5, MANIAC: 0, AGGRO: 0 });
+            expect(t).toBe('FISH');
+        }
+    });
+
+    it('seat count is clamped to 2–9 and trims positions from the full set', () => {
+        const six = PROD.PR_generateTableConfig('1/2', 6, null);
+        expect(six.seats.map(x => x.label)).toEqual(['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO']);
+        expect(PROD.PR_generateTableConfig('1/2', 1, null).seats.length).toBe(2);
+        expect(PROD.PR_generateTableConfig('1/2', 42, null).seats.length).toBe(9);
+    });
+
+    it('VPIP/PFR accumulate from a played hand', () => {
+        const cfg = PROD.PR_generateTableConfig('1/2', 9, null);
+        // Minimal finished hand: UTG raised, BTN called, others folded
+        const prHand = {
+            seats: PROD.PR_POSITIONS.map((l, i) => ({ label: l, folded: !['UTG', 'BTN'].includes(l) })),
+            gameState: {
+                street: 'showdown',
+                streetState: { street: 'showdown', actions: [] },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'HJ',  action: 'fold',  sizingBB: 0 },
+                        { seatLabel: 'BTN', action: 'call',  sizingBB: 2.5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
+            },
+        };
+        PROD.PR_accumulateSeatStats(cfg, prHand);
+        const utg = cfg.seats.find(x => x.label === 'UTG');
+        const btn = cfg.seats.find(x => x.label === 'BTN');
+        const hj  = cfg.seats.find(x => x.label === 'HJ');
+        expect(utg.sessionStats).toEqual({ handsDealt: 1, vpipHands: 1, pfrHands: 1 });
+        expect(btn.sessionStats).toEqual({ handsDealt: 1, vpipHands: 1, pfrHands: 0 });
+        expect(hj.sessionStats).toEqual({ handsDealt: 1, vpipHands: 0, pfrHands: 0 });
+    });
+
+    it('session history is capped', () => {
+        const s = PROD.PR_defaultRoomState();
+        for (let i = 0; i < 250; i++) {
+            s.sessionHistory.unshift({ date: '2026-01-01', handsPlayed: 1, netBB: 0, netDollars: 0, stake: '1/2' });
+        }
+        PROD.PR_saveRoomState(s);
+        expect(PROD.PR_loadRoomState().sessionHistory.length).toBeLessThanOrEqual(200);
+    });
+});
