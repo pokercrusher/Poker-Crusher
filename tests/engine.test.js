@@ -1249,3 +1249,54 @@ describe('Poker Room — Pass 3 persistence', () => {
         expect(PROD.PR_loadRoomState().sessionHistory.length).toBeLessThanOrEqual(200);
     });
 });
+
+// =============================================================================
+// Poker Room — Pass 5 supports: rotated seats + grade spot metadata
+// =============================================================================
+
+describe('Poker Room — rotated seats & study-mode metadata', () => {
+
+    it('button rotation: incrementing offset moves every position one seat', () => {
+        const cfg = PROD.PR_generateTableConfig('1/2', 9, null);
+        const hero = { name: 'You' };
+        const h0 = PROD.PR_buildHandSeatsRotated(cfg, hero, 0, 100);
+        const h1 = PROD.PR_buildHandSeatsRotated(cfg, hero, 1, 100);
+        expect(h0.heroPos).toBe('UTG');
+        expect(h1.heroPos).toBe('UTG1'); // hero's position advanced one step
+        // villain v1 sits physically next to hero; its label also advances
+        const v1at0 = h0.seats.find(s => s.villainId === 'v1').label;
+        const v1at1 = h1.seats.find(s => s.villainId === 'v1').label;
+        expect(v1at0).toBe('UTG1');
+        expect(v1at1).toBe('UTG2');
+        // positions ascend clockwise around the physical table (wrapping)
+        const order = h1.seats.map(s => s.label);
+        expect(order).toEqual(['UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB', 'UTG']);
+        // full wrap returns to the start
+        const h9 = PROD.PR_buildHandSeatsRotated(cfg, hero, 9, 100);
+        expect(h9.heroPos).toBe('UTG');
+    });
+
+    it('rotated seats feed PR_createHand and play a full hand', () => {
+        const cfg = PROD.PR_generateTableConfig('1/2', 6, null);
+        const built = PROD.PR_buildHandSeatsRotated(cfg, { name: 'You' }, 3, 100);
+        expect(built.seats.length).toBe(6);
+        const hr = PROD.PR_createHand({ heroPos: built.heroPos, seats: built.seats, heroStackBB: 100 });
+        expect(hr.seats.filter(Boolean).length).toBe(6);
+        expect(hr.seats[hr.heroSeatIndex].label).toBe(built.heroPos);
+    });
+
+    it('preflop grades carry spot metadata for the SR bridge', () => {
+        let hr = PROD.PR_createHand({ heroPos: 'UTG', seats: makeSeats() });
+        const heroSeat = hr.seats[hr.heroSeatIndex];
+        heroSeat.holeCards = cards2('A', 's', 'A', 'h');
+        heroSeat.handNotation = 'AA';
+        hr = PROD.PR_runPreflopToHero(hr);
+        hr = PROD.PR_applyHeroAction(hr, 'raise', 2.5);
+        const g = hr.heroGrades[0];
+        expect(g.grade).toBe('correct');
+        expect(g.spot).toEqual({ scenario: 'RFI', heroPos: 'UTG', oppPos: 'BB', hand: 'AA' });
+        // and the SR key builds cleanly from it
+        const key = PROD.buildSRKey(g.spot.scenario, g.spot.heroPos, g.spot.oppPos, null, null, g.spot.hand);
+        expect(key).toBe('RFI|UTG|AA');
+    });
+});

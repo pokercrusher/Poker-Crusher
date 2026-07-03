@@ -574,7 +574,8 @@ function PR_applyHeroAction(prHand, action, sizingBB) {
 
     // Grade the hero's decision against the pre-action state
     const grade = PR_gradeHeroAction(prHand, action, sizing);
-    hr.heroGrades.push({ street, action, sizingBB: sizing, grade: grade.grade, explanation: grade.explanation });
+    hr.heroGrades.push({ street, action, sizingBB: sizing, grade: grade.grade,
+                         explanation: grade.explanation, spot: grade.spot || null });
 
     if (street === 'preflop') {
         hr.preflopContext = _PR_buildPreflopContext(hr);
@@ -1130,13 +1131,16 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
                         '3BET': '3bet', '4BET': '4bet', SHOVE: 'raise' };
     const correct = actionMap[correctAction] || correctAction.toLowerCase();
 
+    // spot metadata lets callers build an SR key for this decision (study mode)
+    const spot = { scenario, heroPos, oppPos, hand };
+
     if (heroAction === correct) {
-        return { grade: 'correct', explanation: `${correct.toUpperCase()} is the GTO play in this spot.` };
+        return { grade: 'correct', spot, explanation: `${correct.toUpperCase()} is the GTO play in this spot.` };
     }
     if ((correct === 'raise' || correct === '3bet') && (heroAction === 'call')) {
-        return { grade: 'mixed', explanation: `GTO prefers ${correct.toUpperCase()}; calling is not a blunder but gives up equity.` };
+        return { grade: 'mixed', spot, explanation: `GTO prefers ${correct.toUpperCase()}; calling is not a blunder but gives up equity.` };
     }
-    return { grade: 'error', explanation: `GTO play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
+    return { grade: 'error', spot, explanation: `GTO play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
 }
 
 function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
@@ -1207,6 +1211,7 @@ function PR_defaultRoomState() {
         bankroll: PR_DEFAULT_BANKROLL,
         stake: '1/2',
         heroProfile: { name: 'You', avatar: '😎' },
+        studyMode: false,           // opt-in: graded room decisions feed the trainer's SR queue
         tableConfig: null,          // built on sit-down via PR_generateTableConfig
         sessionHistory: [],         // newest first: { date, handsPlayed, netBB, netDollars, stake }
         allTimeStats: { handsPlayed: 0, biggestWin: 0, biggestLoss: 0, totalNetBB: 0 },
@@ -1231,6 +1236,7 @@ function PR_loadRoomState() {
                     ? raw.heroProfile.avatar : def.heroProfile.avatar,
               }
             : def.heroProfile,
+        studyMode: raw.studyMode === true,
         // Table config holds VILLAINS only — hero is always the remaining seat.
         // (Older saves stored a 'seats' array including all positions; discard those.)
         tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.villains)) ? raw.tableConfig : null,
@@ -1421,6 +1427,27 @@ function PR_buildHandSeats(tableConfig, heroProfile, heroPos, heroStackBB) {
             ? { label, villainId: villain.id, name: villain.name, type: villain.type, stackBB: villain.stackBB }
             : null;
     }).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// PR_buildHandSeatsRotated — physical-table variant for the live view.
+// Players sit in fixed physical order (hero, then villains v1..vN clockwise);
+// position labels rotate around them as the button moves. physicalSeat i gets
+// labels[(i + offset) % N], so incrementing offset each hand moves every
+// position one seat — exactly like a real table.
+// Returns { seats, heroPos } — seats feed PR_createHand directly.
+// ---------------------------------------------------------------------------
+function PR_buildHandSeatsRotated(tableConfig, heroProfile, offset, heroStackBB) {
+    const n = tableConfig.seatCount;
+    const labels = PR_POSITIONS.slice(0, n);
+    const shift = ((offset % n) + n) % n;
+    const heroPos = labels[shift];
+    const seats = [{ label: heroPos, name: (heroProfile && heroProfile.name) || 'You', type: 'HERO', stackBB: heroStackBB }];
+    tableConfig.villains.forEach(function(villain, i) {
+        const label = labels[(i + 1 + shift) % n];
+        seats.push({ label, villainId: villain.id, name: villain.name, type: villain.type, stackBB: villain.stackBB });
+    });
+    return { seats, heroPos };
 }
 
 // ---------------------------------------------------------------------------

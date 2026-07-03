@@ -62,7 +62,9 @@ function PRUI_exit() {
 function PRUI_render() {
     const body = document.getElementById('poker-room-body');
     if (!body) return;
-    body.innerHTML = PRUI.session ? PRUI_sessionHtml() : PRUI_lobbyHtml();
+    // The live table (poker-room-table.js) owns rendering while a session runs
+    if (PRUI.session && typeof PRT !== 'undefined' && PRT.active) return;
+    body.innerHTML = PRUI_lobbyHtml();
 }
 
 function PRUI_headerHtml(subtitle) {
@@ -203,6 +205,17 @@ function PRUI_lobbyHtml() {
             '<p class="text-[9px] text-slate-600 mt-2">Tap an avatar to change it · tap a name to rename · seats rotate with the button, player types stay hidden</p>' +
         '</div>' +
 
+        // Study mode — opt-in bridge to the trainer's spaced repetition
+        '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3">' +
+            '<div class="flex-1">' +
+                '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Study mode</p>' +
+                '<p class="text-[10px] text-slate-600 leading-snug mt-0.5">Mistakes at the table quietly join your trainer review queue. Playing a spot well counts as a review. Never interrupts play.</p>' +
+            '</div>' +
+            '<button data-pr="study" class="px-3 py-2 rounded-xl text-xs font-black transition-all ' +
+                (room.studyMode ? 'bg-emerald-600 text-white' : 'bg-slate-800 border border-slate-700 text-slate-500') +
+                '">' + (room.studyMode ? 'ON' : 'OFF') + '</button>' +
+        '</div>' +
+
         // Sit down
         '<button data-pr="sit" class="w-full py-4 rounded-2xl font-black text-base transition-all shadow-lg ' +
             (canSit ? 'bg-amber-600 hover:bg-amber-500 active:scale-[0.98] text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed') +
@@ -213,25 +226,6 @@ function PRUI_lobbyHtml() {
         // History
         (history ? '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
             '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Recent sessions</p>' + history + '</div>' : '');
-}
-
-function PRUI_sessionHtml() {
-    const s = PRUI.session;
-    const cfg = PR_STAKE_CONFIG[s.stake];
-    const net = s.netBB;
-    return PRUI_headerHtml('At the table · ' + s.stake) +
-        '<div class="bg-slate-900/60 border border-amber-500/20 rounded-2xl p-5 text-center flex flex-col gap-2">' +
-            '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Your stack</p>' +
-            '<p class="text-3xl font-black text-slate-100">' + s.stackBB + 'bb <span class="text-base text-slate-400">(' + PRUI_fmt$(s.stackBB * cfg.bb) + ')</span></p>' +
-            '<p class="text-[11px] font-bold" style="color:' + (net >= 0 ? '#4ade80' : '#f87171') + '">' +
-                (net >= 0 ? '+' : '') + net + 'bb this session · ' + s.handsPlayed + ' hands</p>' +
-        '</div>' +
-        '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 text-center">' +
-            '<div class="text-3xl mb-2">🛠️</div>' +
-            '<p class="text-slate-300 font-bold text-sm">The table is being built</p>' +
-            '<p class="text-slate-500 text-[11px] mt-1 leading-snug">You’re bought in and your seat is saved. The live table arrives in the next update — cash out any time and your chips return to your bankroll.</p>' +
-        '</div>' +
-        '<button data-pr="cashout" class="w-full py-4 pc-btn-primary font-black">CASH OUT ' + PRUI_fmt$(s.stackBB * cfg.bb) + '</button>';
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +268,10 @@ function PRUI_onClick(e) {
         PRUI.room = PR_topUpBankroll(PRUI.room);
         PRUI.draft.buyIn = PRUI_defaultBuyIn(PRUI.draft.stake, PRUI.room.bankroll);
         PRUI_render();
+    } else if (kind === 'study') {
+        PRUI.room.studyMode = !PRUI.room.studyMode;
+        PR_saveRoomState(PRUI.room);
+        PRUI_render();
     } else if (kind === 'sit') {
         const r = PR_buyIn(PRUI.room, PRUI.draft.stake, PRUI.draft.buyIn);
         if (!r.ok) {
@@ -284,12 +282,7 @@ function PRUI_onClick(e) {
         PRUI.room.tableConfig = PRUI.draft.tableConfig;
         PR_saveRoomState(PRUI.room);
         PRUI.session = r.session;
-        PRUI_render();
-    } else if (kind === 'cashout') {
-        PRUI.room = PR_endSession(PRUI.room, PRUI.session);
-        PRUI.session = null;
-        PRUI.draft.buyIn = PRUI_defaultBuyIn(PRUI.draft.stake, PRUI.room.bankroll);
-        PRUI_render();
+        PRT_enter(PRUI.room, PRUI.session, PRUI.draft.tableConfig);
     }
 }
 
