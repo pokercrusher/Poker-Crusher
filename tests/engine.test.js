@@ -1471,3 +1471,83 @@ describe('Poker Room — flop c-bet grades against POSTFLOP_STRATEGY_V2', () => 
         expect(g.explanation).not.toContain('%');
     });
 });
+
+// =============================================================================
+// Poker Room — turn/river barrels grade against the trainer tables
+// =============================================================================
+
+describe('Poker Room — turn and river barrel grading', () => {
+
+    // Heads-up SRP BTN vs BB; hero c-bet the flop and was called.
+    function barrelSpot(heroCards, board, streetHist) {
+        const street = board.length === 4 ? 'turn' : 'river';
+        return {
+            seats: [
+                null, null, null, null, null, null,
+                { index: 6, label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 90,
+                  holeCards: heroCards },
+                null,
+                { index: 8, label: 'BB', isHero: false, folded: false, allIn: false, stackBB: 90,
+                  holeCards: cards2('7', 'c', '6', 'c') },
+            ],
+            heroSeatIndex: 6,
+            preflopContext: { heroPos: 'BTN', opener: 'BTN', threeBettor: null, callers: ['BB'], limpers: [], potStructure: 'SRP' },
+            gameState: {
+                potBB: 10, street, board,
+                streetState: { street, betMadeThisStreet: false, lastRaiseBB: 0, actions: [], committedBB: { BTN: 0, BB: 0 } },
+                streetHistory: Object.assign({
+                    preflop: [
+                        { seatLabel: 'BTN', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'BB',  action: 'call',  sizingBB: 1.5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                }, streetHist),
+            },
+        };
+    }
+
+    const flopCbetCalled = [
+        { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+        { seatLabel: 'BTN', action: 'bet',   sizingBB: 2 },
+        { seatLabel: 'BB',  action: 'call',  sizingBB: 2 },
+    ];
+
+    it('turn barrel with an overpair on a brick grades correct (V2 wording)', () => {
+        // KK on Q-7-2 rainbow, turn 3 — overpair, blank turn
+        const hand = barrelSpot(cards2('K', 's', 'K', 'h'),
+            [C('Q', 'd'), C('7', 'c'), C('2', 'h'), C('3', 's')],
+            { flop: flopCbetCalled });
+        const g = PROD.PR_gradeHeroAction(hand, 'bet', 5);
+        expect(g.explanation).toContain('%');       // V2 path, not heuristic
+        expect(g.explanation).toContain('turn');
+        expect(g.grade).toBe('correct');            // overpair barrels ~70%
+    });
+
+    it('river triple barrel with third pair grades as a check spot', () => {
+        // A5s on Q-7-2 / 3 / 9 — hero holds bottom-ish pair... use 7x: K7 → third pair line
+        const hand = barrelSpot(cards2('K', 's', '7', 'h'),
+            [C('Q', 'd'), C('7', 'c'), C('2', 'h'), C('3', 's'), C('9', 'd')],
+            { flop: flopCbetCalled,
+              turn: [
+                { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+                { seatLabel: 'BTN', action: 'bet',   sizingBB: 5 },
+                { seatLabel: 'BB',  action: 'call',  sizingBB: 5 },
+              ] });
+        const gBet = PROD.PR_gradeHeroAction(hand, 'bet', 8);
+        const gCheck = PROD.PR_gradeHeroAction(hand, 'check', 0);
+        expect(gBet.explanation).toContain('%');
+        expect(gBet.grade).not.toBe('correct');     // weak pair never a high-freq triple barrel
+        expect(gCheck.grade).toBe('correct');
+    });
+
+    it('turn after a checked-back flop falls back to the heuristic (delayed line not covered)', () => {
+        const hand = barrelSpot(cards2('K', 's', 'K', 'h'),
+            [C('Q', 'd'), C('7', 'c'), C('2', 'h'), C('3', 's')],
+            { flop: [
+                { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+                { seatLabel: 'BTN', action: 'check', sizingBB: 0 },
+              ] });
+        const g = PROD.PR_gradeHeroAction(hand, 'bet', 5);
+        expect(g.explanation).not.toContain('%');   // heuristic, no false authority
+    });
+});

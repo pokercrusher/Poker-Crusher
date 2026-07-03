@@ -1202,17 +1202,30 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
 }
 
 // ---------------------------------------------------------------------------
-// _PR_gradeFlopCbetV2 — real GTO grading via POSTFLOP_STRATEGY_V2 for the
-// heads-up-equivalent spot the trainer covers: hero was the preflop aggressor,
-// the pot is exactly heads-up on the flop, no bet is facing hero, and the
-// family (heroPos vs caller, SRP or 3BP) has a hero-hand-aware table.
-// Returns a grade object or null when the spot isn't covered.
+// _PR_gradeCbetV2 — real GTO grading via the trainer's strategy tables for
+// heads-up-equivalent bet/check decisions where hero was the preflop
+// aggressor and no bet faces them:
+//   FLOP:  POSTFLOP_STRATEGY_V2  (SRP + 3BP c-bet, board archetype keyed)
+//   TURN:  POSTFLOP_TURN_STRATEGY  (SRP double barrel; flop c-bet was called)
+//   RIVER: POSTFLOP_RIVER_STRATEGY (SRP triple barrel; both barrels called)
+// Returns a grade object or null when the spot isn't covered (fall back to
+// the heuristic — never fake authority).
 // ---------------------------------------------------------------------------
-function _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat) {
+
+// True when this street's log is exactly "hero bet, villain(s) only called"
+function _PR_heroBetWasCalled(actions, heroLabel) {
+    const aggressive = actions.filter(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
+    if (aggressive.length !== 1) return false;
+    const bet = aggressive[0];
+    if (bet.seatLabel !== heroLabel || bet.action !== 'bet') return false;
+    return actions.some(a => a.action === 'call' && a.seatLabel !== heroLabel);
+}
+
+function _PR_gradeCbetV2(prHand, heroAction, heroSeat) {
     try {
-        if (typeof POSTFLOP_STRATEGY_V2 === 'undefined' || typeof classifyFlop !== 'function' ||
-            typeof makePostflopSpotKeyV2 !== 'function' || typeof POSTFLOP_PREFLOP_FAMILIES === 'undefined') return null;
-        if (prHand.gameState.street !== 'flop') return null;
+        if (typeof POSTFLOP_PREFLOP_FAMILIES === 'undefined' || typeof classifyFlop !== 'function') return null;
+        const street = prHand.gameState.street;
+        if (!['flop', 'turn', 'river'].includes(street)) return null;
         if (heroAction !== 'bet' && heroAction !== 'check') return null;
         if (_PR_facingAmount(prHand, heroSeat.label) > 0) return null;
 
@@ -1222,17 +1235,18 @@ function _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat) {
         if (!villain) return null;
 
         // Hero must be the preflop aggressor (last preflop raise is hero's)
-        const pre = prHand.gameState.streetHistory.preflop || [];
+        const hist = prHand.gameState.streetHistory;
+        const pre = hist.preflop || [];
         const lastRaise = [...pre].reverse().find(a => ['raise', '3bet', '4bet'].includes(a.action));
         if (!lastRaise || lastRaise.seatLabel !== heroSeat.label) return null;
 
-        // Family: SRP opener vs caller, or 3BP where hero 3-bet the opener
+        // Family: SRP opener vs caller (all streets), or 3BP 3-bettor (flop only)
         const ctx = prHand.preflopContext || {};
         let potType, family;
         if (ctx.potStructure === 'SRP' && ctx.opener === heroSeat.label) {
             potType = 'SRP';
             family = heroSeat.label + '_vs_' + villain.label;
-        } else if (ctx.potStructure === '3BP' && ctx.threeBettor === heroSeat.label) {
+        } else if (ctx.potStructure === '3BP' && ctx.threeBettor === heroSeat.label && street === 'flop') {
             potType = '3BP';
             family = heroSeat.label + '_3BP_vs_' + villain.label;
         } else {
@@ -1241,20 +1255,45 @@ function _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat) {
         const fi = POSTFLOP_PREFLOP_FAMILIES[family];
         if (!fi) return null;
 
-        const flop = prHand.gameState.board.slice(0, 3);
-        const boardArchetype = classifyFlop(flop).archetype;
-        const heroHandClass = classifyFlopHand({ cards: heroSeat.holeCards }, flop);
-        const key = makePostflopSpotKeyV2({
-            potType, preflopFamily: family, street: 'FLOP', heroRole: 'PFR',
-            positionState: fi.positionState, nodeType: 'CBET_DECISION',
-            boardArchetype, heroHandClass,
-        });
-        const strat = POSTFLOP_STRATEGY_V2[key];
+        const board = prHand.gameState.board;
+        const flop = board.slice(0, 3);
+        const heroHand = { cards: heroSeat.holeCards };
+        let strat = null, heroHandClass = null, betKey = 'bet33';
+
+        if (street === 'flop') {
+            if (typeof POSTFLOP_STRATEGY_V2 === 'undefined' || typeof makePostflopSpotKeyV2 !== 'function') return null;
+            heroHandClass = classifyFlopHand(heroHand, flop);
+            strat = POSTFLOP_STRATEGY_V2[makePostflopSpotKeyV2({
+                potType, preflopFamily: family, street: 'FLOP', heroRole: 'PFR',
+                positionState: fi.positionState, nodeType: 'CBET_DECISION',
+                boardArchetype: classifyFlop(flop).archetype, heroHandClass,
+            })];
+        } else if (street === 'turn') {
+            // Double-barrel node: the flop line must be hero-c-bet → called
+            if (typeof POSTFLOP_TURN_STRATEGY === 'undefined' || typeof classifyTurnCard !== 'function') return null;
+            if (board.length < 4 || !_PR_heroBetWasCalled(hist.flop || [], heroSeat.label)) return null;
+            heroHandClass = classifyTurnHand(heroHand, flop, board[3]);
+            const turnFamily = classifyTurnCard(board[3], flop);
+            strat = POSTFLOP_TURN_STRATEGY['SRP|' + family + '|TURN|PFR|' + fi.positionState +
+                '|TURN_CBET_DECISION|' + turnFamily + '|' + heroHandClass];
+            betKey = 'bet50';
+        } else {
+            // Triple-barrel node: flop AND turn were hero-bet → called
+            if (typeof POSTFLOP_RIVER_STRATEGY === 'undefined' || typeof classifyRiverCard !== 'function') return null;
+            if (board.length < 5 ||
+                !_PR_heroBetWasCalled(hist.flop || [], heroSeat.label) ||
+                !_PR_heroBetWasCalled(hist.turn || [], heroSeat.label)) return null;
+            heroHandClass = classifyRiverHand(heroHand, flop, board[3], board[4]);
+            const riverFamily = classifyRiverCard(board[4], board.slice(0, 4));
+            strat = POSTFLOP_RIVER_STRATEGY['SRP|' + family + '|RIVER|PFR|' + fi.positionState +
+                '|RIVER_CBET_DECISION|' + riverFamily + '|' + heroHandClass];
+            betKey = 'bet50';
+        }
         if (!strat || !strat.actions) return null;
 
-        const chosenFreq = heroAction === 'bet' ? (strat.actions.bet33 || 0) : (strat.actions.check || 0);
+        const chosenFreq = heroAction === 'bet' ? (strat.actions[betKey] || 0) : (strat.actions.check || 0);
         const pct = Math.round(chosenFreq * 100);
-        const base = heroHandClass.replace(/_/g, ' ').toLowerCase() + ' on this texture: GTO ' +
+        const base = heroHandClass.replace(/_/g, ' ').toLowerCase() + ' on this ' + street + ': GTO ' +
             heroAction + 's ' + pct + '% here. ' + (strat.reasoning || '');
         if (chosenFreq >= 0.65) return { grade: 'correct', explanation: 'Good ' + heroAction + ' — ' + base };
         if (chosenFreq >= 0.35) return { grade: 'mixed', explanation: 'Mixed spot — ' + base };
@@ -1266,8 +1305,8 @@ function _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat) {
 }
 
 function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
-    // Heads-up flop c-bet decisions grade against the real strategy tables
-    const v2 = _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat);
+    // Heads-up bet/check decisions grade against the real strategy tables
+    const v2 = _PR_gradeCbetV2(prHand, heroAction, heroSeat);
     if (v2) return v2;
 
     // Everything else: lightweight equity-heuristic grading (multiway/turn/river)
