@@ -414,9 +414,9 @@ function PRT_render() {
         const stack = heroSeat.stackBB;
         const canCheck = facing <= 0;
         const potOdds = facing > 0 ? Math.round((facing / (potBB + facing)) * 100) : 0;
-        // Raise-to slider: total for this street
-        const minTo = facing > 0 ? Math.min(myCommitted + stack, Math.max(facing + myCommitted + facing, 2)) : Math.min(stack, 1);
+        // Raise-to slider: total for this street; floor at the legal min-raise
         const maxTo = myCommitted + stack;
+        const minTo = Math.min(maxTo, PR_minRaiseTo(hand, heroLabel));
         const slider = PRT.sliderTo !== null && PRT.sliderTo !== undefined
             ? Math.min(maxTo, Math.max(minTo, PRT.sliderTo)) : Math.min(maxTo, Math.max(minTo, potBB * 0.66));
         const sliderVal = Math.round(slider * 2) / 2;

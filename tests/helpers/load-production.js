@@ -78,7 +78,7 @@ const EXPORT_NAMES = [
     'PR_generateTableConfig', 'PR_buyIn', 'PR_applySessionHandResult',
     'PR_isBusted', 'PR_rebuy', 'PR_endSession', 'PR_topUpBankroll',
     'PR_accumulateSeatStats', 'PR_STORAGE_KEY', 'PR_buildHandSeats',
-    'PR_buildHandSeatsRotated',
+    'PR_buildHandSeatsRotated', 'PR_minRaiseTo',
 ];
 
 let cached = null;

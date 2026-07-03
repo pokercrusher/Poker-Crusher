@@ -199,27 +199,59 @@ function _PR_nextActor(prHand) {
     return null; // everyone has responded
 }
 
+// ---------------------------------------------------------------------------
+// PR_minRaiseTo — the smallest legal "raise to" total for this street.
+// NLHE rule: a raise must add at least the size of the last bet/raise
+// increment (min-bet 1BB when unopened; preflop's opening increment is the
+// 1BB blind). Going all-in for less is always allowed — the stack clamp in
+// _PR_applyAction handles that exception.
+// ---------------------------------------------------------------------------
+function PR_minRaiseTo(prHand, seatLabel) {
+    const ss = prHand.gameState.streetState;
+    const maxCommitted = Math.max(0, ...Object.values(ss.committedBB));
+    const lastRaise = ss.lastRaiseBB || 1; // min-bet 1BB / preflop blind increment
+    return parseFloat((maxCommitted + lastRaise).toFixed(2));
+}
+
 // Apply a resolved action to prHand state (mutates in place — caller deep-copies first).
 // Single choke point for chip movement: call/limp amounts are derived from the
 // facing amount here (resolver-provided sizes ignore blinds already committed),
-// every commitment is capped at the remaining stack, and a stack reaching zero
+// aggressive sizings are bumped up to the legal minimum raise, every
+// commitment is capped at the remaining stack, and a stack reaching zero
 // marks the seat all-in.
 function _PR_applyAction(prHand, seatLabel, action, sizingBB) {
     const seat = prHand.seats.find(s => s !== null && s.label === seatLabel);
     const ss = prHand.gameState.streetState;
+    const isAggressive = ['bet', 'raise', '3bet', '4bet'].includes(action);
 
     let sizing = sizingBB || 0;
     if (action === 'call' || action === 'limp') {
         sizing = _PR_facingAmount(prHand, seatLabel);
     }
+    if (isAggressive) {
+        // Enforce the minimum raise: bump an undersized raise-to up to legal.
+        const myCommitted = ss.committedBB[seatLabel] || 0;
+        const minTo = PR_minRaiseTo(prHand, seatLabel);
+        if (myCommitted + sizing < minTo) {
+            sizing = parseFloat((minTo - myCommitted).toFixed(2));
+        }
+    }
     if (seat && sizing > seat.stackBB) {
-        sizing = seat.stackBB;
+        sizing = seat.stackBB; // all-in for less is the one legal undersize
     }
 
     ss.actions.push({ seatLabel, action, sizingBB: sizing });
 
-    if (['bet', 'raise', '3bet', '4bet'].includes(action)) {
+    if (isAggressive) {
         ss.betMadeThisStreet = true;
+        // Track the raise increment for the NEXT raiser's minimum. Only a
+        // full raise updates it (an all-in undercall doesn't reopen action).
+        const prevMax = Math.max(0, ...Object.values(ss.committedBB));
+        const newTo = (ss.committedBB[seatLabel] || 0) + sizing;
+        const increment = parseFloat((newTo - prevMax).toFixed(2));
+        if (increment >= (ss.lastRaiseBB || 1)) {
+            ss.lastRaiseBB = increment;
+        }
     }
     if (sizing > 0 && seat) {
         ss.committedBB[seatLabel] = parseFloat(((ss.committedBB[seatLabel] || 0) + sizing).toFixed(2));
@@ -318,6 +350,7 @@ function PR_createHand(config) {
             streetState: {
                 street:            'preflop',
                 betMadeThisStreet: true,  // BB's blind is the opening bet
+                lastRaiseBB:       1,     // the blind itself is the first increment
                 actions:           [],
                 committedBB:       initCommitted,
             },
@@ -732,6 +765,7 @@ function PR_advanceStreet(prHand) {
     gs.streetState = {
         street:            nextStreet,
         betMadeThisStreet: false,
+        lastRaiseBB:       0, // no bet yet; min-bet floor of 1BB applies
         actions:           [],
         committedBB:       freshCommitted,
     };
@@ -1167,8 +1201,76 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
     return { grade: 'error', spot, explanation: `GTO play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
 }
 
+// ---------------------------------------------------------------------------
+// _PR_gradeFlopCbetV2 — real GTO grading via POSTFLOP_STRATEGY_V2 for the
+// heads-up-equivalent spot the trainer covers: hero was the preflop aggressor,
+// the pot is exactly heads-up on the flop, no bet is facing hero, and the
+// family (heroPos vs caller, SRP or 3BP) has a hero-hand-aware table.
+// Returns a grade object or null when the spot isn't covered.
+// ---------------------------------------------------------------------------
+function _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat) {
+    try {
+        if (typeof POSTFLOP_STRATEGY_V2 === 'undefined' || typeof classifyFlop !== 'function' ||
+            typeof makePostflopSpotKeyV2 !== 'function' || typeof POSTFLOP_PREFLOP_FAMILIES === 'undefined') return null;
+        if (prHand.gameState.street !== 'flop') return null;
+        if (heroAction !== 'bet' && heroAction !== 'check') return null;
+        if (_PR_facingAmount(prHand, heroSeat.label) > 0) return null;
+
+        const active = prHand.seats.filter(s => s !== null && !s.folded);
+        if (active.length !== 2) return null; // heads-up spots only
+        const villain = active.find(s => !s.isHero);
+        if (!villain) return null;
+
+        // Hero must be the preflop aggressor (last preflop raise is hero's)
+        const pre = prHand.gameState.streetHistory.preflop || [];
+        const lastRaise = [...pre].reverse().find(a => ['raise', '3bet', '4bet'].includes(a.action));
+        if (!lastRaise || lastRaise.seatLabel !== heroSeat.label) return null;
+
+        // Family: SRP opener vs caller, or 3BP where hero 3-bet the opener
+        const ctx = prHand.preflopContext || {};
+        let potType, family;
+        if (ctx.potStructure === 'SRP' && ctx.opener === heroSeat.label) {
+            potType = 'SRP';
+            family = heroSeat.label + '_vs_' + villain.label;
+        } else if (ctx.potStructure === '3BP' && ctx.threeBettor === heroSeat.label) {
+            potType = '3BP';
+            family = heroSeat.label + '_3BP_vs_' + villain.label;
+        } else {
+            return null;
+        }
+        const fi = POSTFLOP_PREFLOP_FAMILIES[family];
+        if (!fi) return null;
+
+        const flop = prHand.gameState.board.slice(0, 3);
+        const boardArchetype = classifyFlop(flop).archetype;
+        const heroHandClass = classifyFlopHand({ cards: heroSeat.holeCards }, flop);
+        const key = makePostflopSpotKeyV2({
+            potType, preflopFamily: family, street: 'FLOP', heroRole: 'PFR',
+            positionState: fi.positionState, nodeType: 'CBET_DECISION',
+            boardArchetype, heroHandClass,
+        });
+        const strat = POSTFLOP_STRATEGY_V2[key];
+        if (!strat || !strat.actions) return null;
+
+        const chosenFreq = heroAction === 'bet' ? (strat.actions.bet33 || 0) : (strat.actions.check || 0);
+        const pct = Math.round(chosenFreq * 100);
+        const base = heroHandClass.replace(/_/g, ' ').toLowerCase() + ' on this texture: GTO ' +
+            heroAction + 's ' + pct + '% here. ' + (strat.reasoning || '');
+        if (chosenFreq >= 0.65) return { grade: 'correct', explanation: 'Good ' + heroAction + ' — ' + base };
+        if (chosenFreq >= 0.35) return { grade: 'mixed', explanation: 'Mixed spot — ' + base };
+        return { grade: 'error', explanation: 'GTO strongly prefers ' +
+            (heroAction === 'bet' ? 'checking' : 'betting') + ' — ' + base };
+    } catch (_) {
+        return null;
+    }
+}
+
 function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
-    // Pass 1: lightweight equity-heuristic grading (no POSTFLOP_STRATEGY_V2 for multiway)
+    // Heads-up flop c-bet decisions grade against the real strategy tables
+    const v2 = _PR_gradeFlopCbetV2(prHand, heroAction, heroSeat);
+    if (v2) return v2;
+
+    // Everything else: lightweight equity-heuristic grading (multiway/turn/river)
     const board   = prHand.gameState.board;
     const ss      = prHand.gameState.streetState;
     const street  = prHand.gameState.street;

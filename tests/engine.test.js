@@ -1354,3 +1354,120 @@ describe('Poker Room — uncontested hands end without dealing further streets',
         expect(done.outcome.heroNetBB).toBeGreaterThan(0);
     });
 });
+
+// =============================================================================
+// Poker Room — minimum raise rule
+// =============================================================================
+
+describe('Poker Room — min-raise rule', () => {
+
+    function freshHand() {
+        return PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats() });
+    }
+
+    it('preflop: min 3-bet over a 2.5bb open is 4bb (open increment 1.5)', () => {
+        const hr = freshHand();
+        PROD._PR_applyAction(hr, 'UTG', 'raise', 2.5);
+        expect(PROD.PR_minRaiseTo(hr, 'CO')).toBe(4); // 2.5 + 1.5
+    });
+
+    it('an undersized raise is bumped up to the legal minimum', () => {
+        const hr = freshHand();
+        PROD._PR_applyAction(hr, 'UTG', 'raise', 2.5);
+        PROD._PR_applyAction(hr, 'CO', 'raise', 0.5); // tries to "raise to 3"
+        const ss = hr.gameState.streetState;
+        expect(ss.committedBB['CO']).toBe(4); // bumped to min-raise total
+    });
+
+    it('raise increments compound: after a 3-bet to 7.5, min 4-bet is 12.5', () => {
+        const hr = freshHand();
+        PROD._PR_applyAction(hr, 'UTG', 'raise', 2.5);
+        PROD._PR_applyAction(hr, 'CO', '3bet', 7.5);   // increment 5
+        expect(PROD.PR_minRaiseTo(hr, 'BTN')).toBe(12.5);
+    });
+
+    it('postflop: min bet is 1bb, min raise doubles the bet increment', () => {
+        const hr = freshHand();
+        hr.gameState.street = 'flop';
+        hr.gameState.streetState = { street: 'flop', betMadeThisStreet: false, lastRaiseBB: 0, actions: [], committedBB: { UTG: 0, BTN: 0 } };
+        expect(PROD.PR_minRaiseTo(hr, 'UTG')).toBe(1);
+        PROD._PR_applyAction(hr, 'UTG', 'bet', 6);
+        expect(PROD.PR_minRaiseTo(hr, 'BTN')).toBe(12); // 6 + 6
+    });
+
+    it('all-in below the minimum raise is allowed and does not reopen the increment', () => {
+        const hr = freshHand();
+        const co = hr.seats.find(s => s && s.label === 'CO');
+        co.stackBB = 3; // short stack
+        PROD._PR_applyAction(hr, 'UTG', 'raise', 2.5);
+        PROD._PR_applyAction(hr, 'CO', 'raise', 10); // wants to raise but only has 3
+        const ss = hr.gameState.streetState;
+        expect(ss.committedBB['CO']).toBe(3); // clamped all-in undercall...ish raise
+        expect(co.allIn).toBe(true);
+        // increment not reopened by the short all-in: next min is still off the 2.5 open
+        expect(PROD.PR_minRaiseTo(hr, 'BTN')).toBe(4.5); // maxCommitted 3 + lastRaise 1.5
+    });
+});
+
+// =============================================================================
+// Poker Room — V2-graded flop c-bet (heads-up SRP, hero PFR)
+// =============================================================================
+
+describe('Poker Room — flop c-bet grades against POSTFLOP_STRATEGY_V2', () => {
+
+    // Heads-up SRP: hero BTN opened, BB called; flop is A72 rainbow (A_HIGH_DRY)
+    function cbetSpot(heroCards) {
+        return {
+            seats: [
+                null, null, null, null, null, null,
+                { index: 6, label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 97.5,
+                  holeCards: heroCards },
+                null,
+                { index: 8, label: 'BB', isHero: false, folded: false, allIn: false, stackBB: 97.5,
+                  holeCards: cards2('7', 'c', '6', 'c') },
+            ],
+            heroSeatIndex: 6,
+            preflopContext: { heroPos: 'BTN', opener: 'BTN', threeBettor: null, callers: ['BB'], limpers: [], potStructure: 'SRP' },
+            gameState: {
+                potBB: 5.5, street: 'flop',
+                board: [C('A', 's'), C('7', 'd'), C('2', 'h')],
+                streetState: { street: 'flop', betMadeThisStreet: false, lastRaiseBB: 0,
+                               actions: [], committedBB: { BTN: 0, BB: 0 } },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'BTN', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'BB',  action: 'call',  sizingBB: 1.5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
+            },
+        };
+    }
+
+    it('betting top pair on A-high dry grades correct (high c-bet frequency)', () => {
+        const hand = cbetSpot(cards2('A', 'h', 'K', 'c')); // top pair top kicker
+        const heroSeat = hand.seats[6];
+        const g = PROD.PR_gradeHeroAction(hand, 'bet', 2);
+        expect(g.grade).toBe('correct');
+        expect(g.explanation).toContain('%');
+    });
+
+    it('betting air on a low connected board grades against the low frequency', () => {
+        const hand = cbetSpot(cards2('K', 'h', 'Q', 'c')); // overcards/air
+        hand.gameState.board = [C('6', 's'), C('5', 'd'), C('4', 'h')]; // LOW_CONNECTED
+        const g = PROD.PR_gradeHeroAction(hand, 'bet', 2);
+        expect(['mixed', 'error']).toContain(g.grade); // never 'correct' at ~15-25% bet freq
+        const g2 = PROD.PR_gradeHeroAction(hand, 'check', 0);
+        expect(g2.grade).toBe('correct'); // checking is the high-frequency play
+    });
+
+    it('multiway pots fall back to the heuristic (no false V2 authority)', () => {
+        const hand = cbetSpot(cards2('A', 'h', 'K', 'c'));
+        // Add a third live player → not a heads-up-equivalent spot
+        hand.seats[0] = { index: 0, label: 'UTG', isHero: false, folded: false, allIn: false,
+                          stackBB: 97.5, holeCards: cards2('9', 'c', '9', 'd') };
+        const g = PROD.PR_gradeHeroAction(hand, 'check', 0);
+        // heuristic path: strong-hand check → mixed wording, not the V2 % wording
+        expect(g.explanation).not.toContain('%');
+    });
+});
