@@ -1300,3 +1300,57 @@ describe('Poker Room — rotated seats & study-mode metadata', () => {
         expect(key).toBe('RFI|UTG|AA');
     });
 });
+
+// =============================================================================
+// Poker Room — no board card after a fold ends the hand
+// =============================================================================
+
+describe('Poker Room — uncontested hands end without dealing further streets', () => {
+
+    it('villain folds to a turn bet → no river is dealt, hand resolves on the turn', () => {
+        const board4 = [C('K', 's'), C('9', 'h'), C('4', 'c'), C('J', 'd')];
+        const prHand = {
+            seats: [
+                null, null, null, null, null, null,
+                { index: 6, label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 90,
+                  holeCards: cards2('A', 's', 'A', 'h') },
+                null,
+                { index: 8, label: 'BB', isHero: false, folded: true, allIn: false, stackBB: 92,
+                  holeCards: cards2('7', 'c', '2', 'd') },  // just folded to the turn bet
+            ],
+            heroSeatIndex: 6,
+            terminal: false,
+            gameState: {
+                potBB: 10, board: board4, street: 'turn',
+                streetState: {
+                    street: 'turn', betMadeThisStreet: true,
+                    actions: [
+                        { seatLabel: 'BTN', action: 'bet',  sizingBB: 6 },
+                        { seatLabel: 'BB',  action: 'fold', sizingBB: 0 },
+                    ],
+                    committedBB: { BTN: 6, BB: 0 },
+                },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'BTN', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'BB',  action: 'call',  sizingBB: 1.5 },
+                    ],
+                    flop: [
+                        { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+                        { seatLabel: 'BTN', action: 'bet',   sizingBB: 3 },
+                        { seatLabel: 'BB',  action: 'call',  sizingBB: 3 },
+                    ],
+                    turn: [], river: [],
+                },
+            },
+        };
+        expect(PROD.PR_isStreetComplete(prHand)).toBe(true); // fold ended the street
+        const done = PROD.PR_advanceStreet(prHand);
+        expect(done.terminal).toBe(true);
+        expect(done.gameState.board.length).toBe(4);      // NO river card
+        expect(done.gameState.street).toBe('turn');       // hand ended on the turn
+        expect(done.outcome.winner).toBe('BTN');
+        // hero committed 2.5 + 3 + 6 = 11.5; wins BB's 1 + 1.5 + 3 (+0.5 SB? none here)
+        expect(done.outcome.heroNetBB).toBeGreaterThan(0);
+    });
+});

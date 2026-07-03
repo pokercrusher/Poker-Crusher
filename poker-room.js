@@ -183,6 +183,14 @@ function _PR_nextActor(prHand) {
     );
     const aggrOrderPos = order.indexOf(aggrLabel);
 
+    if (aggrOrderPos === -1) {
+        // Aggressor is no longer in the active order (their bet put them
+        // all-in). Everyone still active must respond regardless — walking a
+        // rotation from index -1 used to skip the last seat, letting a street
+        // close with an unmatched bet.
+        return order.find(l => !respondedAfterAggr.has(l)) || null;
+    }
+
     for (let i = 1; i < order.length; i++) {
         const label = order[(aggrOrderPos + i) % order.length];
         if (label === aggrLabel) break; // wrapped all the way back
@@ -693,6 +701,19 @@ function PR_advanceStreet(prHand) {
         return hr;
     }
 
+    // Uncontested (only one non-folded player)? The hand is over NOW — no
+    // further board cards are dealt. This check must precede the deal: betting
+    // out the turn must not flash a river. All-in runouts still deal, because
+    // all-in players are active (not folded) and keep multipleActive true.
+    if (!_PR_hasMultipleActive(hr)) {
+        hr.terminal = true;
+        // Previous street already archived — clear live state before resolving
+        // so its actions aren't counted twice.
+        gs.streetState = { street: ss.street, betMadeThisStreet: false, actions: [], committedBB: {} };
+        PR_resolveOutcome(hr);
+        return hr;
+    }
+
     // Deal board cards
     if (nextStreet === 'flop') {
         const cards = _PR_dealBoardCards(hr, 3);
@@ -700,17 +721,6 @@ function PR_advanceStreet(prHand) {
     } else if (nextStreet === 'turn' || nextStreet === 'river') {
         const cards = _PR_dealBoardCards(hr, 1);
         gs.board.push(cards[0]);
-    }
-
-    // Check for immediate terminal (only one active player left)
-    if (!_PR_hasMultipleActive(hr)) {
-        hr.terminal = true;
-        // Previous street already archived — clear live state before resolving
-        // so its actions aren't counted twice.
-        gs.streetState = { street: nextStreet, betMadeThisStreet: false, actions: [], committedBB: {} };
-        gs.street = nextStreet;
-        PR_resolveOutcome(hr);
-        return hr;
     }
 
     // Build fresh committedBB for remaining active seats
@@ -976,6 +986,20 @@ function _PR_buildSidePots(activeSeats, totalCommitted, allSeats) {
     if (pots.length === 0) {
         const total = allContributors.reduce((s, c) => s + c.committed, 0);
         pots.push({ amount: parseFloat(total.toFixed(2)), eligible: activeSeats.map(s => s.label) });
+    }
+
+    // Dead-money sweep: a level can end up with no eligible players (e.g. a
+    // player bet above everyone's commitment and then folded to a raise).
+    // Those chips belong to the pot below them — merge downward so no pot
+    // ever resolves winnerless and chips are conserved.
+    for (let i = pots.length - 1; i >= 0; i--) {
+        if (pots[i].eligible.length === 0) {
+            const target = i > 0 ? pots[i - 1] : pots[i + 1];
+            if (target) {
+                target.amount = parseFloat((target.amount + pots[i].amount).toFixed(2));
+                pots.splice(i, 1);
+            }
+        }
     }
 
     return pots;

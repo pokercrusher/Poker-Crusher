@@ -51,7 +51,7 @@ function PRT_enter(room, session, tableConfig) {
     PRT.room = room;
     PRT.session = session;
     PRT.cfg = tableConfig;
-    PRT.offset = -1;
+    PRT.offset = 1; // decremented before each hand → first hand at offset 0
     PRT.handNo = 0;
     PRT.lastGrade = null;
     try {
@@ -78,7 +78,11 @@ async function PRT_dealNext() {
     const myToken = ++PRT.token;
     PRT.banner = null;
     PRT.revealAll = false;
-    PRT.offset++;
+    // The button moves CLOCKWISE: the new BTN is last hand's SB. With players
+    // fixed in their physical seats, that means each player's position label
+    // steps BACKWARD through table order (UTG → BB → SB → BTN → CO → …),
+    // which is a decrementing rotation offset.
+    PRT.offset--;
     PRT.handNo++;
 
     const built = PR_buildHandSeatsRotated(PRT.cfg, PRT.room.heroProfile, PRT.offset, PRT.session.stackBB);
@@ -253,6 +257,8 @@ function PRT_slotFor(playerIdx, playerCount) {
     return Math.round(1 + ((playerIdx - 1) * 7) / (playerCount - 2));
 }
 
+// Cards use the trainer's .card-display face and .card-back striped back so
+// the room reads as the same product as Train Now.
 function PRT_cardHtml(card, small) {
     const suit = PRT_SUITS[card.suit] || card.suit;
     const red = card.suit === 'h' || card.suit === 'd';
@@ -261,9 +267,8 @@ function PRT_cardHtml(card, small) {
         (red ? '#e11d48' : '#0f172a') + '">' + card.rank + '<span style="font-size:0.85em">' + suit + '</span></div>';
 }
 
-function PRT_cardBackHtml(small) {
-    const size = small ? 'width:22px;height:30px;' : 'width:26px;height:36px;';
-    return '<div style="' + size + 'display:inline-block;border-radius:4px;background:linear-gradient(145deg,#4338ca,#312e81);border:1px solid rgba(255,255,255,0.25)"></div>';
+function PRT_cardBackHtml() {
+    return '<div class="card-back" style="width:18px;height:26px;border-radius:3px"></div>';
 }
 
 function PRT_render() {
@@ -306,7 +311,7 @@ function PRT_render() {
             if (showCards) {
                 cards = seat.holeCards.map(function(cd) { return PRT_cardHtml(cd, !isHero); }).join('');
             } else if (!isHero) {
-                cards = PRT_cardBackHtml(true) + PRT_cardBackHtml(true);
+                cards = PRT_cardBackHtml() + PRT_cardBackHtml();
             }
         }
 
@@ -314,44 +319,45 @@ function PRT_render() {
         const avatar = isHero ? escapeHtml(PRT.room.heroProfile.avatar)
             : (villain && PRUI_AVATARS.includes(villain.avatar) ? villain.avatar : PRUI_AVATARS[(i - 1) % PRUI_AVATARS.length]);
 
-        const ring = acting ? 'box-shadow:0 0 0 2px #f59e0b;' : '';
+        // Same seat-box language as the trainer: slate-800 box, slate-600
+        // border, bold position label; acting seat scales up like .seat-active.
+        const acting$ = acting ? 'transform:scale(1.1);box-shadow:0 10px 25px -5px rgba(99,102,241,0.5);border-color:#818cf8;' : '';
         const dim = !inHand ? 'opacity:0.35;' : '';
         const isWinner = PRT.revealAll && hand.outcome && (hand.outcome.pots || [])
             .some(p => (p.winners || []).includes(seat.label));
         const winRing = isWinner ? 'box-shadow:0 0 0 2px #4ade80;' : '';
 
         return '<div' + (villain ? ' data-prt="seat" data-vid="' + villain.id + '"' : '') +
-            ' style="position:absolute;left:' + c.left + ';top:' + c.top + ';transform:translate(-50%,-50%);' + dim + 'z-index:20;text-align:center;min-width:64px' +
+            ' style="position:absolute;left:' + c.left + ';top:' + c.top + ';transform:translate(-50%,-50%);' + dim + 'z-index:20;text-align:center;min-width:60px' +
             (villain ? ';cursor:pointer' : '') + '">' +
-            '<div style="display:flex;gap:1px;justify-content:center;margin-bottom:2px;min-height:' + (isHero ? '48' : '30') + 'px;pointer-events:none">' + cards + '</div>' +
-            '<div style="background:#1e293b;border:1px solid #475569;border-radius:10px;padding:3px 8px;pointer-events:none;' + ring + winRing + '">' +
-                '<div style="font-size:10px;font-weight:800;color:' + (isHero ? '#fcd34d' : '#e2e8f0') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px">' +
-                    avatar + ' ' + escapeHtml(seat.name) + '</div>' +
-                '<div style="font-size:9px;font-weight:700;color:#94a3b8">' +
-                    seat.label + ' · ' + PRT_fmtBB(seat.stackBB) +
-                    (seat.allIn ? ' · <span style="color:#f87171">ALL-IN</span>' : '') + '</div>' +
+            '<div style="display:flex;gap:2px;justify-content:center;margin-bottom:2px;min-height:' + (isHero ? '48' : '26') + 'px;pointer-events:none">' + cards + '</div>' +
+            '<div class="bg-slate-800 border border-slate-600 rounded-lg" style="padding:2px 7px;pointer-events:none;transition:transform 0.2s;' + acting$ + winRing + '">' +
+                '<div class="font-black" style="font-size:11px;color:' + (isHero ? '#fcd34d' : '#cbd5e1') + '">' + seat.label + '</div>' +
+                '<div style="font-size:8px;font-weight:700;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">' +
+                    avatar + ' ' + escapeHtml(seat.name) + ' · ' + PRT_fmtBB(seat.stackBB) +
+                    (seat.allIn ? ' <span style="color:#f87171">ALL-IN</span>' : '') + '</div>' +
                 (lastAct && inHand ? '<div style="font-size:8px;font-weight:900;color:#fbbf24;text-transform:uppercase">' +
                     lastAct.action + (lastAct.sizingBB > 0 ? ' ' + PRT_fmtBB(lastAct.sizingBB) : '') + '</div>' : '') +
-                (!inHand ? '<div style="font-size:8px;font-weight:900;color:#64748b">FOLDED</div>' : '') +
+                (!inHand ? '<div style="font-size:8px;font-weight:900;color:#64748b">FOLD</div>' : '') +
             '</div>' +
             (showCards && !isHero && showdownEntry ? '<div style="font-size:8px;color:#a5b4fc;font-weight:700;margin-top:1px">' +
                 (showdownEntry.handLabel || '').replace(/_/g, ' ') + '</div>' : '') +
         '</div>';
     }).join('');
 
-    // ---- Bets (chips pulled toward center) ----
+    // ---- Bets (chips pulled toward center) — trainer chip style ----
     const betHtml = players.filter(s => (ss.committedBB[s.label] || 0) > 0).map(function(seat) {
         const i = players.indexOf(seat);
         const c = SEAT_COORDS_DESKTOP[PRT_slotFor(i, n)];
         const L = parseFloat(c.left), T = parseFloat(c.top);
         const bl = L + (50 - L) * 0.38, bt = T + (50 - T) * 0.38;
         return '<div style="position:absolute;left:' + bl + '%;top:' + bt + '%;transform:translate(-50%,-50%);z-index:15;display:flex;align-items:center;gap:2px">' +
-            '<div style="width:10px;height:10px;border-radius:50%;background:#e11d48;border:1px solid rgba(255,255,255,0.4)"></div>' +
-            '<span style="font-size:9px;font-weight:900;color:#fde68a;background:rgba(0,0,0,0.5);padding:0 3px;border-radius:3px">' +
+            '<div class="rounded-full bg-rose-600 border border-white/20" style="width:11px;height:11px"></div>' +
+            '<span class="font-black text-yellow-400 bg-black/40 px-1 rounded" style="font-size:9px">' +
                 PRT_fmtBB(ss.committedBB[seat.label]) + '</span></div>';
     }).join('');
 
-    // ---- Board + pot + dealer button ----
+    // ---- Board + pot + dealer button (white "D" disc, as in the trainer) ----
     const boardHtml = (gs.board || []).map(function(cd) { return PRT_cardHtml(cd, false); }).join('');
     const btnSeatIdx = players.findIndex(s => s.label === 'BTN');
     let dealerHtml = '';
@@ -359,8 +365,8 @@ function PRT_render() {
         const c = SEAT_COORDS_DESKTOP[PRT_slotFor(btnSeatIdx, n)];
         const L = parseFloat(c.left), T = parseFloat(c.top);
         const dl = L + (50 - L) * 0.22, dt = T + (50 - T) * 0.22;
-        dealerHtml = '<div style="position:absolute;left:' + dl + '%;top:' + dt + '%;transform:translate(-50%,-50%);z-index:16;' +
-            'width:16px;height:16px;border-radius:50%;background:#f8fafc;color:#0f172a;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center">D</div>';
+        dealerHtml = '<div class="bg-white rounded-full text-black font-black flex items-center justify-center" ' +
+            'style="position:absolute;left:' + dl + '%;top:' + dt + '%;transform:translate(-50%,-50%);z-index:16;width:16px;height:16px;font-size:9px">D</div>';
     }
 
     // ---- Header ----
@@ -376,9 +382,9 @@ function PRT_render() {
             '<button data-prt="speed" class="pc-btn-utility px-3 py-2 text-xs capitalize">' + PRT.speed + '</button>' +
         '</div>';
 
-    // ---- Felt ----
+    // ---- Felt — same component as the trainer (aspect-ratio, ring border) ----
     const felt =
-        '<div class="poker-felt" style="position:relative;width:100%;height:340px;border-radius:170px/120px">' +
+        '<div class="poker-felt" style="position:relative;width:100%;aspect-ratio:1.55/1;max-height:380px">' +
             seatHtml + betHtml + dealerHtml +
             '<div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;z-index:10">' +
                 '<div style="display:flex;gap:3px;justify-content:center;min-height:48px">' + boardHtml + '</div>' +
