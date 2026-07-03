@@ -25,6 +25,8 @@ const PRT = {
     lastGrade: null,     // most recent hero grade (indicator chip)
     banner: null,        // end-of-hand banner text
     revealAll: false,    // showdown reveal state
+    history: [],        // session hand log, newest first (cap 10)
+    inspect: null,      // villainId of the seat popup, or null
 };
 
 function PRT_delay(ms) {
@@ -143,7 +145,8 @@ function PRT_awaitHero(myToken) {
 async function PRT_settle(myToken) {
     const hand = PRT.hand;
     const outcome = hand.outcome || { pots: [], heroNetBB: 0 };
-    const heroLabel = hand.seats[hand.heroSeatIndex].label;
+    const heroSeat = hand.seats[hand.heroSeatIndex];
+    const heroLabel = heroSeat.label;
 
     // Reveal + banner
     PRT.revealAll = true;
@@ -166,6 +169,31 @@ async function PRT_settle(myToken) {
     // Session + per-villain bookkeeping
     PR_applySessionHandResult(PRT.session, heroNet);
     PR_accumulateSeatStats(PRT.cfg, hand);
+
+    // Hero session stats: VPIP/PFR from the preflop log, accuracy from grades
+    const s = PRT.session;
+    const heroPre = (hand.gameState.streetHistory.preflop || []).filter(a => a.seatLabel === heroLabel);
+    s.heroHands = (s.heroHands || 0) + 1;
+    if (heroPre.some(a => ['call', 'limp', 'raise', '3bet', '4bet'].includes(a.action))) {
+        s.heroVpip = (s.heroVpip || 0) + 1;
+    }
+    if (heroPre.some(a => ['raise', '3bet', '4bet'].includes(a.action))) {
+        s.heroPfr = (s.heroPfr || 0) + 1;
+    }
+    (hand.heroGrades || []).forEach(function(g) {
+        s.decisions++;
+        if (g.grade === 'correct') s.correctDecisions++;
+    });
+
+    // Hand history (newest first, keep 10)
+    PRT.history.unshift({
+        handNo: PRT.handNo,
+        pos: heroLabel,
+        cards: heroSeat.handNotation || '',
+        netBB: parseFloat(heroNet.toFixed(2)),
+        grades: (hand.heroGrades || []).slice(),
+    });
+    if (PRT.history.length > 10) PRT.history.length = 10;
 
     // Update villain persistent stacks: final in-hand stack + any pot shares
     const shares = {};
@@ -292,9 +320,11 @@ function PRT_render() {
             .some(p => (p.winners || []).includes(seat.label));
         const winRing = isWinner ? 'box-shadow:0 0 0 2px #4ade80;' : '';
 
-        return '<div style="position:absolute;left:' + c.left + ';top:' + c.top + ';transform:translate(-50%,-50%);' + dim + 'z-index:20;text-align:center;min-width:64px">' +
-            '<div style="display:flex;gap:1px;justify-content:center;margin-bottom:2px;min-height:' + (isHero ? '48' : '30') + 'px">' + cards + '</div>' +
-            '<div style="background:#1e293b;border:1px solid #475569;border-radius:10px;padding:3px 8px;' + ring + winRing + '">' +
+        return '<div' + (villain ? ' data-prt="seat" data-vid="' + villain.id + '"' : '') +
+            ' style="position:absolute;left:' + c.left + ';top:' + c.top + ';transform:translate(-50%,-50%);' + dim + 'z-index:20;text-align:center;min-width:64px' +
+            (villain ? ';cursor:pointer' : '') + '">' +
+            '<div style="display:flex;gap:1px;justify-content:center;margin-bottom:2px;min-height:' + (isHero ? '48' : '30') + 'px;pointer-events:none">' + cards + '</div>' +
+            '<div style="background:#1e293b;border:1px solid #475569;border-radius:10px;padding:3px 8px;pointer-events:none;' + ring + winRing + '">' +
                 '<div style="font-size:10px;font-weight:800;color:' + (isHero ? '#fcd34d' : '#e2e8f0') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px">' +
                     avatar + ' ' + escapeHtml(seat.name) + '</div>' +
                 '<div style="font-size:9px;font-weight:700;color:#94a3b8">' +
@@ -416,7 +446,62 @@ function PRT_render() {
     const gradeLine = (PRT.showGradeDetail && PRT.lastGrade)
         ? '<p class="text-[10px] text-slate-500 text-center leading-snug">' + escapeHtml(PRT.lastGrade.explanation || '') + '</p>' : '';
 
-    body.innerHTML = header + felt + actionArea + gradeLine;
+    // ---- Villain inspection popup ----
+    let popup = '';
+    if (PRT.inspect) {
+        const v = PRT.cfg.villains.find(x => x.id === PRT.inspect);
+        if (v) {
+            const st = v.sessionStats || { handsDealt: 0, vpipHands: 0, pfrHands: 0 };
+            const pct = (num) => st.handsDealt > 0 ? Math.round((num / st.handsDealt) * 100) + '%' : '—';
+            const av = PRUI_AVATARS.includes(v.avatar) ? v.avatar : PRUI_AVATARS[0];
+            popup =
+                '<div data-prt="popup-close" style="position:fixed;inset:0;background:rgba(2,6,23,0.7);z-index:60;display:flex;align-items:center;justify-content:center">' +
+                    '<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 text-center" style="min-width:220px">' +
+                        '<div style="font-size:34px">' + av + '</div>' +
+                        '<p class="text-slate-100 font-black text-base mt-1">' + escapeHtml(v.name) + '</p>' +
+                        '<p class="text-[11px] font-bold mt-0.5" style="color:' + (PRUI_TYPE_COLORS[v.type] || '#94a3b8') + '">' +
+                            (PRUI_TYPE_LABELS[v.type] || v.type) + '</p>' +
+                        '<div class="grid grid-cols-3 gap-2 mt-3 text-center">' +
+                            '<div><p class="text-[9px] text-slate-500 font-bold uppercase">Hands</p><p class="text-sm font-black text-slate-200">' + st.handsDealt + '</p></div>' +
+                            '<div><p class="text-[9px] text-slate-500 font-bold uppercase">VPIP</p><p class="text-sm font-black text-slate-200">' + pct(st.vpipHands) + '</p></div>' +
+                            '<div><p class="text-[9px] text-slate-500 font-bold uppercase">PFR</p><p class="text-sm font-black text-slate-200">' + pct(st.pfrHands) + '</p></div>' +
+                        '</div>' +
+                        '<p class="text-[9px] text-slate-600 mt-2">Stack ' + PRT_fmtBB(v.stackBB) + ' · tap anywhere to close</p>' +
+                    '</div>' +
+                '</div>';
+        }
+    }
+
+    // ---- Session panel: stats + last 10 hands with decision review ----
+    const sess = PRT.session;
+    const vp = sess.heroHands > 0 ? Math.round(((sess.heroVpip || 0) / sess.heroHands) * 100) + '%' : '—';
+    const pf = sess.heroHands > 0 ? Math.round(((sess.heroPfr || 0) / sess.heroHands) * 100) + '%' : '—';
+    const acc = sess.decisions > 0 ? Math.round((sess.correctDecisions / sess.decisions) * 100) + '%' : '—';
+    const histRows = PRT.history.map(function(h) {
+        const gradeRows = h.grades.map(function(g) {
+            const icon = g.grade === 'correct' ? '✓' : g.grade === 'mixed' ? '~' : '✗';
+            const color = g.grade === 'correct' ? '#4ade80' : g.grade === 'mixed' ? '#fbbf24' : '#f87171';
+            return '<div class="text-[9px] text-slate-500 leading-snug pl-3">' +
+                '<span style="color:' + color + ';font-weight:900">' + icon + '</span> ' +
+                escapeHtml(g.street) + ' ' + escapeHtml(g.action) + ' — ' + escapeHtml(g.explanation || '') + '</div>';
+        }).join('');
+        return '<details class="py-1 border-b border-slate-800/50">' +
+            '<summary class="flex justify-between text-[10px] cursor-pointer select-none list-none">' +
+                '<span class="text-slate-400 font-bold">#' + h.handNo + ' · ' + escapeHtml(h.pos) + ' · ' + escapeHtml(h.cards) + '</span>' +
+                '<span class="font-black" style="color:' + (h.netBB >= 0 ? '#4ade80' : '#f87171') + '">' +
+                    (h.netBB >= 0 ? '+' : '') + PRT_fmtBB(h.netBB) + '</span>' +
+            '</summary>' + (gradeRows || '<div class="text-[9px] text-slate-600 pl-3">no decisions</div>') + '</details>';
+    }).join('');
+    // Open state lives on PRT so mid-hand re-renders don't snap the panel shut
+    const sessionPanel =
+        '<details' + (PRT.sessionOpen ? ' open' : '') + ' class="bg-slate-900/40 border border-slate-800 rounded-2xl p-3 mt-1">' +
+            '<summary data-prt="session-toggle" class="text-[10px] text-slate-500 font-bold uppercase tracking-widest cursor-pointer select-none">' +
+                'Session · ' + (sess.handsPlayed || 0) + ' hands · VPIP ' + vp + ' · PFR ' + pf + ' · accuracy ' + acc +
+            '</summary>' +
+            '<div class="mt-1">' + (histRows || '<p class="text-[10px] text-slate-600">Hand history appears here.</p>') + '</div>' +
+        '</details>';
+
+    body.innerHTML = header + felt + actionArea + gradeLine + sessionPanel + popup;
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +514,16 @@ function PRT_onClick(e) {
 
     if (kind === 'leave') {
         PRT_leave();
+    } else if (kind === 'seat') {
+        PRT.inspect = el.dataset.vid;
+        PRT_render();
+    } else if (kind === 'popup-close') {
+        PRT.inspect = null;
+        PRT_render();
+    } else if (kind === 'session-toggle') {
+        e.preventDefault();
+        PRT.sessionOpen = !PRT.sessionOpen;
+        PRT_render();
     } else if (kind === 'speed') {
         const order = ['slow', 'normal', 'fast'];
         PRT.speed = order[(order.indexOf(PRT.speed) + 1) % order.length];
