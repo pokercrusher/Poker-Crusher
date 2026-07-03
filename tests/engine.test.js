@@ -1551,3 +1551,87 @@ describe('Poker Room — turn and river barrel grading', () => {
         expect(g.explanation).not.toContain('%');   // heuristic, no false authority
     });
 });
+
+// =============================================================================
+// Poker Room — defender grading (hero called preflop, faces the c-bet)
+// =============================================================================
+
+describe('Poker Room — defend vs c-bet grading', () => {
+
+    // Heads-up SRP: villain BTN opened, hero BB called; villain c-bets the flop
+    function defendSpot(heroCards, board, extraHist) {
+        const street = board.length === 3 ? 'flop' : board.length === 4 ? 'turn' : 'river';
+        return {
+            seats: [
+                null, null, null, null, null, null,
+                { index: 6, label: 'BTN', isHero: false, folded: false, allIn: false, stackBB: 95,
+                  holeCards: cards2('9', 'c', '8', 'c') },
+                null,
+                { index: 8, label: 'BB', isHero: true, folded: false, allIn: false, stackBB: 95,
+                  holeCards: heroCards },
+            ],
+            heroSeatIndex: 8,
+            preflopContext: { heroPos: 'BB', opener: 'BTN', threeBettor: null, callers: ['BB'], limpers: [], potStructure: 'SRP' },
+            gameState: {
+                potBB: 5, street, board,
+                streetState: { street, betMadeThisStreet: true, lastRaiseBB: 2,
+                               actions: [
+                                   { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+                                   { seatLabel: 'BTN', action: 'bet',   sizingBB: 2 },
+                               ],
+                               committedBB: { BTN: 2, BB: 0 } },
+                streetHistory: Object.assign({
+                    preflop: [
+                        { seatLabel: 'BTN', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'BB',  action: 'call',  sizingBB: 1.5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                }, extraHist || {}),
+            },
+        };
+    }
+
+    it('folding top pair to a flop c-bet grades as an error (V2 wording)', () => {
+        const hand = defendSpot(cards2('A', 'h', '7', 's'),
+            [C('A', 'd'), C('9', 's'), C('3', 'c')]); // top pair
+        const g = PROD.PR_gradeHeroAction(hand, 'fold', 0);
+        expect(g.explanation).toContain('%');
+        expect(g.grade).toBe('error'); // top pair never folds to one c-bet
+        const g2 = PROD.PR_gradeHeroAction(hand, 'call', 0);
+        expect(g2.grade).not.toBe('error');
+    });
+
+    it('folding air to a flop c-bet grades correct', () => {
+        const hand = defendSpot(cards2('Q', 'h', '5', 's'),
+            [C('A', 'd'), C('9', 's'), C('3', 'c')]); // queen-high air
+        const g = PROD.PR_gradeHeroAction(hand, 'fold', 0);
+        expect(g.explanation).toContain('%');
+        expect(g.grade).toBe('correct');
+    });
+
+    it('turn defend after calling the flop c-bet uses the turn defend table', () => {
+        const hand = defendSpot(cards2('A', 'h', '7', 's'),
+            [C('A', 'd'), C('9', 's'), C('3', 'c'), C('2', 'h')],
+            { flop: [
+                { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+                { seatLabel: 'BTN', action: 'bet',   sizingBB: 2 },
+                { seatLabel: 'BB',  action: 'call',  sizingBB: 2 },
+            ] });
+        const g = PROD.PR_gradeHeroAction(hand, 'call', 0);
+        expect(g.explanation).toContain('%');
+        expect(g.explanation).toContain('turn');
+        expect(g.grade).not.toBe('error'); // top pair continues vs second barrel
+    });
+
+    it('facing a raise war (not a single c-bet) falls back to the heuristic', () => {
+        const hand = defendSpot(cards2('A', 'h', '7', 's'),
+            [C('A', 'd'), C('9', 's'), C('3', 'c')]);
+        hand.gameState.streetState.actions = [
+            { seatLabel: 'BB',  action: 'bet',   sizingBB: 2 },
+            { seatLabel: 'BTN', action: 'raise', sizingBB: 6 },
+        ];
+        hand.gameState.streetState.committedBB = { BTN: 6, BB: 2 };
+        const g = PROD.PR_gradeHeroAction(hand, 'call', 0);
+        expect(g.explanation).not.toContain('%');
+    });
+});
