@@ -26,206 +26,62 @@
 - Hero decision is graded vs GTO; no bankroll, no persistence beyond SR tracking
 - When hero folds → hand ends immediately (no spectator mode)
 
-## Planned Feature: Play vs AI Mode ("Poker Room")
+## Poker Room — BUILT (2026-07-03)
 
-### What It Is
-A separate, non-graded mode where the user plays real poker hands against AI opponents at a persistent table. Focus on experience/immersion, not GTO correctness scoring.
+The Play-vs-AI mode is live. Passes 1–5 and 7 are shipped; Pass 6 polish
+(card-flip/chip animations) is deliberately absorbed into the state-driven
+renderer and mostly unnecessary.
 
-### Core Differences from Full Hand Trainer
-| Trainer | Play vs AI |
-|---------|-----------|
-| Collapses to 2-player postflop | Full multi-player postflop |
-| Grades vs GTO | Lightweight accuracy indicator (non-blocking) |
-| Hand ends when hero folds | Spectator mode continues hand |
-| No persistent bankroll | Persistent bankroll + stacks |
-| GTO villains only | 6 AI archetypes |
-| No named seats | Custom names, avatars, types per seat |
+### Files
+| File | Purpose |
+|------|---------|
+| `poker-room.js` (~1500 LOC) | Engine: multi-round preflop actor loop, hand-strength-gated postflop AI, kicker-aware 5-card showdown (`_PR_rank5`), side pots, archetype preflop score gates, persistence (`pc_poker_room_v1`), `PR_buildHandSeatsRotated` |
+| `poker-room-ui.js` (~330 LOC) | Lobby: bankroll, stake chips + buy-in slider, table size (players incl. hero), type-mix editor, hero profile + villain seat editor, study-mode toggle |
+| `poker-room-table.js` (~550 LOC) | Live table: state-driven renderer + ONE cancellable async loop per hand (no setTimeout choreography), speed scalar, spectator = same loop, settlement, rebuy, villain popups, session panel |
 
-### AI Archetypes (extend `PLAYER_TYPE_RANGE_PROFILES` in ranges.js)
-| Type | Preflop | Postflop |
-|------|---------|---------|
-| NIT | Top 10%, folds to 3-bets | Low c-bet, folds to aggression |
-| TAG | Top 18%, solid 3-bet | Standard |
-| LAG | Top 28%, wide 3-bet/squeeze | High c-bet, barrels, bluffs |
-| FISH | Top 50%+, calls 3-bets loose | Calls down, rarely bluffs |
-| MANIAC | 40%+, always 3-bets | Very high aggression, random bluffs |
-| AGGRO | Top 25%, 3-bet light | High c-bet, check-raise often |
+### Architecture decisions (deviations from the original 7-pass spec)
+- **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids
+  v1..vN). Each hand `PR_buildHandSeatsRotated` deals position labels clockwise
+  around fixed physical players; offset++ moves the button. Hero profile
+  (name + avatar) persists in room state.
+- **State-driven table**: every engine action → full re-render from state.
+  Speed (slow/normal/fast, persisted) is one delay scalar. A token cancels
+  stale loops. Spectator mode after hero folds is the same loop.
+- **Villain types hidden** in lobby/table; revealed only in the tap-a-seat
+  popup alongside live VPIP/PFR — reading opponents is the gameplay.
+- **Study mode** (opt-in, room state): graded preflop decisions at the table
+  feed the trainer SR queue via `buildSRKey` — errors → 'Again' (become review
+  cards), correct → 'Good' (real play maintains intervals), mixed skipped.
+  Spot metadata rides on `heroGrades[].spot` = {scenario, heroPos, oppPos, hand}.
+- Chip movement has ONE choke point (`_PR_applyAction`): calls/limps derive
+  from facing amount, commitments clamp at stack → all-in, conservation is
+  property-tested (300 random hands/run).
 
-**Preflop:** frequency scalar multipliers on GTO ranges (Pass 2).
-**Postflop:** hand strength gates action first; archetype frequencies modify within realistic bounds.
-- Strong hands (SET, TWO_PAIR+, OVERPAIR) never fold to a single bet — archetype controls HOW they continue
-- Weak/air hands are where archetype bluff/fold frequencies apply
-- This mirrors the existing preflop logic: ranges set hard limits, frequencies fine-tune within them
+### Engine invariants (tests/engine.test.js, ~125 tests, run vs PRODUCTION code)
+- Tests load real files via `tests/helpers/load-production.js` (node:vm).
+  NEVER copy production functions into tests — a drifted copy once masked a
+  showdown that awarded no pots.
+- Conservation property test + kicker battles + split pots + side pots +
+  walk/BB-option + 3-bet re-act + archetype gates + persistence round-trips.
 
-### Accuracy Feedback (non-intrusive)
-- After each hero decision: small indicator (✓ / ~ / ✗) based on GTO assessment
-- Does NOT pause gameplay — hero can ignore it
-- Tap/click indicator for one-line explanation
-- End-of-hand "Review Hand" panel shows all decisions with assessment
-- Session stats bar tracks running accuracy % across all decisions
-- Pot odds + equity estimate always visible in action controls (live math context)
-- No spaced repetition — spots are unique, SR doesn't apply here
+### Remaining Poker Room work
+- Pass 6 cosmetic polish: card-flip animation, chip-slide to winner (optional).
+- Postflop grading depth: replace the tier heuristic with POSTFLOP_STRATEGY_V2
+  lookups where heads-up-equivalent spots exist.
+- Betting completeness (audit §5.4 leftovers): min-raise rule, uncalled-bet
+  refund fairness for undercall all-ins, side-pot eligibility for partial calls.
+- Named villain profiles persisting across sessions (optional Pass 7 ext).
 
-### New Engine File: `poker-room.js` (~750 LOC)
-**Naming:** All functions prefixed `PR_`.
-**Reused globals from sim.js (do not rewrite):**
-- `_freshDeck`, `_shuffle`, `_dealBoardCards`, `_cardsToHandNotation`, `_buildCommittedBB`, `_deepCopy`
-- `_resolveVillainPreflopAction`, `FULL_TABLE_POSITIONS`
-**Reused globals from ranges.js:**
-- `evaluateRawHand` (ranges.js:3133) — takes `(heroCards, boardCards)` both `{rank,suit}[]`, returns `{rank:1–9, label}`
-- `classifyFlopHand`, `classifyTurnHand`, `classifyRiverHand`, `checkRangeHelper`, `RANKS`
-**Reused from engine.js:**
-- `computeCorrectAction` — used by `PR_gradeHeroAction` for preflop grading
+## Trainer notes (2026-07-02 fixes)
+- `isTerminal` = hero folded OR <2 active (NOT "any fold").
+- Villains can 3-bet hero's open in FULL_TABLE; hero re-acts via
+  `preflop_vs3bet` node; hero-call → CALL_3BP lane when supported.
+- Cold-vs-3bet grades vs premium heuristic (QQ+/AK), not opener ranges.
+- Calls (hero + villain) pay maxCommitted − own committed, never the raiser's
+  incremental size.
 
-**Known Pass 1 limitation:** `evaluateRawHand` returns hand category (rank 1–9) but no kicker data.
-Tiebreakers within same category use simple high-card hole card comparison. Full kicker comparison deferred to a later pass.
-
-### Persistence Schema (`pc_poker_room_v1` in localStorage)
-```js
-{
-  bankroll: 500.00,        // dollars, persists across sessions
-  stake: '1/2',
-  tableConfig: {
-    seats: [
-      { name: 'Rocky', type: 'NIT', avatar: 'bear', stackBB: 100 },
-      // 7 more villain seats
-    ]
-  },
-  sessionHistory: [{ date, handsPlayed, netBB, netDollars, stake }],
-  allTimeStats: { handsPlayed, biggestWin, biggestLoss, totalNetBB }
-}
-```
-
-### Confirmed Design Decisions
-
-**Table size:** Configurable — player selects number of seats (2–9) in the lobby before sitting down. Defaults to 9. Seat coords and deal order scale to active seat count. Position labels always assigned from full 9-seat set (BTN, CO, HJ, etc.) trimmed to the selected count.
-
-**Antes:** Not in v1.
-
-**Buy-in:** Player chooses within a stake-scaled range (e.g. 40–200BB). Prompted on sit-down.
-
-**Bankroll:** Single global bankroll in dollars. Persists across sessions. Default starting bankroll: $1,000. When hero busts → prompt to rebuy (deducted from bankroll) or top up bankroll.
-
-**Villain stacks:** Do NOT persist between sessions. On new session, randomize starting stacks realistically (e.g. 60–150BB range) — not all 100BB. No per-villain persistence across sessions (keep it simple).
-
-**Hero seat:** Fixed physical seat position (same as existing sim.js/ui.js convention). No seat selection in lobby.
-
-**Between hands:** Auto-deal after a short pause (~2s) — no tap-to-deal required. Keeps the table feeling live.
-
-**Showdown / muck rules:** Realistic. Called hand must show; uncalled hand can muck. Winner shows if everyone folds to them. Cards shown in last-aggressor order at showdown.
-
-**Speed of play:** Global configurable speed slider (Slow / Normal / Fast) affecting ALL action animations — preflop, postflop, and spectator alike.
-
-**AI player types:**
-- Default: fully random assignment across all archetypes on each new table.
-- Player can optionally adjust the **type distribution** before sitting down — simple controls to weight certain archetypes higher (e.g. more FISH, fewer NITs). No named presets.
-- Types are NOT visible on the table by default — player clicks a seat to inspect that villain (popup showing name, avatar, player type, session stats).
-- Live VPIP/PFR stats shown in the per-seat popup only (not always-visible on table).
-
-**UI placement:** New top-level tab — "Poker Room" — alongside Train Now, Daily Run, Challenge Mode.
-
-**Buy-in ranges (standard casino):**
-| Stake | Min | Max |
-|-------|-----|-----|
-| 1/2 | $100 (50BB) | $300 (150BB) |
-| 1/3 | $100 (~33BB) | $500 (~167BB) |
-| 2/5 | $200 (40BB) | $1,000 (200BB) |
-| 5/10 | $500 (50BB) | $2,000 (200BB) |
-
-Villain starting stacks randomized within each stake's range at session start (not all 100BB).
-
-**Villain names:** Randomly generated from a pool of ~40 poker-flavored names on new table creation. Pool includes names like: Rocky, Layla, The Prof, Shark, Lucky, Grinder, Tex, Ace, Diamond, Cowboy, Slick, Maverick, Blaze, Dutch, Vega, Lola, Ghost, Stone, Remy, Duke, Sal, Monty, Chip, Ringo, Dex, Nova, Cash, Rio, Bear, Fox, Hawk, Cruz, Nate, Jules, Priest, Dagger, Smoke, Frost, King, Rook. Player can rename any villain in the seat editor.
-
-### UI Sections
-- **Poker Room tab**: Top-level nav entry point
-- **Lobby**: Stake selector, optional type distribution editor, bankroll display, "Sit Down"
-- **Table**: 9-seat view, villain names/avatars/stacks visible; click any seat → popup with player type, avatar, VPIP/PFR for session
-- **Action controls**: Hero fold/check/call/bet/raise buttons + sizing slider + pot odds display
-- **Spectator**: After hero folds, remaining action animates to completion; realistic showdown/muck reveal
-- **Hand History Panel**: Collapsible, last 10 hands with result summary
-- **Session Stats Bar**: Hands, net BB, net $, hero VPIP/PFR, decision accuracy %
-
-### Reused Existing Pieces
-- `_resolveVillainPreflopAction()` — preflop villain logic (sim.js:339)
-- `classifyFlopHand()` / `classifyTurnHand()` / `classifyRiverHand()` — villain hand eval (ranges.js)
-- `evaluateRawHand()` — showdown hand category (ranges.js:3133)
-- `computeCorrectAction()` — hero preflop grading (engine.js)
-- `STAKE_PRESETS` — dollar/BB conversion
-- `animateChip()`, `showActionBadge()` — spectator animations
-- `SEAT_COORDS_DESKTOP/MOBILE` — seat positioning
-- `safeGet()` / `safeSet()` — storage helpers
-
----
-
-## Implementation Passes
-
-### Pass 1 — Core Engine (`poker-room.js`, ~750 lines)
-Dealing, preflop loop, multi-player street resolver, postflop villain AI (hand-strength-gated + archetype frequencies), showdown evaluator with side pots, spectator runner, hero accuracy grading. No UI. Fully testable in isolation.
-
-**Functions to build:**
-- `PR_createHand(config)` — entry point, deals all 9 seats in position order from left of dealer
-- `PR_runPreflopToHero(prHand)` — runs villain preflop actions until hero's turn
-- `PR_resolveVillainPreflopAction(seat, tableState, playerType)` — delegates to sim.js:339, stub for Pass 2 archetypes
-- `PR_applyHeroAction(prHand, action, sizingBB)` — records hero action, grades it, advances state
-- `PR_applyVillainAction(prHand)` — resolves one villain action, advances actingIndex
-- `PR_resolveVillainPostflopAction(seat, prHand)` — hand-strength-gated decisions with archetype freq tables
-- `PR_isStreetComplete(prHand)` — checks if all active seats have acted
-- `PR_advanceStreet(prHand)` — flushes street, deals board cards, resets state
-- `PR_evalShowdown(prHand)` — evaluates all hands, builds side pots, assigns winners, applies muck rules
-- `PR_evalBestHand(holeCards, board)` — wraps evaluateRawHand, returns {rank, label, tiebreaker}
-- `PR_runSpectatorStreets(prHand, onAction, speedMs)` — async loop after hero folds
-- `PR_resolveOutcome(prHand)` — uncontested win (everyone else folded)
-- `PR_gradeHeroAction(prHand, action, sizingBB)` — returns {grade, explanation} using computeCorrectAction preflop, equity logic postflop
-
-**Constants:**
-- `PR_POSITIONS` — seat order array
-- `PR_STAKE_CONFIG` — min/max buy-in per stake
-- `PR_ARCHETYPE_POSTFLOP` — frequency tables per archetype (applied within hand-strength tiers only)
-
-**Script tag:** Add `<script src="poker-room.js"></script>` after sim.js in index.html.
-
-**Tests to add (tests/engine.test.js):**
-1. 18 distinct cards dealt across 9 seats, no duplicates
-2. Hero cards are at their seat position in deal order, not dealt first
-3. Preflop loop completes without infinite loop across 100 random hands
-4. `PR_isStreetComplete` false mid-action, true after all seats resolved
-5. Flop board has exactly 3 cards not in any seat's hole cards
-6. `PR_evalBestHand` ranks flush > straight > trips for known inputs
-7. Split pot when two players hold identical 5-card hands
-8. Side pot: all-in player at 30BB wins only main pot
-9. `heroNetBB` = -0.5 when hero folds SB preflop without acting
-10. `PR_gradeHeroAction` returns 'error' when hero folds pocket aces preflop
-
-**Key design rule for postflop villain AI:**
-Hand strength tiers gate the action floor; archetype frequencies tune within each tier:
-- NUT_VALUE (SF/quads/FH/flush/straight): always continues, never folds to single bet
-- STRONG (set/two pair/trips): always continues; archetype controls bet vs check-raise
-- MEDIUM (overpair/top pair): almost always continues; archetype affects aggression level
-- THIN (second/third pair): archetype-driven; NIT leans fold to raise, FISH calls down
-- WEAK (underpair/air/overcards): archetype-driven bluff or fold
-- DRAW (FD/OESD/gutshot): equity vs pot odds first, archetype modifies semi-bluff frequency
-
-### Pass 2 — AI Archetypes (`ranges.js`, ~250 lines)
-Add NIT/TAG/LAG/FISH/MANIAC/AGGRO preflop range profiles to `PLAYER_TYPE_RANGE_PROFILES`. Scalar multiplier system on GTO open ranges per position (NIT=0.6×, TAG=0.9×, LAG=1.35×, FISH=2.0×, MANIAC=1.8×, AGGRO=1.2×). Wire scalars into `PR_resolveVillainPreflopAction`. Each archetype also has modified 3-bet/call/fold frequencies vs opens.
-
-### Pass 3 — Persistence (~250 lines)
-`pc_poker_room_v1` localStorage schema (see above). Bankroll management: buy-in deducted on sit-down, winnings/losses applied after each hand, bust detection → prompt or auto-rebuy toggle. Seat config save/load. Session history append. Per-seat VPIP/PFR accumulation each hand. Random villain name generation from pool on new table.
-
-### Pass 4 — Lobby UI (~350 lines)
-New "Poker Room" nav tab in index.html alongside existing tabs. Lobby view: stake selector (1/2·1/3·2/5·5/10), bankroll display, type distribution editor (archetype weight controls, defaults to equal), seat editor (name + avatar per villain — avatar chosen from ~10 options), Sit Down button that validates bankroll vs buy-in range.
-
-### Pass 5 — Table + Action UI (~450 lines)
-Full 9-seat table view reusing `SEAT_COORDS_DESKTOP/MOBILE`. Villain name/avatar/stack displayed at each seat. Hero action buttons (fold/check/call/bet/raise) + sizing slider + pot odds always visible. Wire engine functions to UI: button clicks call `PR_applyHeroAction`, then drive villain responses via `PR_applyVillainAction` loop, then `PR_advanceStreet`. Hand flows end-to-end.
-
-### Pass 6 — Spectator + Showdown UI (~350 lines)
-Wire `PR_runSpectatorStreets` to `animateChip` / `showActionBadge`. Card flip animation reveals villain hole cards at showdown per muck rules. Winning seat gets pot chip animation. Speed slider (Slow 1200ms / Normal 700ms / Fast 300ms) controls `speedMs` param. Auto-advance to next hand after 3s, or "Next Hand" button. All-in runout shows remaining board cards dealt face-up.
-
-### Pass 7 — History, Stats + Polish (~350 lines)
-Collapsible hand history panel (last 10 hands: position, result, net BB). Session stats bar: hands played, net BB, net $, hero VPIP%, hero PFR%, decision accuracy %. Per-seat click popup: villain name, avatar, player type, session VPIP/PFR over N hands. Accuracy indicator (✓/~/✗) displayed after each hero decision — tap for one-line explanation. End-of-hand "Review Hand" collapsible showing all hero decisions with grades. Optional Pass 7 extension: save named villain profiles that persist across sessions with cumulative stats.
-
----
-
-**Total estimated scope: ~2,750 lines across 7 passes.**
-Passes 1–3: pure logic/data, no UI.
-Passes 4–7: front-end.
-Playable (unpolished) after Pass 5.
+## Deployment checklist additions
+- Rebuild `tailwind.min.css` whenever new utility classes appear in ANY js/html
+  (`npx @tailwindcss/cli -i src/input.css -o tailwind.min.css --minify`).
+- GitHub Pages deploys can wedge (build ok, deploy queued forever): re-save
+  Settings → Pages source, then push any commit.
