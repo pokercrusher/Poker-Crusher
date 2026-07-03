@@ -671,7 +671,7 @@ function formatDuration(ms) {
 function hideAllScreens() {
     const ids = [
         'menu-screen','config-screen','trainer-screen','stats-screen','settings-screen',
-        'challenge-screen','library-screen','daily-run-screen',
+        'challenge-screen','library-screen','daily-run-screen','poker-room-screen',
         // end-state screens that can persist across mode transitions
         'review-preview-screen','review-complete-screen','session-summary-screen'
     ];

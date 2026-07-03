@@ -104,6 +104,20 @@ window.addEventListener('storage', (e) => {
 // ranges.js and cloud.js have already executed at this point.
 
 /**
+ * escapeHtml — escape a user-derived string for safe interpolation into
+ * innerHTML templates. Use for ANY text a user can type (e.g. Poker Room
+ * villain names). Cheap enough to use unconditionally.
+ */
+function escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
  * checkRangeHelper — canonical definition.
  * Returns true if `hand` (e.g. 'AKs') is in the given range `list` (array of range tokens).
  * Moved here from ui.js; ui.js retains a one-line alias for backward compat.
