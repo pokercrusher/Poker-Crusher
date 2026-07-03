@@ -77,7 +77,7 @@ const EXPORT_NAMES = [
     'PR_randomVillainNames', 'PR_randomArchetype', 'PR_randomVillainStackBB',
     'PR_generateTableConfig', 'PR_buyIn', 'PR_applySessionHandResult',
     'PR_isBusted', 'PR_rebuy', 'PR_endSession', 'PR_topUpBankroll',
-    'PR_accumulateSeatStats', 'PR_STORAGE_KEY',
+    'PR_accumulateSeatStats', 'PR_STORAGE_KEY', 'PR_buildHandSeats',
 ];
 
 let cached = null;

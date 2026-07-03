@@ -253,6 +253,7 @@ function PR_createHand(config) {
             isHero:       pos === heroPos,
             type:         cfg.type || 'GTO',
             name:         cfg.name || pos,
+            villainId:    cfg.villainId || null, // stable id across hands (positions rotate)
             stackBB:      pos === heroPos ? heroStackBB : (cfg.stackBB || 100),
             holeCards:    null,
             handNotation: null,
@@ -1198,11 +1199,14 @@ const PR_VILLAIN_NAME_POOL = [
 
 const PR_ARCHETYPE_KEYS = ['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO'];
 
+const PR_HERO_NAME_MAX = 14;
+
 function PR_defaultRoomState() {
     return {
         version: 1,
         bankroll: PR_DEFAULT_BANKROLL,
         stake: '1/2',
+        heroProfile: { name: 'You', avatar: '😎' },
         tableConfig: null,          // built on sit-down via PR_generateTableConfig
         sessionHistory: [],         // newest first: { date, handsPlayed, netBB, netDollars, stake }
         allTimeStats: { handsPlayed: 0, biggestWin: 0, biggestLoss: 0, totalNetBB: 0 },
@@ -1220,7 +1224,16 @@ function PR_loadRoomState() {
         bankroll: (typeof raw.bankroll === 'number' && isFinite(raw.bankroll) && raw.bankroll >= 0)
             ? raw.bankroll : def.bankroll,
         stake: PR_STAKE_CONFIG[raw.stake] ? raw.stake : def.stake,
-        tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.seats)) ? raw.tableConfig : null,
+        heroProfile: (raw.heroProfile && typeof raw.heroProfile.name === 'string')
+            ? {
+                name:   raw.heroProfile.name.slice(0, PR_HERO_NAME_MAX) || def.heroProfile.name,
+                avatar: (typeof raw.heroProfile.avatar === 'string' && raw.heroProfile.avatar)
+                    ? raw.heroProfile.avatar : def.heroProfile.avatar,
+              }
+            : def.heroProfile,
+        // Table config holds VILLAINS only — hero is always the remaining seat.
+        // (Older saves stored a 'seats' array including all positions; discard those.)
+        tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.villains)) ? raw.tableConfig : null,
         sessionHistory: Array.isArray(raw.sessionHistory)
             ? raw.sessionHistory.slice(0, PR_SESSION_HISTORY_CAP) : [],
         allTimeStats: (raw.allTimeStats && typeof raw.allTimeStats === 'object')
@@ -1275,23 +1288,25 @@ function PR_randomVillainStackBB(stake) {
 }
 
 // Build a fresh table: hero seat + villains with random names/types/stacks.
-// seatCount: 2–9 (default 9). Positions assigned from the full set, trimmed.
+// Build a fresh table. seatCount (2–9) is TOTAL players INCLUDING hero, so
+// this generates seatCount−1 villains. Villains carry stable ids (not
+// position labels) because positions rotate with the button every hand;
+// per-hand seat assignment happens at deal time.
 // typeWeights: optional archetype weight map for the distribution editor.
 function PR_generateTableConfig(stake, seatCount, typeWeights) {
     const count = Math.min(9, Math.max(2, seatCount || 9));
-    const labels = PR_POSITIONS.slice(0, count);
-    const names = PR_randomVillainNames(count);
-    const seats = labels.map(function(label, i) {
+    const names = PR_randomVillainNames(count - 1);
+    const villains = names.map(function(name, i) {
         return {
-            label,
-            name:    names[i],
+            id:      'v' + (i + 1),
+            name,
             type:    PR_randomArchetype(typeWeights),
             avatar:  'default',
             stackBB: PR_randomVillainStackBB(stake),
             sessionStats: { handsDealt: 0, vpipHands: 0, pfrHands: 0 },
         };
     });
-    return { stake, seats };
+    return { stake, seatCount: count, villains };
 }
 
 // ---------------------------------------------------------------------------
@@ -1387,8 +1402,31 @@ function PR_topUpBankroll(state) {
 }
 
 // ---------------------------------------------------------------------------
-// Per-seat VPIP / PFR accumulation
-// Call once per completed hand with the hand's preflop action log.
+// PR_buildHandSeats — per-hand seat assignment.
+// Positions rotate with the button, so each hand: hero takes heroPos, and the
+// villains fill the remaining position labels in table order. Returns the
+// seats config array for PR_createHand; each villain seat carries its stable
+// villainId so session stats can follow the player, not the position.
+// ---------------------------------------------------------------------------
+function PR_buildHandSeats(tableConfig, heroProfile, heroPos, heroStackBB) {
+    const labels = PR_POSITIONS.slice(0, tableConfig.seatCount);
+    if (!labels.includes(heroPos)) heroPos = labels[0];
+    let v = 0;
+    return labels.map(function(label) {
+        if (label === heroPos) {
+            return { label, name: (heroProfile && heroProfile.name) || 'You', type: 'HERO', stackBB: heroStackBB };
+        }
+        const villain = tableConfig.villains[v++];
+        return villain
+            ? { label, villainId: villain.id, name: villain.name, type: villain.type, stackBB: villain.stackBB }
+            : null;
+    }).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Per-villain VPIP / PFR accumulation
+// Call once per completed hand with the hand's preflop action log. Villains
+// are matched by villainId (positions rotate, ids don't).
 // VPIP: voluntarily put money in preflop (call/limp/raise — blinds excluded).
 // PFR:  raised preflop (raise/3bet/4bet).
 // ---------------------------------------------------------------------------
@@ -1396,12 +1434,12 @@ function PR_accumulateSeatStats(tableConfig, prHand) {
     if (!tableConfig || !prHand) return;
     const preflopActions = (prHand.gameState.streetHistory.preflop || [])
         .concat(prHand.gameState.street === 'preflop' ? prHand.gameState.streetState.actions : []);
-    tableConfig.seats.forEach(function(cfgSeat) {
-        const played = prHand.seats.some(s => s && s.label === cfgSeat.label);
-        if (!played) return;
-        const stats = cfgSeat.sessionStats || (cfgSeat.sessionStats = { handsDealt: 0, vpipHands: 0, pfrHands: 0 });
+    tableConfig.villains.forEach(function(villain) {
+        const seat = prHand.seats.find(s => s && s.villainId === villain.id);
+        if (!seat) return;
+        const stats = villain.sessionStats || (villain.sessionStats = { handsDealt: 0, vpipHands: 0, pfrHands: 0 });
         stats.handsDealt++;
-        const acts = preflopActions.filter(a => a.seatLabel === cfgSeat.label);
+        const acts = preflopActions.filter(a => a.seatLabel === seat.label);
         if (acts.some(a => ['call', 'limp', 'raise', '3bet', '4bet'].includes(a.action))) stats.vpipHands++;
         if (acts.some(a => ['raise', '3bet', '4bet'].includes(a.action))) stats.pfrHands++;
     });

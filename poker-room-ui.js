@@ -42,7 +42,7 @@ function PRUI_show() {
         PRUI.draft.tableConfig = PRUI.room.tableConfig && PRUI.room.tableConfig.stake === PRUI.draft.stake
             ? PRUI.room.tableConfig
             : PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights);
-        PRUI.draft.seatCount = PRUI.draft.tableConfig.seats.length;
+        PRUI.draft.seatCount = PRUI.draft.tableConfig.seatCount;
     }
     if (PRUI.draft.buyIn === null) {
         PRUI.draft.buyIn = PRUI_defaultBuyIn(PRUI.draft.stake, PRUI.room.bankroll);
@@ -91,10 +91,11 @@ function PRUI_lobbyHtml() {
             '">' + k + '</button>';
     }).join('');
 
-    // Seat count selector (2–9)
+    // Seat count selector (2–9 players, including hero)
     const seatOpts = [];
     for (let n = 2; n <= 9; n++) {
-        seatOpts.push('<option value="' + n + '"' + (n === PRUI.draft.seatCount ? ' selected' : '') + '>' + n + ' seats</option>');
+        seatOpts.push('<option value="' + n + '"' + (n === PRUI.draft.seatCount ? ' selected' : '') +
+            '>' + n + ' players (you + ' + (n - 1) + ')</option>');
     }
 
     // Type distribution editor
@@ -110,18 +111,33 @@ function PRUI_lobbyHtml() {
             '</div></div>';
     }).join('');
 
-    // Villain seat editor — player types are deliberately NOT shown here:
-    // reading your opponents is the gameplay. The mix editor shapes the
-    // distribution; individual types stay hidden until you've played them.
-    const seatRows = PRUI.draft.tableConfig.seats.map(function(seat, i) {
-        return '<div class="flex items-center gap-2 py-1.5 border-b border-slate-800/60">' +
-            '<button data-pr="avatar" data-idx="' + i + '" class="w-9 h-9 rounded-xl bg-slate-800 text-lg shrink-0" title="Change avatar">' +
-                (PRUI_AVATARS.includes(seat.avatar) ? seat.avatar : PRUI_AVATARS[i % PRUI_AVATARS.length]) +
+    // Your seat — pinned first, visually distinct. Profile persists with the room.
+    const hero = room.heroProfile;
+    const heroRow =
+        '<div class="flex items-center gap-2 py-2 px-2 -mx-2 rounded-xl bg-amber-500/10 border border-amber-500/30">' +
+            '<button data-pr="hero-avatar" class="w-9 h-9 rounded-xl bg-slate-800 text-lg shrink-0" title="Change your avatar">' +
+                escapeHtml(hero.avatar) +
             '</button>' +
             '<div class="flex-1 min-w-0">' +
-                '<input data-pr="name" data-idx="' + i + '" value="' + escapeHtml(seat.name) + '" maxlength="' + PRUI_NAME_MAX + '" ' +
+                '<input data-pr="hero-name" value="' + escapeHtml(hero.name) + '" maxlength="' + PRUI_NAME_MAX + '" ' +
+                    'class="w-full bg-transparent text-[13px] font-bold text-amber-200 outline-none border-b border-transparent focus:border-amber-500/50" />' +
+                '<div class="text-[9px] text-amber-500/70 font-bold uppercase tracking-wider">Your seat · buys in ' + Math.round(buyIn / cfg.bb) + 'bb</div>' +
+            '</div>' +
+            '<span class="text-[10px] font-black px-2 py-1 rounded-lg text-amber-300 bg-slate-950/60">YOU</span>' +
+        '</div>';
+
+    // Villain rows — no position labels (positions rotate with the button every
+    // hand) and no player types: reading your opponents is the gameplay. The
+    // mix editor shapes the distribution; who's who stays hidden.
+    const seatRows = PRUI.draft.tableConfig.villains.map(function(villain, i) {
+        return '<div class="flex items-center gap-2 py-1.5 border-b border-slate-800/60">' +
+            '<button data-pr="avatar" data-idx="' + i + '" class="w-9 h-9 rounded-xl bg-slate-800 text-lg shrink-0" title="Change avatar">' +
+                (PRUI_AVATARS.includes(villain.avatar) ? villain.avatar : PRUI_AVATARS[i % PRUI_AVATARS.length]) +
+            '</button>' +
+            '<div class="flex-1 min-w-0">' +
+                '<input data-pr="name" data-idx="' + i + '" value="' + escapeHtml(villain.name) + '" maxlength="' + PRUI_NAME_MAX + '" ' +
                     'class="w-full bg-transparent text-[13px] font-bold text-slate-200 outline-none border-b border-transparent focus:border-amber-500/50" />' +
-                '<div class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">' + seat.label + ' · ' + seat.stackBB + 'bb</div>' +
+                '<div class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">' + villain.stackBB + 'bb stack</div>' +
             '</div>' +
         '</div>';
     }).join('');
@@ -178,12 +194,13 @@ function PRUI_lobbyHtml() {
 
         // Table preview / seat editor
         '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
-            '<div class="flex items-center justify-between mb-1">' +
+            '<div class="flex items-center justify-between mb-2">' +
                 '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Your table</p>' +
-                '<button data-pr="shuffle" class="pc-btn-utility px-3 py-1.5 text-[11px]">↻ Shuffle table</button>' +
+                '<button data-pr="shuffle" class="pc-btn-utility px-3 py-1.5 text-[11px]">↻ Shuffle opponents</button>' +
             '</div>' +
-            seatRows +
-            '<p class="text-[9px] text-slate-600 mt-2">Tap an avatar to change it · tap a name to rename · player types stay hidden at the table</p>' +
+            heroRow +
+            '<div class="mt-1">' + seatRows + '</div>' +
+            '<p class="text-[9px] text-slate-600 mt-2">Tap an avatar to change it · tap a name to rename · seats rotate with the button, player types stay hidden</p>' +
         '</div>' +
 
         // Sit down
@@ -212,7 +229,7 @@ function PRUI_sessionHtml() {
         '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 text-center">' +
             '<div class="text-3xl mb-2">🛠️</div>' +
             '<p class="text-slate-300 font-bold text-sm">The table is being built</p>' +
-            '<p class="text-slate-500 text-[11px] mt-1 leading-snug">You’re bought in and your seat is saved. The live 9-seat table arrives in the next update — cash out any time and your chips return to your bankroll.</p>' +
+            '<p class="text-slate-500 text-[11px] mt-1 leading-snug">You’re bought in and your seat is saved. The live table arrives in the next update — cash out any time and your chips return to your bankroll.</p>' +
         '</div>' +
         '<button data-pr="cashout" class="w-full py-4 pc-btn-primary font-black">CASH OUT ' + PRUI_fmt$(s.stackBB * cfg.bb) + '</button>';
 }
@@ -243,10 +260,15 @@ function PRUI_onClick(e) {
         PRUI.draft.tableConfig = PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights);
         PRUI_render();
     } else if (kind === 'avatar') {
-        const seat = PRUI.draft.tableConfig.seats[parseInt(el.dataset.idx, 10)];
-        if (!seat) return;
-        const cur = PRUI_AVATARS.indexOf(seat.avatar);
-        seat.avatar = PRUI_AVATARS[(cur + 1) % PRUI_AVATARS.length];
+        const villain = PRUI.draft.tableConfig.villains[parseInt(el.dataset.idx, 10)];
+        if (!villain) return;
+        const cur = PRUI_AVATARS.indexOf(villain.avatar);
+        villain.avatar = PRUI_AVATARS[(cur + 1) % PRUI_AVATARS.length];
+        PRUI_render();
+    } else if (kind === 'hero-avatar') {
+        const cur = PRUI_AVATARS.indexOf(PRUI.room.heroProfile.avatar);
+        PRUI.room.heroProfile.avatar = PRUI_AVATARS[(cur + 1) % PRUI_AVATARS.length];
+        PR_saveRoomState(PRUI.room);
         PRUI_render();
     } else if (kind === 'topup') {
         PRUI.room = PR_topUpBankroll(PRUI.room);
@@ -275,8 +297,12 @@ function PRUI_onInput(e) {
     const el = e.target.closest('[data-pr]');
     if (!el) return;
     if (el.dataset.pr === 'name') {
-        const seat = PRUI.draft.tableConfig.seats[parseInt(el.dataset.idx, 10)];
-        if (seat) seat.name = el.value.slice(0, PRUI_NAME_MAX);
+        const villain = PRUI.draft.tableConfig.villains[parseInt(el.dataset.idx, 10)];
+        if (villain) villain.name = el.value.slice(0, PRUI_NAME_MAX);
+        // no re-render while typing — the input holds focus
+    } else if (el.dataset.pr === 'hero-name') {
+        PRUI.room.heroProfile.name = el.value.slice(0, PRUI_NAME_MAX) || 'You';
+        PR_saveRoomState(PRUI.room);
         // no re-render while typing — the input holds focus
     } else if (el.dataset.pr === 'buyin') {
         PRUI.draft.buyIn = parseInt(el.value, 10) || PRUI.draft.buyIn;

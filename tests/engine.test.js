@@ -1160,15 +1160,16 @@ describe('Poker Room — Pass 3 persistence', () => {
         expect(PROD.PR_isBusted(session)).toBe(false);
     });
 
-    it('table config: distinct names, valid archetypes, stacks in stake range', () => {
+    it('table config: hero excluded — N players means N−1 villains with distinct names/ids', () => {
         const cfg = PROD.PR_generateTableConfig('2/5', 9, null);
-        expect(cfg.seats.length).toBe(9);
-        const names = cfg.seats.map(x => x.name);
-        expect(new Set(names).size).toBe(9); // no duplicate names
-        cfg.seats.forEach(seat => {
-            expect(['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO']).toContain(seat.type);
-            expect(seat.stackBB).toBeGreaterThanOrEqual(40);  // $200 / $5
-            expect(seat.stackBB).toBeLessThanOrEqual(200);    // $1,000 / $5
+        expect(cfg.seatCount).toBe(9);
+        expect(cfg.villains.length).toBe(8); // hero takes the 9th seat
+        expect(new Set(cfg.villains.map(x => x.name)).size).toBe(8);
+        expect(new Set(cfg.villains.map(x => x.id)).size).toBe(8);
+        cfg.villains.forEach(v => {
+            expect(['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO']).toContain(v.type);
+            expect(v.stackBB).toBeGreaterThanOrEqual(40);  // $200 / $5
+            expect(v.stackBB).toBeLessThanOrEqual(200);    // $1,000 / $5
         });
     });
 
@@ -1180,38 +1181,63 @@ describe('Poker Room — Pass 3 persistence', () => {
         }
     });
 
-    it('seat count is clamped to 2–9 and trims positions from the full set', () => {
-        const six = PROD.PR_generateTableConfig('1/2', 6, null);
-        expect(six.seats.map(x => x.label)).toEqual(['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO']);
-        expect(PROD.PR_generateTableConfig('1/2', 1, null).seats.length).toBe(2);
-        expect(PROD.PR_generateTableConfig('1/2', 42, null).seats.length).toBe(9);
+    it('seat count is clamped to 2–9 players', () => {
+        expect(PROD.PR_generateTableConfig('1/2', 6, null).villains.length).toBe(5);
+        expect(PROD.PR_generateTableConfig('1/2', 1, null).villains.length).toBe(1);  // clamped to 2 players
+        expect(PROD.PR_generateTableConfig('1/2', 42, null).villains.length).toBe(8); // clamped to 9 players
     });
 
-    it('VPIP/PFR accumulate from a played hand', () => {
+    it('PR_buildHandSeats: hero takes heroPos, villains fill the rest by id', () => {
         const cfg = PROD.PR_generateTableConfig('1/2', 9, null);
-        // Minimal finished hand: UTG raised, BTN called, others folded
+        const seats = PROD.PR_buildHandSeats(cfg, { name: 'Slick Rick', avatar: '😎' }, 'BTN', 100);
+        expect(seats.length).toBe(9);
+        const heroSeat = seats.find(s => s.label === 'BTN');
+        expect(heroSeat.name).toBe('Slick Rick');
+        expect(heroSeat.villainId).toBeUndefined();
+        const villainSeats = seats.filter(s => s.label !== 'BTN');
+        expect(villainSeats.length).toBe(8);
+        expect(new Set(villainSeats.map(s => s.villainId)).size).toBe(8);
+        // and it feeds PR_createHand cleanly, tagging seats with villainId
+        const hr = PROD.PR_createHand({ heroPos: 'BTN', seats, heroStackBB: 100 });
+        expect(hr.seats[hr.heroSeatIndex].label).toBe('BTN');
+        expect(hr.seats.filter(s => s && s.villainId).length).toBe(8);
+    });
+
+    it('hero profile round-trips and survives corrupt data', () => {
+        const s = PROD.PR_defaultRoomState();
+        expect(s.heroProfile.name).toBe('You');
+        s.heroProfile = { name: 'Crusher', avatar: '🦈' };
+        PROD.PR_saveRoomState(s);
+        expect(PROD.PR_loadRoomState().heroProfile).toEqual({ name: 'Crusher', avatar: '🦈' });
+        PROD.PR_saveRoomState({ ...s, heroProfile: { name: 12345 } });
+        expect(PROD.PR_loadRoomState().heroProfile.name).toBe('You'); // fell back
+    });
+
+    it('VPIP/PFR follow the villain id, not the position', () => {
+        const cfg = PROD.PR_generateTableConfig('1/2', 9, null);
+        // Hero on the BTN this hand → villains v1..v8 fill UTG..CO, SB, BB
+        const seats = PROD.PR_buildHandSeats(cfg, { name: 'You' }, 'BTN', 100)
+            .map(s => ({ ...s, folded: false }));
         const prHand = {
-            seats: PROD.PR_POSITIONS.map((l, i) => ({ label: l, folded: !['UTG', 'BTN'].includes(l) })),
+            seats,
             gameState: {
                 street: 'showdown',
                 streetState: { street: 'showdown', actions: [] },
                 streetHistory: {
                     preflop: [
-                        { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 },
-                        { seatLabel: 'HJ',  action: 'fold',  sizingBB: 0 },
-                        { seatLabel: 'BTN', action: 'call',  sizingBB: 2.5 },
+                        { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 }, // v1
+                        { seatLabel: 'HJ',  action: 'fold',  sizingBB: 0 },   // v5
+                        { seatLabel: 'BB',  action: 'call',  sizingBB: 1.5 }, // v8
                     ],
                     flop: [], turn: [], river: [],
                 },
             },
         };
         PROD.PR_accumulateSeatStats(cfg, prHand);
-        const utg = cfg.seats.find(x => x.label === 'UTG');
-        const btn = cfg.seats.find(x => x.label === 'BTN');
-        const hj  = cfg.seats.find(x => x.label === 'HJ');
-        expect(utg.sessionStats).toEqual({ handsDealt: 1, vpipHands: 1, pfrHands: 1 });
-        expect(btn.sessionStats).toEqual({ handsDealt: 1, vpipHands: 1, pfrHands: 0 });
-        expect(hj.sessionStats).toEqual({ handsDealt: 1, vpipHands: 0, pfrHands: 0 });
+        const byId = id => cfg.villains.find(v => v.id === id);
+        expect(byId('v1').sessionStats).toEqual({ handsDealt: 1, vpipHands: 1, pfrHands: 1 });
+        expect(byId('v8').sessionStats).toEqual({ handsDealt: 1, vpipHands: 1, pfrHands: 0 });
+        expect(byId('v5').sessionStats).toEqual({ handsDealt: 1, vpipHands: 0, pfrHands: 0 });
     });
 
     it('session history is capped', () => {
