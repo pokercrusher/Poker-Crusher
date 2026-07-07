@@ -194,6 +194,16 @@ async function PRT_settle(myToken) {
         handNo: PRT.handNo,
         pos: heroLabel,
         cards: heroSeat.handNotation || '',
+        heroCards: (heroSeat.holeCards || []).slice(),
+        board: (hand.gameState.board || []).slice(),
+        potBB: (outcome.pots || []).reduce(function(a, p) { return a + p.amount; }, 0),
+        reveals: (outcome.showdown || [])
+            .filter(function(e) { return e.show && e.seatLabel !== heroLabel; })
+            .map(function(e) {
+                const seat = hand.seats.find(x => x && x.label === e.seatLabel);
+                return { name: seat ? seat.name : e.seatLabel, cards: e.holeCards || [],
+                         handLabel: e.handLabel || '' };
+            }),
         netBB: parseFloat(heroNet.toFixed(2)),
         grades: (hand.heroGrades || []).slice(),
     });
@@ -384,8 +394,8 @@ function PRT_render() {
     const header =
         '<div class="flex items-center justify-between">' +
             '<button data-prt="leave" class="pc-btn-utility px-3 py-2 text-xs">← Cash out</button>' +
-            '<div class="text-center">' +
-                '<p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Hand ' + PRT.handNo + ' · ' + escapeHtml(PRT.session.stake) + '</p>' +
+            '<div class="text-center" data-prt="session-toggle" style="cursor:pointer">' +
+                '<p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Hand ' + PRT.handNo + ' · ' + escapeHtml(PRT.session.stake) + ' · tap for log</p>' +
                 '<p class="text-[12px] font-black ' + (net >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' +
                     (net >= 0 ? '+' : '') + PRT_fmtBB(net) + ' · stack ' + PRT_fmtBB(PRT.session.stackBB) + '</p>' +
             '</div>' +
@@ -494,7 +504,22 @@ function PRT_render() {
     const pf = sess.heroHands > 0 ? Math.round(((sess.heroPfr || 0) / sess.heroHands) * 100) + '%' : '—';
     const acc = sess.decisions > 0 ? Math.round((sess.correctDecisions / sess.decisions) * 100) + '%' : '—';
     const histRows = PRT.history.map(function(h) {
-        const gradeRows = h.grades.map(function(g) {
+        const mini = function(cards) {
+            return (cards || []).map(function(cd) { return PRT_cardHtml(cd, true); }).join('');
+        };
+        const detail =
+            '<div class="flex items-center gap-2 pl-3 py-1">' +
+                '<span class="text-[8px] text-slate-500 font-bold uppercase">You</span>' + mini(h.heroCards) +
+                (h.board && h.board.length ? '<span class="text-[8px] text-slate-500 font-bold uppercase ml-1">Board</span>' + mini(h.board) : '') +
+                '<span class="text-[8px] text-slate-500 font-bold ml-1">pot ' + PRT_fmtBB(h.potBB || 0) + '</span>' +
+            '</div>' +
+            (h.reveals || []).map(function(r) {
+                return '<div class="flex items-center gap-2 pl-3 py-0.5">' +
+                    '<span class="text-[9px] text-slate-400 font-bold">' + escapeHtml(r.name) + '</span>' + mini(r.cards) +
+                    '<span class="text-[8px] text-indigo-300 font-bold">' + escapeHtml((r.handLabel || '').replace(/_/g, ' ')) + '</span>' +
+                '</div>';
+            }).join('');
+        const gradeRows = detail + h.grades.map(function(g) {
             const icon = g.grade === 'correct' ? '✓' : g.grade === 'mixed' ? '~' : '✗';
             const color = g.grade === 'correct' ? '#4ade80' : g.grade === 'mixed' ? '#fbbf24' : '#f87171';
             return '<div class="text-[9px] text-slate-500 leading-snug pl-3">' +
@@ -508,14 +533,18 @@ function PRT_render() {
                     (h.netBB >= 0 ? '+' : '') + PRT_fmtBB(h.netBB) + '</span>' +
             '</summary>' + (gradeRows || '<div class="text-[9px] text-slate-600 pl-3">no decisions</div>') + '</details>';
     }).join('');
-    // Open state lives on PRT so mid-hand re-renders don't snap the panel shut
-    const sessionPanel =
-        '<details' + (PRT.sessionOpen ? ' open' : '') + ' class="bg-slate-900/40 border border-slate-800 rounded-2xl p-3 mt-1">' +
-            '<summary data-prt="session-toggle" class="text-[10px] text-slate-500 font-bold uppercase tracking-widest cursor-pointer select-none">' +
-                'Session · ' + (sess.handsPlayed || 0) + ' hands · VPIP ' + vp + ' · PFR ' + pf + ' · accuracy ' + acc +
-            '</summary>' +
-            '<div class="mt-1">' + (histRows || '<p class="text-[10px] text-slate-600">Hand history appears here.</p>') + '</div>' +
-        '</details>';
+    // Session log renders as an overlay opened from the header (keeps the
+    // area under the action bar clean); open state lives on PRT so mid-hand
+    // re-renders don't snap it shut.
+    const sessionPanel = !PRT.sessionOpen ? '' :
+        '<div data-prt="session-toggle" style="position:fixed;inset:0;background:rgba(2,6,23,0.8);z-index:55;display:flex;align-items:flex-start;justify-content:center;padding:56px 16px 16px">' +
+            '<div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 w-full" style="max-width:384px;max-height:74vh;overflow-y:auto" onclick="event.stopPropagation()">' +
+                '<p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">' +
+                    'Session · ' + (sess.handsPlayed || 0) + ' hands · VPIP ' + vp + ' · PFR ' + pf + ' · accuracy ' + acc + '</p>' +
+                (histRows || '<p class="text-[10px] text-slate-600">Hand history appears here after your first hand.</p>') +
+                '<p class="text-[9px] text-slate-600 mt-2 text-center">tap outside to close</p>' +
+            '</div>' +
+        '</div>';
 
     body.innerHTML = header + felt + actionArea + gradeLine + sessionPanel + popup;
 }
@@ -537,7 +566,6 @@ function PRT_onClick(e) {
         PRT.inspect = null;
         PRT_render();
     } else if (kind === 'session-toggle') {
-        e.preventDefault();
         PRT.sessionOpen = !PRT.sessionOpen;
         PRT_render();
     } else if (kind === 'speed') {

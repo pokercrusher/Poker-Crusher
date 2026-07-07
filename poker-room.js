@@ -1212,6 +1212,14 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
 // the heuristic — never fake authority).
 // ---------------------------------------------------------------------------
 
+// Proxy positions without their own postflop trees onto the nearest family,
+// exactly as the trainer's LANE_FAMILY does: UTG1 plays like UTG, UTG2 like LJ.
+function _PR_proxyFamily(family) {
+    return family.split('_').map(function(seg) {
+        return seg === 'UTG1' ? 'UTG' : seg === 'UTG2' ? 'LJ' : seg;
+    }).join('_');
+}
+
 // True when this street's log is exactly "bettorLabel bet, other player(s) only called"
 function _PR_betWasCalled(actions, bettorLabel) {
     const aggressive = actions.filter(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
@@ -1246,12 +1254,13 @@ function _PR_gradeCbetV2(prHand, heroAction, heroSeat) {
         if (ctx.potStructure === 'SRP' && ctx.opener === heroSeat.label) {
             potType = 'SRP';
             family = heroSeat.label + '_vs_' + villain.label;
-        } else if (ctx.potStructure === '3BP' && ctx.threeBettor === heroSeat.label && street === 'flop') {
+        } else if (ctx.potStructure === '3BP' && ctx.threeBettor === heroSeat.label) {
             potType = '3BP';
             family = heroSeat.label + '_3BP_vs_' + villain.label;
         } else {
             return null;
         }
+        family = _PR_proxyFamily(family);
         const fi = POSTFLOP_PREFLOP_FAMILIES[family];
         if (!fi) return null;
 
@@ -1274,7 +1283,10 @@ function _PR_gradeCbetV2(prHand, heroAction, heroSeat) {
             if (board.length < 4 || !_PR_betWasCalled(hist.flop || [], heroSeat.label)) return null;
             heroHandClass = classifyTurnHand(heroHand, flop, board[3]);
             const turnFamily = classifyTurnCard(board[3], flop);
-            strat = POSTFLOP_TURN_STRATEGY['SRP|' + family + '|TURN|PFR|' + fi.positionState +
+            const turnReg = potType === '3BP'
+                ? (typeof POSTFLOP_3BP_TURN_STRATEGY !== 'undefined' ? POSTFLOP_3BP_TURN_STRATEGY : {})
+                : POSTFLOP_TURN_STRATEGY;
+            strat = turnReg[potType + '|' + family + '|TURN|PFR|' + fi.positionState +
                 '|TURN_CBET_DECISION|' + turnFamily + '|' + heroHandClass];
             betKey = 'bet50';
         } else {
@@ -1285,7 +1297,10 @@ function _PR_gradeCbetV2(prHand, heroAction, heroSeat) {
                 !_PR_betWasCalled(hist.turn || [], heroSeat.label)) return null;
             heroHandClass = classifyRiverHand(heroHand, flop, board[3], board[4]);
             const riverFamily = classifyRiverCard(board[4], board.slice(0, 4));
-            strat = POSTFLOP_RIVER_STRATEGY['SRP|' + family + '|RIVER|PFR|' + fi.positionState +
+            const riverReg = potType === '3BP'
+                ? (typeof POSTFLOP_3BP_RIVER_STRATEGY !== 'undefined' ? POSTFLOP_3BP_RIVER_STRATEGY : {})
+                : POSTFLOP_RIVER_STRATEGY;
+            strat = riverReg[potType + '|' + family + '|RIVER|PFR|' + fi.positionState +
                 '|RIVER_CBET_DECISION|' + riverFamily + '|' + heroHandClass];
             betKey = 'bet50';
         }
@@ -1337,7 +1352,7 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
         if (aggressive.length !== 1 || aggressive[0].seatLabel !== villain.label ||
             aggressive[0].action !== 'bet') return null;
 
-        const family = villain.label + '_vs_' + heroSeat.label; // family is keyed PFR_vs_caller
+        const family = _PR_proxyFamily(villain.label + '_vs_' + heroSeat.label); // keyed PFR_vs_caller
         const fi = POSTFLOP_PREFLOP_FAMILIES[family];
         if (!fi) return null;
 
@@ -1421,14 +1436,14 @@ function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
         if (tier === 'MEDIUM' && heroAction === 'fold') {
             return { grade: 'mixed', explanation: `Folding ${handClass} is marginal — usually a call or raise here.` };
         }
-        return { grade: 'mixed', explanation: `Postflop GTO data not yet available for multiway spots.` };
+        return { grade: 'mixed', explanation: `No strategy tree for this exact line — graded by hand-strength heuristic.` };
     }
 
     // No bet facing
     if ((tier === 'NUT_VALUE' || tier === 'STRONG') && heroAction === 'check') {
         return { grade: 'mixed', explanation: `Checking ${handClass} is fine for deception but GTO usually bets for value.` };
     }
-    return { grade: 'mixed', explanation: `Postflop GTO data not yet available for multiway spots.` };
+    return { grade: 'mixed', explanation: `No strategy tree for this exact line — graded by hand-strength heuristic.` };
 }
 
 // ===========================================================================
