@@ -44,6 +44,18 @@ A regression test pins the count at exactly 90 so any edit is visible.
    vs CO/BTN/SB, tight-linear (and correspondingly tight 4-bet defense) vs
    UTG–HJ.
 
+### Resolution (2026-07-04) — option 3 implemented
+
+- **Vs early opens (UTG–HJ)**: vs-4-bet defense tightened to match the
+  QQ+/AK 3-bet ranges — 5-bet KK+/AKs/AKo, call QQ (QQ/JJ where the 3-bet
+  range is JJ+). 30 entries rewritten.
+- **Vs late opens (CO/BTN/SB)**: the six non-blind 3-bet ranges gained the
+  modern A5s-A4s bluffs (matching the blinds' existing style); vs-4-bet
+  continues trimmed to 5-bet QQ+/AK/A5s/A4s, call JJ.
+- The subset invariant (vs-4-bet continues ⊆ 3-bet range) is now enforced by
+  a permanent test (count pinned at 0). Finding 2 (tight house style) remains
+  an open style decision.
+
 ## Finding 2 — house style runs tight (informational, not a bug)
 
 RFI frequencies vs common solver baselines:

@@ -1712,12 +1712,10 @@ describe('Range data coherence', () => {
         expect(violations).toEqual([]);
     });
 
-    // KNOWN INCONSISTENCY (documented in RANGE-AUDIT.md): vs4BetRanges assume a
-    // modern polarized 3-bet style (A5s/A4s bluffs, JJ/TT/AQs continues) while
-    // the non-blind facingRfi 3-bet ranges are linear-tight (QQ+/AK). 90
-    // hand/spot pairs continue vs a 4-bet with hands those spots never 3-bet.
-    // This test pins the CURRENT count so improvement/regression is visible.
-    it('vs-4bet vs 3-bet style mismatch stays at its audited level (90) until ranges are reconciled', () => {
+    // Reconciled 2026-07-04 (was 90 mismatches — see RANGE-AUDIT.md): vs-4-bet
+    // ranges vs early opens tightened to match their QQ+/AK 3-bet ranges; vs
+    // late opens the 3-bet ranges gained A5s-A4s bluffs. Invariant now holds.
+    it('vs-4bet continue ranges are subsets of the corresponding 3-bet range', () => {
         let count = 0;
         Object.entries(RG.vs4BetRanges).forEach(([k, v]) => {
             const fr = RG.facingRfiRanges[k];
@@ -1727,6 +1725,6 @@ describe('Range data coherence', () => {
                     !checkRangeHelper(h, fr['3-bet'] || [])) count++;
             });
         });
-        expect(count).toBe(90);
+        expect(count).toBe(0);
     });
 });
