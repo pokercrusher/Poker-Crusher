@@ -249,6 +249,16 @@ function PRT_feedSR(gradeEntry) {
 // Rendering
 // ---------------------------------------------------------------------------
 
+// Portrait seat ring — a tall oval sized for phones. All slots sit INSIDE
+// the felt (the trainer's landscape SEAT_COORDS spill off a portrait felt).
+// Slot 0 = hero, bottom center; 1..8 clockwise.
+const PRT_SLOTS = [
+    { left: '50%', top: '88%' },
+    { left: '17%', top: '80%' }, { left: '9%',  top: '55%' }, { left: '14%', top: '28%' },
+    { left: '34%', top: '10%' }, { left: '66%', top: '10%' }, { left: '86%', top: '28%' },
+    { left: '91%', top: '55%' }, { left: '83%', top: '80%' },
+];
+
 // Physical slot for each player: hero at slot 0 (bottom center), villains
 // spread across the remaining ring positions.
 function PRT_slotFor(playerIdx, playerCount) {
@@ -348,9 +358,9 @@ function PRT_render() {
     // ---- Bets (chips pulled toward center) — trainer chip style ----
     const betHtml = players.filter(s => (ss.committedBB[s.label] || 0) > 0).map(function(seat) {
         const i = players.indexOf(seat);
-        const c = SEAT_COORDS_DESKTOP[PRT_slotFor(i, n)];
+        const c = PRT_SLOTS[PRT_slotFor(i, n)];
         const L = parseFloat(c.left), T = parseFloat(c.top);
-        const bl = L + (50 - L) * 0.38, bt = T + (50 - T) * 0.38;
+        const bl = L + (50 - L) * 0.45, bt = T + (50 - T) * 0.45;
         return '<div style="position:absolute;left:' + bl + '%;top:' + bt + '%;transform:translate(-50%,-50%);z-index:15;display:flex;align-items:center;gap:2px">' +
             '<div class="rounded-full bg-rose-600 border border-white/20" style="width:11px;height:11px"></div>' +
             '<span class="font-black text-yellow-400 bg-black/40 px-1 rounded" style="font-size:9px">' +
@@ -362,9 +372,9 @@ function PRT_render() {
     const btnSeatIdx = players.findIndex(s => s.label === 'BTN');
     let dealerHtml = '';
     if (btnSeatIdx >= 0) {
-        const c = SEAT_COORDS_DESKTOP[PRT_slotFor(btnSeatIdx, n)];
+        const c = PRT_SLOTS[PRT_slotFor(btnSeatIdx, n)];
         const L = parseFloat(c.left), T = parseFloat(c.top);
-        const dl = L + (50 - L) * 0.22, dt = T + (50 - T) * 0.22;
+        const dl = L + (50 - L) * 0.26, dt = T + (50 - T) * 0.26;
         dealerHtml = '<div class="bg-white rounded-full text-black font-black flex items-center justify-center" ' +
             'style="position:absolute;left:' + dl + '%;top:' + dt + '%;transform:translate(-50%,-50%);z-index:16;width:16px;height:16px;font-size:9px">D</div>';
     }
@@ -384,9 +394,9 @@ function PRT_render() {
 
     // ---- Felt — same component as the trainer (aspect-ratio, ring border) ----
     const felt =
-        '<div class="poker-felt" style="position:relative;width:100%;aspect-ratio:1.55/1;max-height:380px">' +
+        '<div class="poker-felt" style="position:relative;width:100%;aspect-ratio:1/1.15;max-height:56vh">' +
             seatHtml + betHtml + dealerHtml +
-            '<div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;z-index:10">' +
+            '<div style="position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);text-align:center;z-index:10">' +
                 '<div style="display:flex;gap:3px;justify-content:center;min-height:48px">' + boardHtml + '</div>' +
                 '<div style="font-size:11px;font-weight:900;color:#fde68a;margin-top:4px">Pot ' + PRT_fmtBB(potBB) + '</div>' +
                 (PRT.banner && PRT.banner !== 'busted'
