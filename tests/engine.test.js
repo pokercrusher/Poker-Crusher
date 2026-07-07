@@ -1728,3 +1728,33 @@ describe('Range data coherence', () => {
         expect(count).toBe(0);
     });
 });
+
+// =============================================================================
+// Cloud payload validation — a corrupt cloud doc can never brick startup
+// =============================================================================
+
+describe('Cloud payload validation', () => {
+
+    it('valid keys apply; corrupt keys are skipped individually', () => {
+        const ok = PROD.applyTrainerPayload({
+            data: {
+                gto_rfi_stats_v2: JSON.stringify({ totalHands: 42 }),   // valid
+                gto_sr_v2: '{{{{not json',                              // corrupt → skipped
+                gto_medals_v1: JSON.stringify([1, 2, 3]),               // wrong shape → skipped
+                not_an_allowed_key: JSON.stringify({ evil: true }),     // not allowlisted → ignored
+            },
+        });
+        expect(ok).toBe(true); // the one valid key applied
+    });
+
+    it('rejects a payload with no usable data', () => {
+        expect(PROD.applyTrainerPayload({ data: { gto_sr_v2: 'garbage' } })).toBe(false);
+        expect(PROD.applyTrainerPayload(null)).toBe(false);
+        expect(PROD.applyTrainerPayload({ nope: 1 })).toBe(false);
+    });
+
+    it('oversized keys are rejected', () => {
+        const huge = JSON.stringify({ x: 'y'.repeat(1100000) });
+        expect(PROD.applyTrainerPayload({ data: { gto_sr_v2: huge } })).toBe(false);
+    });
+});

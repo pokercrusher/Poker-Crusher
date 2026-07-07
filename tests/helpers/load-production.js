@@ -41,16 +41,16 @@ function makeSandbox() {
     return {
         window,
         localStorage,
+        document: { getElementById: () => null, addEventListener: () => {} },
         console,
         setTimeout,
         clearTimeout,
-        // cloud.js is not loaded (Firebase-only); engine.js needs these at top level
-        profileKey: (k) => k,
         showToast: () => {},
     };
 }
 
-const FILES = ['ranges.js', 'engine.js', 'sim.js', 'poker-room.js'];
+// Browser order matters: cloud.js defines profileKey used by engine.js's SR init
+const FILES = ['ranges.js', 'cloud.js', 'engine.js', 'sim.js', 'poker-room.js'];
 
 // Names the tests need. Mix of `function` and `const` declarations —
 // both are reachable from an expression evaluated inside the context.
@@ -79,6 +79,8 @@ const EXPORT_NAMES = [
     'PR_isBusted', 'PR_rebuy', 'PR_endSession', 'PR_topUpBankroll',
     'PR_accumulateSeatStats', 'PR_STORAGE_KEY', 'PR_buildHandSeats',
     'PR_buildHandSeatsRotated', 'PR_minRaiseTo',
+    // cloud.js
+    'applyTrainerPayload', 'profileKey',
 ];
 
 let cached = null;

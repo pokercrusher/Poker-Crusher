@@ -83,5 +83,8 @@ renderer and mostly unnecessary.
 ## Deployment checklist additions
 - Rebuild `tailwind.min.css` whenever new utility classes appear in ANY js/html
   (`npx @tailwindcss/cli -i src/input.css -o tailwind.min.css --minify`).
+- **Cache busting: bump the `?v=` param on every script/css tag in index.html
+  whenever any JS/CSS ships** (single find-replace of the old version string).
+  Without it, returning mobile users run stale code until a hard refresh.
 - GitHub Pages deploys can wedge (build ok, deploy queued forever): re-save
   Settings → Pages source, then push any commit.

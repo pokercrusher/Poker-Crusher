@@ -464,14 +464,39 @@ function applyTrainerPayload(payload) {
 
     // Write only the known keys into the *active* profile namespace.
     // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
-    const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
+    // Per-key validation: each value must be parseable JSON of the expected
+    // top-level shape and under a size cap. A corrupt key is skipped with a
+    // warning instead of poisoning localStorage — a bad cloud doc can never
+    // brick startup, and the good keys still apply.
+    const allowed = {
+        gto_rfi_stats_v2: 'object', gto_sr_v2: 'object', gto_config_v2: 'object',
+        gto_medals_v1: 'object', gto_limper_mix: 'any', gto_challenge_v1: 'object',
+        gto_challenge_v2: 'object', pc_dailyRun_v1: 'object',
+    };
+    const MAX_KEY_BYTES = 1000000; // 1MB per key — far above any legitimate payload
     const data = payload.data;
 
     let wrote = 0;
-    allowed.forEach(k => {
-        if (data[k] !== undefined && data[k] !== null) {
-            try { localStorage.setItem(profileKey(k), String(data[k])); wrote++; } catch(e) {}
+    Object.keys(allowed).forEach(k => {
+        if (data[k] === undefined || data[k] === null) return;
+        const raw = String(data[k]);
+        if (raw.length > MAX_KEY_BYTES) {
+            console.warn('[PokerCrusher] Cloud key too large, skipped:', k, raw.length);
+            return;
         }
+        if (allowed[k] === 'object') {
+            try {
+                const parsed = JSON.parse(raw);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    console.warn('[PokerCrusher] Cloud key wrong shape, skipped:', k);
+                    return;
+                }
+            } catch (e) {
+                console.warn('[PokerCrusher] Cloud key unparseable, skipped:', k);
+                return;
+            }
+        }
+        try { localStorage.setItem(profileKey(k), raw); wrote++; } catch(e) {}
     });
 
     // Friendly "last imported" marker
