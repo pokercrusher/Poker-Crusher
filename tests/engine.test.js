@@ -1635,3 +1635,98 @@ describe('Poker Room — defend vs c-bet grading', () => {
         expect(g.explanation).not.toContain('%');
     });
 });
+
+// =============================================================================
+// Range coherence — permanent guardrails from the 2026-07 range audit.
+// These invariants held at audit time; a failure means a data edit broke them.
+// =============================================================================
+
+describe('Range data coherence', () => {
+
+    const HANDS = [];
+    for (let i = 0; i < 13; i++) for (let j = 0; j < 13; j++) {
+        HANDS.push(i === j ? PROD.RANKS[i] + PROD.RANKS[j]
+            : (i < j ? PROD.RANKS[i] + PROD.RANKS[j] + 's' : PROD.RANKS[j] + PROD.RANKS[i] + 'o'));
+    }
+    const RG = PROD.__rangeGlobals; // injected below via loader extension
+
+    it('every range token matches at least one hand (no typos/dead tokens)', () => {
+        const dead = [];
+        const scan = (name, list) => {
+            (list || []).forEach(t => {
+                if (!HANDS.some(h => checkRangeHelper(h, [t]))) dead.push(name + ':' + t);
+            });
+        };
+        Object.entries(RG.rfiRanges).forEach(([k, v]) => scan('rfi.' + k, v));
+        Object.entries(RG.facingRfiRanges).forEach(([k, v]) => { scan('fr.' + k, v['3-bet']); scan('fr.' + k, v['Call']); });
+        Object.entries(RG.rfiVs3BetRanges).forEach(([k, v]) => { scan('v3.' + k, v['4-bet']); scan('v3.' + k, v['Call']); });
+        Object.entries(RG.vs4BetRanges).forEach(([k, v]) => { scan('v4.' + k, v['5-bet']); scan('v4.' + k, v['Call']); });
+        expect(dead).toEqual([]);
+    });
+
+    it('every hero-after-opener pair has facingRfi and vs3bet coverage', () => {
+        const ORDER = ['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
+        const missing = [];
+        for (let o = 0; o < ORDER.length - 1; o++) {
+            for (let h = o + 1; h < ORDER.length; h++) {
+                if (!RG.facingRfiRanges[ORDER[h] + '_vs_' + ORDER[o]]) missing.push('fr:' + ORDER[h] + '_vs_' + ORDER[o]);
+                if (ORDER[o] !== 'BB' && !RG.rfiVs3BetRanges[ORDER[o] + '_vs_' + ORDER[h]]) missing.push('v3:' + ORDER[o] + '_vs_' + ORDER[h]);
+            }
+        }
+        expect(missing).toEqual([]);
+    });
+
+    it('AA never folds in any facing-aggression range', () => {
+        const folds = [];
+        Object.entries(RG.facingRfiRanges).forEach(([k, v]) => {
+            if (!checkRangeHelper('AA', (v['3-bet'] || []).concat(v['Call'] || []))) folds.push('fr:' + k);
+        });
+        Object.entries(RG.rfiVs3BetRanges).forEach(([k, v]) => {
+            if (!checkRangeHelper('AA', (v['4-bet'] || []).concat(v['Call'] || []))) folds.push('v3:' + k);
+        });
+        Object.entries(RG.vs4BetRanges).forEach(([k, v]) => {
+            if (!checkRangeHelper('AA', (v['5-bet'] || []).concat(v['Call'] || []))) folds.push('v4:' + k);
+        });
+        expect(folds).toEqual([]);
+    });
+
+    it('RFI ranges widen monotonically from UTG to BTN', () => {
+        const combosOf = h => h.length === 2 ? 6 : h.endsWith('s') ? 4 : 12;
+        const pct = list => HANDS.filter(h => checkRangeHelper(h, list)).reduce((a, h) => a + combosOf(h), 0);
+        const seq = ['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN'];
+        for (let i = 1; i < seq.length; i++) {
+            expect(pct(RG.rfiRanges[seq[i]])).toBeGreaterThanOrEqual(pct(RG.rfiRanges[seq[i - 1]]));
+        }
+    });
+
+    it('vs-3bet continue ranges are subsets of the RFI range (never defend a hand you never opened)', () => {
+        const violations = [];
+        Object.entries(RG.rfiVs3BetRanges).forEach(([k, v]) => {
+            const rfi = RG.rfiRanges[k.split('_vs_')[0]];
+            if (!rfi) return;
+            HANDS.forEach(h => {
+                if ((checkRangeHelper(h, v['4-bet'] || []) || checkRangeHelper(h, v['Call'] || [])) &&
+                    !checkRangeHelper(h, rfi)) violations.push(k + ':' + h);
+            });
+        });
+        expect(violations).toEqual([]);
+    });
+
+    // KNOWN INCONSISTENCY (documented in RANGE-AUDIT.md): vs4BetRanges assume a
+    // modern polarized 3-bet style (A5s/A4s bluffs, JJ/TT/AQs continues) while
+    // the non-blind facingRfi 3-bet ranges are linear-tight (QQ+/AK). 90
+    // hand/spot pairs continue vs a 4-bet with hands those spots never 3-bet.
+    // This test pins the CURRENT count so improvement/regression is visible.
+    it('vs-4bet vs 3-bet style mismatch stays at its audited level (90) until ranges are reconciled', () => {
+        let count = 0;
+        Object.entries(RG.vs4BetRanges).forEach(([k, v]) => {
+            const fr = RG.facingRfiRanges[k];
+            if (!fr) return;
+            HANDS.forEach(h => {
+                if ((checkRangeHelper(h, v['5-bet'] || []) || checkRangeHelper(h, v['Call'] || [])) &&
+                    !checkRangeHelper(h, fr['3-bet'] || [])) count++;
+            });
+        });
+        expect(count).toBe(90);
+    });
+});

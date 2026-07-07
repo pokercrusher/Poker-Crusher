@@ -92,5 +92,6 @@ export function loadProduction() {
         vm.runInContext(src, ctx, { filename: file });
     }
     cached = vm.runInContext(`({ ${EXPORT_NAMES.join(', ')} })`, ctx);
+    cached.__rangeGlobals = vm.runInContext('({ rfiRanges, facingRfiRanges, rfiVs3BetRanges, vs4BetRanges })', ctx);
     return cached;
 }
