@@ -115,8 +115,11 @@ async function PRT_dealNext() {
         if (next === heroLabel && !hand.heroFolded) {
             const choice = await PRT_awaitHero(myToken);
             if (myToken !== PRT.token) return;
+            // Exploit note reads the PRE-action spot (who's bet into whom)
+            const exploit = PR_exploitNote(PRT.hand, PRT_statsByLabel(PRT.hand));
             PRT.hand = PR_applyHeroAction(PRT.hand, choice.action, choice.sizingBB);
             const g = PRT.hand.heroGrades[PRT.hand.heroGrades.length - 1];
+            if (g && exploit) g.exploit = exploit;
             PRT.lastGrade = g || null;
             PRT_feedSR(g);
             PRT_render();
@@ -142,6 +145,30 @@ function PRT_awaitHero(myToken) {
         };
         PRT_render();
     });
+}
+
+// Observed stats per seat label for the exploit layer: lifetime roster reads
+// when the villain is a known regular (they include this session), session
+// stats otherwise. Rates as 0..1 fractions; 3-bet% only known from lifetime.
+function PRT_statsByLabel(hand) {
+    const out = {};
+    hand.seats.forEach(function(s) {
+        if (!s || s.isHero) return;
+        const v = PRT.cfg.villains.find(x => x.id === s.villainId);
+        if (!v) return;
+        const sess = v.sessionStats || { handsDealt: 0, vpipHands: 0, pfrHands: 0 };
+        const reg = PRT.room.regulars ? PRT.room.regulars[v.name] : null;
+        const src = (reg && reg.lifetime && reg.lifetime.handsDealt >= sess.handsDealt)
+            ? reg.lifetime : sess;
+        if (!src.handsDealt) return;
+        out[s.label] = {
+            hands: src.handsDealt,
+            vpip:  src.vpipHands / src.handsDealt,
+            pfr:   src.pfrHands / src.handsDealt,
+            threeBet: (src.threeBetHands !== undefined) ? src.threeBetHands / src.handsDealt : null,
+        };
+    });
+    return out;
 }
 
 // All-time reads on a regular: shown only once there's history beyond this
@@ -482,7 +509,8 @@ function PRT_render() {
                 '<div class="flex items-center justify-between text-[10px] font-bold text-slate-400">' +
                     '<span>Pot ' + PRT_fmtBB(potBB) + (facing > 0 ? ' · call ' + PRT_fmtBB(facing) + ' (' + potOdds + '%)' : '') + '</span>' +
                     (PRT.lastGrade ? '<span data-prt="grade" class="cursor-pointer">' +
-                        (PRT.lastGrade.grade === 'correct' ? '✓' : PRT.lastGrade.grade === 'mixed' ? '~' : '✗') + '</span>' : '<span></span>') +
+                        (PRT.lastGrade.grade === 'correct' ? '✓' : PRT.lastGrade.grade === 'mixed' ? '~' : '✗') +
+                        (PRT.lastGrade.exploit ? ' <span class="text-amber-400">●</span>' : '') + '</span>' : '<span></span>') +
                 '</div>' +
                 (canRaise
                     ? '<div class="flex items-center gap-2">' +
@@ -509,7 +537,11 @@ function PRT_render() {
 
     // ---- Grade explanation (tap the indicator) ----
     const gradeLine = (PRT.showGradeDetail && PRT.lastGrade)
-        ? '<p class="text-[10px] text-slate-500 text-center leading-snug">' + escapeHtml(PRT.lastGrade.explanation || '') + '</p>' : '';
+        ? '<p class="text-[10px] text-slate-500 text-center leading-snug">' + escapeHtml(PRT.lastGrade.explanation || '') + '</p>' +
+          (PRT.lastGrade.exploit
+              ? '<p class="text-[10px] text-amber-400/90 text-center leading-snug font-bold mt-0.5">READ: ' +
+                escapeHtml(PRT.lastGrade.exploit) + '</p>' : '')
+        : '';
 
     // ---- Villain inspection popup ----
     let popup = '';
@@ -564,7 +596,9 @@ function PRT_render() {
             const color = g.grade === 'correct' ? '#4ade80' : g.grade === 'mixed' ? '#fbbf24' : '#f87171';
             return '<div class="text-[9px] text-slate-500 leading-snug pl-3">' +
                 '<span style="color:' + color + ';font-weight:900">' + icon + '</span> ' +
-                escapeHtml(g.street) + ' ' + escapeHtml(g.action) + ' — ' + escapeHtml(g.explanation || '') + '</div>';
+                escapeHtml(g.street) + ' ' + escapeHtml(g.action) + ' — ' + escapeHtml(g.explanation || '') +
+                (g.exploit ? '<span class="block text-amber-400/80 font-bold">READ: ' + escapeHtml(g.exploit) + '</span>' : '') +
+                '</div>';
         }).join('');
         const open = PRT.openHands && PRT.openHands.has(h.handNo);
         return '<div class="py-1 border-b border-slate-800/50">' +

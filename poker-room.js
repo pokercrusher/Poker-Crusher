@@ -1556,6 +1556,101 @@ function _PR_gradeDonkNode(prHand, heroAction, heroSeat) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3: exploit layer. A read-driven note that rides ON TOP of the
+// baseline grade — the grade (and the SR feed) never changes; the note tells
+// you how live players deviate and how to punish it. Reads derive ONLY from
+// observed stats, never the hidden archetype: earn the read, then use it.
+// statsByLabel: { [seatLabel]: { hands, vpip, pfr, threeBet } } with rates
+// 0..1 and threeBet possibly null (unknown before any 3-bet sample).
+// ---------------------------------------------------------------------------
+const PR_EXPLOIT_MIN_SAMPLE = 30;
+
+function _PR_readType(st) {
+    if (!st || !st.hands || st.hands < PR_EXPLOIT_MIN_SAMPLE) return null;
+    if (st.pfr >= 0.28) return 'MANIAC';
+    if (st.vpip >= 0.40 && st.pfr < 0.15) return 'STATION';
+    if (st.vpip <= 0.18) return 'NIT';
+    if (st.vpip >= 0.32 && st.pfr >= 0.22) return 'LAG';
+    return null;
+}
+
+const PR_EXPLOIT_NOTES = {
+    NIT: {
+        VS_3BET:     '{name} plays {vpip}% of hands — that 3-bet is QQ+/AK. Fold anything that doesn\'t beat it.',
+        VS_OPEN:     '{name} opens tight ({vpip}% VPIP) — flat good hands in position, 3-bet only premiums, and believe their postflop bets.',
+        VS_LIMP:     'Even {name}\'s limps have showdown value ({vpip}% VPIP) — iso for value, not as a bluff.',
+        FACING_BET:  '{name} plays {vpip}% of hands — their bets are stacked with value. Fold marginal hands a street earlier.',
+        BETTING_INTO: '{name} folds too much — c-bet relentlessly, and shut down the moment they continue.',
+    },
+    STATION: {
+        VS_3BET:     '{name} plays {vpip}% of hands but rarely raises — a passive player\'s 3-bet is still a monster. Tighten up.',
+        VS_OPEN:     '{name} plays {vpip}% of hands — 3-bet wider for value; they\'ll call with dominated hands.',
+        VS_LIMP:     '{name} limps {vpip}% of hands and hates folding — iso bigger with value, and skip the bluff isos.',
+        FACING_BET:  '{name} bets a wide, weak range — call down lighter, but never bluff-raise a station.',
+        BETTING_INTO: '{name} calls with anything — value-bet thinner and bigger, and stop bluffing entirely.',
+    },
+    MANIAC: {
+        VS_3BET:     '{name} raises {pfr}% of hands — that 3-bet is often air. Continue wider and let them barrel into you.',
+        VS_OPEN:     '{name} opens {pfr}% of hands — 3-bet lighter for value and call more in position.',
+        VS_LIMP:     'A limp from {name} ({pfr}% PFR) is out of character — proceed with caution.',
+        FACING_BET:  '{name}\'s bets are stuffed with bluffs ({pfr}% PFR) — bluff-catch down lighter with pairs.',
+        BETTING_INTO: 'Consider checking strong hands to {name} — they can\'t resist stabbing at weakness.',
+    },
+    LAG: {
+        VS_3BET:     '{name} is aggressive ({pfr}% PFR) — their 3-bets have bluffs. Defend wider than baseline, especially in position.',
+        VS_OPEN:     '{name} opens wide ({vpip}% VPIP) — 3-bet more, both for value and as a bluff.',
+        VS_LIMP:     '{name} rarely limps ({vpip}% VPIP) — a limp here is a trap or a rare weak hand. Iso with value.',
+        FACING_BET:  '{name} fires with a wide range ({vpip}% VPIP) — float more in position and raise their c-bets lighter.',
+        BETTING_INTO: '{name} attacks weakness — check-raise your strong hands instead of leading.',
+    },
+};
+
+function PR_exploitNote(prHand, statsByLabel) {
+    try {
+        if (!statsByLabel) return null;
+        const heroSeat = prHand.seats[prHand.heroSeatIndex];
+        const street = prHand.gameState.streetState.street;
+        let focalLabel = null, spot = null;
+
+        if (street === 'preflop') {
+            const ctx = prHand.preflopContext || _PR_buildPreflopContext(prHand);
+            if (ctx.threeBettor && ctx.threeBettor !== heroSeat.label) {
+                focalLabel = ctx.threeBettor; spot = 'VS_3BET';
+            } else if (ctx.opener && ctx.opener !== heroSeat.label) {
+                focalLabel = ctx.opener; spot = 'VS_OPEN';
+            } else if (ctx.limpers && ctx.limpers.length > 0) {
+                focalLabel = ctx.limpers[0]; spot = 'VS_LIMP';
+            }
+        } else {
+            // Heads-up only: one villain whose tendencies dominate the spot
+            const others = prHand.seats.filter(s => s && !s.folded && !s.isHero);
+            if (others.length === 1) {
+                focalLabel = others[0].label;
+                spot = _PR_facingAmount(prHand, heroSeat.label) > 0 ? 'FACING_BET' : 'BETTING_INTO';
+            }
+        }
+        if (!focalLabel || !spot) return null;
+
+        const st = statsByLabel[focalLabel];
+        const read = _PR_readType(st);
+        if (!read) return null;
+        const tpl = PR_EXPLOIT_NOTES[read] && PR_EXPLOIT_NOTES[read][spot];
+        if (!tpl) return null;
+
+        const focalSeat = prHand.seats.find(s => s && s.label === focalLabel);
+        const name = (focalSeat && focalSeat.name) ? focalSeat.name : focalLabel;
+        return tpl
+            .replace(/\{name\}/g, name)
+            .replace(/\{vpip\}/g, String(Math.round(st.vpip * 100)))
+            .replace(/\{pfr\}/g, String(Math.round(st.pfr * 100)))
+            .replace(/\{threeBet\}/g, st.threeBet !== null && st.threeBet !== undefined
+                ? String(Math.round(st.threeBet * 100)) : '?');
+    } catch (_) {
+        return null;
+    }
+}
+
 function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
     // Heads-up decisions grade against the real strategy tables:
     // c-bets/barrels when hero was the aggressor, fold/call/raise when

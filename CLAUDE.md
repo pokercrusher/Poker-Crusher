@@ -56,9 +56,16 @@ renderer and mostly unnecessary.
   regulars)` upserts lifetime reads; sanitized on load
   (`PR_sanitizeRegulars`). Popup shows "Regular · N sessions · All-time"
   once history exceeds this session (`PRT_lifetimeLine`).
-- Roadmap: Phase 3 exploit layer (baseline grade feeds SR, exploit notes
-  ride on reads; exploit principles become drills) → Phase 4 multiway
-  rules + SR keys (add, never rename) → Phase 5 polish.
+- Phase 3 DONE (exploit notes): `PR_exploitNote(prHand, statsByLabel)` —
+  read classified from OBSERVED stats only (never hidden archetype), 30+
+  hand sample gate (`PR_EXPLOIT_MIN_SAMPLE`), reads NIT/STATION/MANIAC/LAG
+  × spots VS_3BET/VS_OPEN/VS_LIMP/FACING_BET/BETTING_INTO
+  (`PR_EXPLOIT_NOTES`). Table computes on PRE-action state, attaches
+  `grade.exploit`; renders as amber "READ:" line in grade detail + history
+  rows + ● dot on the grade indicator. Baseline grade/SR feed untouched.
+  Exploit-principles drill family still TODO (Phase 3b).
+- Roadmap: Phase 3b exploit drills → Phase 4 multiway rules + SR keys
+  (add, never rename) → Phase 5 polish.
 
 ### Architecture decisions (deviations from the original 7-pass spec)
 - **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids

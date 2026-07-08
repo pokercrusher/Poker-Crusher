@@ -2211,3 +2211,79 @@ describe('Poker Room — regulars roster', () => {
         expect(loaded.regulars.Rocky.avatar).toBe('🦊');
     });
 });
+
+// =============================================================================
+// Poker Room — exploit layer (Phase 3): read-driven notes on top of the grade
+// =============================================================================
+
+describe('Poker Room — exploit notes', () => {
+
+    // Hero BB facing a CO open; focal villain = CO
+    function vsOpenHand() {
+        return {
+            seats: [
+                { label: 'BB', isHero: true, folded: false, name: 'You', holeCards: cards2('A', 's', 'Q', 'h') },
+                { label: 'CO', isHero: false, folded: false, name: 'Rocky', holeCards: cards2('9', 'c', '8', 'c') },
+            ],
+            heroSeatIndex: 0,
+            gameState: {
+                street: 'preflop',
+                streetState: { street: 'preflop', actions: [{ seatLabel: 'CO', action: 'raise', sizingBB: 3 }], committedBB: { CO: 3, BB: 1 } },
+                streetHistory: { preflop: [], flop: [], turn: [], river: [] },
+            },
+            preflopContext: { opener: 'CO', threeBettor: null, limpers: [], potStructure: 'SRP' },
+        };
+    }
+    const nitStats     = { CO: { hands: 80, vpip: 0.12, pfr: 0.10, threeBet: 0.02 } };
+    const stationStats = { CO: { hands: 80, vpip: 0.55, pfr: 0.05, threeBet: 0.01 } };
+
+    it('a nit open with a big sample produces a tighten-up read with the name and stat', () => {
+        const note = PROD.PR_exploitNote(vsOpenHand(), nitStats);
+        expect(note).toContain('Rocky');
+        expect(note).toContain('12% VPIP');
+        expect(note).toContain('believe');
+    });
+
+    it('a station open produces a value-3-bet read', () => {
+        const note = PROD.PR_exploitNote(vsOpenHand(), stationStats);
+        expect(note).toContain('3-bet wider for value');
+    });
+
+    it('below the 30-hand sample gate there is no read', () => {
+        expect(PROD.PR_exploitNote(vsOpenHand(), { CO: { hands: 12, vpip: 0.1, pfr: 0.1, threeBet: 0 } })).toBeNull();
+    });
+
+    it('balanced stats produce no read (no fake authority)', () => {
+        expect(PROD.PR_exploitNote(vsOpenHand(), { CO: { hands: 100, vpip: 0.24, pfr: 0.18, threeBet: 0.06 } })).toBeNull();
+    });
+
+    it('postflop heads-up facing a maniac bet → bluff-catch read; multiway → null', () => {
+        const hu = {
+            seats: [
+                { label: 'BB', isHero: true, folded: false, name: 'You', holeCards: cards2('A', 's', 'Q', 'h') },
+                { label: 'CO', isHero: false, folded: false, name: 'Blaze', holeCards: cards2('9', 'c', '8', 'c') },
+            ],
+            heroSeatIndex: 0,
+            gameState: {
+                street: 'flop',
+                streetState: { street: 'flop', actions: [{ seatLabel: 'CO', action: 'bet', sizingBB: 4 }], committedBB: { CO: 4, BB: 0 } },
+                streetHistory: { preflop: [{ seatLabel: 'CO', action: 'raise', sizingBB: 3 }, { seatLabel: 'BB', action: 'call', sizingBB: 2 }], flop: [], turn: [], river: [] },
+            },
+        };
+        const maniac = { CO: { hands: 60, vpip: 0.6, pfr: 0.45, threeBet: 0.2 } };
+        const note = PROD.PR_exploitNote(hu, maniac);
+        expect(note).toContain('bluff-catch');
+        hu.seats.push({ label: 'BTN', isHero: false, folded: false, name: 'Sal', holeCards: cards2('2', 'c', '3', 'c') });
+        expect(PROD.PR_exploitNote(hu, maniac)).toBeNull();
+    });
+
+    it('the grade itself is untouched by reads — SR feed stays baseline', () => {
+        const h = PROD.PR_createHand({ heroPos: 'UTG', seats: makeSeats() });
+        const hs = h.seats[h.heroSeatIndex];
+        hs.holeCards = cards2('A', 's', 'A', 'h');
+        hs.handNotation = 'AA';
+        const g = PROD.PR_gradeHeroAction(h, 'raise');
+        expect(g.exploit).toBeUndefined();
+        expect(g.grade).toBe('correct');
+    });
+});
