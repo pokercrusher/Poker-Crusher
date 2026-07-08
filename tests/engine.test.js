@@ -2541,3 +2541,62 @@ describe('Cloud merge-on-load', () => {
         expect(after['SPOT|CLOUD']).toBeTruthy();
     });
 });
+
+// =============================================================================
+// Poker Room — chip granularity + AI sizing variety
+// =============================================================================
+
+describe('Poker Room — chip granularity and sizing variety', () => {
+
+    it('property: every committed amount across 200 random hands is a small-blind multiple', () => {
+        const types = ['GTO', 'NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO'];
+        const positions = PROD.PR_POSITIONS;
+        for (let n = 0; n < 200; n++) {
+            const seatCfgs = positions.map(l => ({
+                label: l, type: types[Math.floor(Math.random() * types.length)],
+                name: l, stackBB: 40 + Math.floor(Math.random() * 80),
+            }));
+            let hr = PROD.PR_createHand({ heroPos: positions[n % positions.length], seats: seatCfgs });
+            hr = PROD.PR_runPreflopToHero(hr);
+            let guard = 0;
+            while (!hr.terminal && guard++ < 500) {
+                if (PROD.PR_isStreetComplete(hr)) { hr = PROD.PR_advanceStreet(hr); continue; }
+                const next = PROD._PR_nextActor(hr);
+                if (next === null) { hr = PROD.PR_advanceStreet(hr); continue; }
+                const heroLabel = hr.seats[hr.heroSeatIndex].label;
+                if (next === heroLabel) {
+                    const facing = PROD._PR_facingAmount(hr, heroLabel);
+                    const act = facing > 0 ? (Math.random() < 0.5 ? 'call' : 'fold')
+                                           : (Math.random() < 0.5 ? 'check' : 'bet');
+                    hr = PROD.PR_applyHeroAction(hr, act, act === 'bet' ? 3.3 : 0); // odd input → quantized
+                } else {
+                    hr = PROD.PR_applyVillainAction(hr);
+                }
+            }
+            // Every chip that moved is a multiple of the 0.5bb small blind
+            Object.values(hr.gameState.streetHistory).flat()
+                .concat(hr.gameState.streetState.actions)
+                .forEach(a => {
+                    const doubled = (a.sizingBB || 0) * 2;
+                    expect(Math.abs(doubled - Math.round(doubled))).toBeLessThan(1e-9);
+                });
+        }
+    });
+
+    it('AI open sizes vary — a maniac at 1/3 does not open $9 every time', () => {
+        const seat = villainSeat('CO', cards2('A', 's', 'A', 'h'), 'AA');
+        const ts = () => ({ opener: null, threeBettor: null, callers: [], limpers: [], openSizeBB: 3, committedBB: {} });
+        const collect = (type) => {
+            const sizes = new Set();
+            for (let i = 0; i < 60; i++) {
+                const r = PROD.PR_resolveVillainPreflopAction(seat, ts(), type);
+                if (r.action === 'raise') sizes.add(r.sizingBB);
+            }
+            return sizes;
+        };
+        expect(collect('MANIAC').size).toBeGreaterThan(1);
+        expect(collect('TAG').size).toBeGreaterThan(1);
+        // And every jittered size is still at least a min-open
+        collect('MANIAC').forEach(s => expect(s).toBeGreaterThanOrEqual(2));
+    });
+});

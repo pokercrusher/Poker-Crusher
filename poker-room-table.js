@@ -33,7 +33,11 @@ function PRT_delay(ms) {
     return new Promise(function(res) { setTimeout(res, ms); });
 }
 
-function PRT_speedMs() { return PRT_SPEEDS[PRT.speed] || 700; }
+function PRT_speedMs() {
+    // Fast-forward (hero folded, user tapped skip): sim the rest instantly
+    if (PRT.fastForward) return 25;
+    return PRT_SPEEDS[PRT.speed] || 700;
+}
 
 function PRT_bb$() { return PR_STAKE_CONFIG[PRT.session.stake].bb; }
 
@@ -100,6 +104,8 @@ async function PRT_dealNext() {
     const built = PR_buildHandSeatsRotated(PRT.cfg, PRT.room.heroProfile, PRT.offset, PRT.session.stackBB);
     PRT.dealtBoardLen = 0;
     PRT.revealAnim = false;
+    PRT.fastForward = false;
+    PRT.typeShown = null;
     let hand = PR_createHand({ heroPos: built.heroPos, seats: built.seats,
                                heroStackBB: PRT.session.stackBB, sizing: PRT.room.sizing });
     PRT.hand = hand;
@@ -296,7 +302,7 @@ async function PRT_settle(myToken) {
     PRT.room.tableConfig = PRT.cfg;
     PR_saveRoomState(PRT.room);
 
-    await PRT_delay(Math.max(1800, PRT_speedMs() * 2.2));
+    await PRT_delay(PRT.fastForward ? 350 : Math.max(1800, PRT_speedMs() * 2.2));
     if (myToken !== PRT.token) return;
 
     if (PR_isBusted(PRT.session)) {
@@ -568,9 +574,13 @@ function PRT_render() {
             '</div>';
     } else {
         const actorSeat = nextActor ? hand.seats.find(s => s && s.label === nextActor) : null;
+        const spectating = hand.heroFolded && !hand.terminal && !PRT.fastForward;
         actionArea = '<div class="text-center text-[11px] text-slate-500 font-bold py-3">' +
             (hand.terminal ? (hand.heroFolded ? 'Watching the hand play out…' : 'Next hand coming up…')
-                : actorSeat ? escapeHtml(actorSeat.name) + ' is thinking…' : 'Dealing…') + '</div>';
+                : actorSeat ? escapeHtml(actorSeat.name) + ' is thinking…' : 'Dealing…') + '</div>' +
+            (spectating
+                ? '<button data-prt="skip" class="w-full py-3 rounded-2xl font-black text-sm bg-slate-800 border border-slate-600 text-slate-300 active:scale-[0.98]">SKIP TO NEXT HAND ⏩</button>'
+                : '');
     }
 
     // ---- Grade explanation (tap the indicator) ----
@@ -594,8 +604,12 @@ function PRT_render() {
                     '<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 text-center" style="min-width:220px">' +
                         '<div style="font-size:34px">' + av + '</div>' +
                         '<p class="text-slate-100 font-black text-base mt-1">' + escapeHtml(v.name) + '</p>' +
-                        '<p class="text-[11px] font-bold mt-0.5" style="color:' + (PRUI_TYPE_COLORS[v.type] || '#94a3b8') + '">' +
-                            (PRUI_TYPE_LABELS[v.type] || v.type) + '</p>' +
+                        // The true archetype is the answer key — hidden behind a
+                        // second, deliberate tap so the stats stay the lesson.
+                        (PRT.typeShown === v.id
+                            ? '<p class="text-[11px] font-bold mt-0.5" style="color:' + (PRUI_TYPE_COLORS[v.type] || '#94a3b8') + '">' +
+                                (PRUI_TYPE_LABELS[v.type] || v.type) + '</p>'
+                            : '<button data-prt="reveal-type" class="text-[10px] font-bold mt-0.5 px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500">?? · tap to reveal type</button>') +
                         '<div class="grid grid-cols-3 gap-2 mt-3 text-center">' +
                             '<div><p class="text-[9px] text-slate-500 font-bold uppercase">Hands</p><p class="text-sm font-black text-slate-200">' + st.handsDealt + '</p></div>' +
                             '<div><p class="text-[9px] text-slate-500 font-bold uppercase">VPIP</p><p class="text-sm font-black text-slate-200">' + pct(st.vpipHands) + '</p></div>' +
@@ -726,9 +740,17 @@ function PRT_onClick(e) {
         PRT_render();
     } else if (kind === 'seat') {
         PRT.inspect = el.dataset.vid;
+        PRT.typeShown = null; // type stays masked until its own tap
+        PRT_render();
+    } else if (kind === 'reveal-type') {
+        PRT.typeShown = PRT.inspect;
         PRT_render();
     } else if (kind === 'popup-close') {
         PRT.inspect = null;
+        PRT.typeShown = null;
+        PRT_render();
+    } else if (kind === 'skip') {
+        PRT.fastForward = true; // hero folded — sim the rest instantly
         PRT_render();
     } else if (kind === 'hist') {
         const hn = parseInt(el.dataset.hn, 10);

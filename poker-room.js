@@ -256,6 +256,13 @@ function _PR_applyAction(prHand, seatLabel, action, sizingBB) {
         if (myCommitted + sizing < minTo) {
             sizing = parseFloat((minTo - myCommitted).toFixed(2));
         }
+        // Chip granularity: no unit smaller than the small blind (0.5bb).
+        // Live games don't have $25.20 bets. Quantize, then re-check the
+        // minimum (rounding down must never make a raise illegal).
+        sizing = Math.round(sizing * 2) / 2;
+        if (myCommitted + sizing < minTo) {
+            sizing = Math.ceil((minTo - myCommitted) * 2) / 2;
+        }
     }
     if (seat && sizing > seat.stackBB) {
         sizing = seat.stackBB; // all-in for less is the one legal undersize
@@ -585,10 +592,12 @@ function PR_resolveVillainPreflopAction(seat, tableState, playerType) {
     // --- No open yet: RFI ---
     if (!tableState.opener && tableState.limpers.length === 0) {
         if (gto.action === 'raise') {
-            return score >= arch.openThreshold ? gto : { action: 'fold', sizingBB: 0 };
+            return score >= arch.openThreshold
+                ? { action: 'raise', sizingBB: _PR_jitterOpen(openSizeBB, type) }
+                : { action: 'fold', sizingBB: 0 };
         }
         if (arch.extraOpenThreshold < 999 && score >= arch.extraOpenThreshold) {
-            return { action: 'raise', sizingBB: openSizeBB };
+            return { action: 'raise', sizingBB: _PR_jitterOpen(openSizeBB, type) };
         }
         return { action: 'fold', sizingBB: 0 };
     }
@@ -596,13 +605,15 @@ function PR_resolveVillainPreflopAction(seat, tableState, playerType) {
     // --- Facing an open ---
     if (tableState.opener && !tableState.threeBettor) {
         if (gto.action === '3bet') {
-            if (score >= arch.threeBetThreshold) return gto;
+            if (score >= arch.threeBetThreshold) {
+                return { action: '3bet', sizingBB: (gto.sizingBB || openSizeBB * 3) + _PR_pick([0, 0, 0.5, 1]) };
+            }
             if (score >= arch.callThreshold) return { action: 'call', sizingBB: openSizeBB };
             return { action: 'fold', sizingBB: 0 };
         }
         if (gto.action === 'call') {
             if (arch.extraThreeBetThreshold < 999 && score >= arch.extraThreeBetThreshold) {
-                const tbSize = Math.round(openSizeBB * (['SB','BB'].includes(seat.label) ? 4 : 3) * 10) / 10;
+                const tbSize = openSizeBB * (['SB','BB'].includes(seat.label) ? 4 : 3) + _PR_pick([0, 0.5, 1]);
                 return { action: '3bet', sizingBB: tbSize };
             }
             return score >= arch.callThreshold ? gto : { action: 'fold', sizingBB: 0 };
@@ -695,6 +706,36 @@ function PR_applyVillainAction(prHand) {
 // PR_resolveVillainPostflopAction — hand-strength-gated + archetype freq postflop AI
 // Returns { action, sizingBB }
 // ---------------------------------------------------------------------------
+function _PR_pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// Live opens vary by player and mood — never the same number every time.
+// Anchored to the profile size; aggressive types size up, nits stay standard.
+const _PR_OPEN_JITTER = {
+    NIT:    [0, 0, -0.5],
+    TAG:    [0, 0, 0.5],
+    GTO:    [0, 0, 0.5],
+    LAG:    [0, 0.5, 1],
+    FISH:   [-0.5, 0, 1, 2],
+    MANIAC: [0.5, 1, 2, 3],
+    AGGRO:  [0, 0.5, 1, 1.5],
+};
+function _PR_jitterOpen(openSizeBB, type) {
+    const j = _PR_pick(_PR_OPEN_JITTER[type] || _PR_OPEN_JITTER.GTO);
+    return Math.max(2, openSizeBB + j);
+}
+
+// Postflop bet sizes as pot fractions, by archetype — the same mix of small
+// stabs, standard bets and overbets you see live, instead of 0.65x forever.
+const _PR_BET_FRACS = {
+    NIT:    [0.4, 0.5, 0.65],
+    TAG:    [0.5, 0.65, 0.75],
+    GTO:    [0.4, 0.65, 0.75],
+    LAG:    [0.5, 0.75, 1.0],
+    FISH:   [0.3, 0.5, 0.8],
+    MANIAC: [0.75, 1.0, 1.3],
+    AGGRO:  [0.65, 0.85, 1.1],
+};
+
 function PR_resolveVillainPostflopAction(seat, prHand) {
     const ss    = prHand.gameState.streetState;
     const type  = seat.type || 'GTO';
@@ -705,8 +746,8 @@ function PR_resolveVillainPostflopAction(seat, prHand) {
 
     const facing = _PR_facingAmount(prHand, seat.label); // amount to call
     const potBB  = prHand.gameState.potBB + Object.values(ss.committedBB).reduce((a, v) => a + v, 0);
-    const betSizing = parseFloat((potBB * 0.65).toFixed(1)) || 1;
-    const raiseSizing = parseFloat((facing * 2.5).toFixed(1)) || 2;
+    const betSizing = (potBB * _PR_pick(_PR_BET_FRACS[type] || _PR_BET_FRACS.GTO)) || 1;
+    const raiseSizing = (facing * _PR_pick([2.2, 2.5, 2.8, 3.2])) || 2;
 
     if (facing > 0) {
         // Facing a bet or raise
