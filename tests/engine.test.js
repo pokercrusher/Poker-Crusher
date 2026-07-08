@@ -1758,3 +1758,116 @@ describe('Cloud payload validation', () => {
         expect(PROD.applyTrainerPayload({ data: { gto_sr_v2: huge } })).toBe(false);
     });
 });
+
+// =============================================================================
+// Poker Room — 3-bet-pot defense grading (hero called a 3-bet, faces c-bet)
+// =============================================================================
+
+// Minimal heads-up postflop hand for grading tests: hero at seat 0.
+function gradeHand(heroLbl, vilLbl, heroCards, board, preHist, preCtx, curActions, committed, potBB) {
+    return {
+        seats: [
+            { label: heroLbl, isHero: true,  folded: false, allIn: false, stackBB: 90, holeCards: heroCards },
+            { label: vilLbl,  isHero: false, folded: false, allIn: false, stackBB: 90, holeCards: cards2('9', 'c', '8', 'c') },
+        ],
+        heroSeatIndex: 0,
+        gameState: {
+            potBB, board, street: 'flop',
+            streetState: { street: 'flop', actions: curActions, committedBB: committed },
+            streetHistory: { preflop: preHist, flop: [], turn: [], river: [] },
+        },
+        preflopContext: preCtx,
+    };
+}
+
+describe('Poker Room — 3-bet-pot defense grading', () => {
+
+    // CO opened, BTN 3-bet, CO called → CO defends OOP vs the flop c-bet.
+    // Covered by POSTFLOP_3BP_DEFEND_VS_CBET (family CO_CALL_3BP_vs_BTN).
+    const mk = () => gradeHand(
+        'CO', 'BTN', cards2('A', 'h', 'K', 'h'),
+        [C('A', 's'), C('7', 'd'), C('2', 'c')],
+        [
+            { seatLabel: 'CO',  action: 'raise', sizingBB: 2.5 },
+            { seatLabel: 'BTN', action: '3bet',  sizingBB: 7.5 },
+            { seatLabel: 'CO',  action: 'call',  sizingBB: 7.5 },
+        ],
+        { potStructure: '3BP', opener: 'CO', threeBettor: 'BTN' },
+        [{ seatLabel: 'BTN', action: 'bet', sizingBB: 5 }],
+        { CO: 0, BTN: 5 }, 16,
+    );
+
+    it('CO called BTN 3-bet, top pair vs c-bet: call grades via the real table (freq %)', () => {
+        const g = PROD.PR_gradeHeroAction(mk(), 'call');
+        expect(g.grade).toBe('correct');
+        expect(g.explanation).toContain('%'); // real frequency, not the heuristic fallback
+    });
+
+    it('folding top pair top kicker to the c-bet in a 3-bet pot is an error', () => {
+        const g = PROD.PR_gradeHeroAction(mk(), 'fold');
+        expect(g.grade).toBe('error');
+    });
+});
+
+// =============================================================================
+// Poker Room — table-UI grading regressions
+// The live table grades hero's decision at decision time, before/without the
+// paths that stamp prHand.preflopContext — these lock the on-demand fallbacks.
+// =============================================================================
+
+describe('Poker Room — table-UI grading regressions', () => {
+
+    it('hero first-in grades as RFI even when preflopContext was never stamped', () => {
+        const prHand = PROD.PR_createHand({ heroPos: 'UTG', seats: makeSeats() });
+        const heroSeat = prHand.seats[prHand.heroSeatIndex];
+        heroSeat.holeCards = cards2('A', 's', 'A', 'h');
+        heroSeat.handNotation = 'AA';
+        expect(prHand.preflopContext).toBeFalsy(); // the table-UI condition
+        const g = PROD.PR_gradeHeroAction(prHand, 'raise');
+        expect(g.grade).toBe('correct');
+        expect(g.spot).toEqual({ scenario: 'RFI', heroPos: 'UTG', oppPos: 'BB', hand: 'AA' });
+        expect(g.explanation).not.toContain('Complex spot');
+    });
+
+    it('UTG open called by LJ: flop c-bet grades via the UTG_vs_BB proxy tree', () => {
+        const prHand = gradeHand(
+            'UTG', 'LJ', cards2('A', 's', 'K', 'h'),
+            [C('K', 's'), C('7', 'h'), C('2', 'd')],
+            [
+                { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 },
+                { seatLabel: 'LJ',  action: 'call',  sizingBB: 2.5 },
+            ],
+            { potStructure: 'SRP', opener: 'UTG' },
+            [], { UTG: 0, LJ: 0 }, 6,
+        );
+        const g = PROD.PR_gradeHeroAction(prHand, 'bet'); // UTG_vs_LJ has no tree of its own
+        expect(g.grade).toBe('correct');
+        expect(g.explanation).toContain('%');
+    });
+
+    it('losers at showdown show their cards (training tool: no mucking)', () => {
+        const board = [C('K', 's'), C('9', 'h'), C('4', 'c'), C('J', 'd'), C('3', 's')];
+        const prHand = {
+            seats: [
+                { label: 'UTG', isHero: false, folded: false, allIn: false, stackBB: 97.5,
+                  holeCards: cards2('A', 's', 'A', 'h') },   // winner
+                { label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 97.5,
+                  holeCards: cards2('7', 'c', '2', 'd') },   // loser — must still show
+            ],
+            heroSeatIndex: 1,
+            gameState: {
+                potBB: 5, board, street: 'river',
+                streetState: { street: 'river', actions: [], committedBB: { UTG: 0, BTN: 0 } },
+                streetHistory: {
+                    preflop: [
+                        { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 },
+                        { seatLabel: 'BTN', action: 'call',  sizingBB: 2.5 },
+                    ],
+                    flop: [], turn: [], river: [],
+                },
+            },
+        };
+        PROD.PR_evalShowdown(prHand);
+        prHand.outcome.showdown.forEach(e => expect(e.show).toBe(true));
+    });
+});

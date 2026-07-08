@@ -526,12 +526,13 @@ function PRT_render() {
                 '<span style="color:' + color + ';font-weight:900">' + icon + '</span> ' +
                 escapeHtml(g.street) + ' ' + escapeHtml(g.action) + ' — ' + escapeHtml(g.explanation || '') + '</div>';
         }).join('');
-        return '<details class="py-1 border-b border-slate-800/50">' +
-            '<summary class="flex justify-between text-[10px] cursor-pointer select-none list-none">' +
-                '<span class="text-slate-400 font-bold">#' + h.handNo + ' · ' + escapeHtml(h.pos) + ' · ' + escapeHtml(h.cards) + '</span>' +
-                '<span class="font-black" style="color:' + (h.netBB >= 0 ? '#4ade80' : '#f87171') + '">' +
+        const open = PRT.openHands && PRT.openHands.has(h.handNo);
+        return '<div class="py-1 border-b border-slate-800/50">' +
+            '<div data-prt="hist" data-hn="' + h.handNo + '" class="flex justify-between text-[10px] cursor-pointer select-none">' +
+                '<span class="text-slate-400 font-bold pointer-events-none">' + (open ? '▾' : '▸') + ' #' + h.handNo + ' · ' + escapeHtml(h.pos) + ' · ' + escapeHtml(h.cards) + '</span>' +
+                '<span class="font-black pointer-events-none" style="color:' + (h.netBB >= 0 ? '#4ade80' : '#f87171') + '">' +
                     (h.netBB >= 0 ? '+' : '') + PRT_fmtBB(h.netBB) + '</span>' +
-            '</summary>' + (gradeRows || '<div class="text-[9px] text-slate-600 pl-3">no decisions</div>') + '</details>';
+            '</div>' + (open ? (gradeRows || '<div class="text-[9px] text-slate-600 pl-3">no decisions</div>') : '') + '</div>';
     }).join('');
     // Session log renders as an overlay opened from the header (keeps the
     // area under the action bar clean); open state lives on PRT so mid-hand
@@ -564,6 +565,11 @@ function PRT_onClick(e) {
         PRT_render();
     } else if (kind === 'popup-close') {
         PRT.inspect = null;
+        PRT_render();
+    } else if (kind === 'hist') {
+        const hn = parseInt(el.dataset.hn, 10);
+        if (!PRT.openHands) PRT.openHands = new Set();
+        PRT.openHands.has(hn) ? PRT.openHands.delete(hn) : PRT.openHands.add(hn);
         PRT_render();
     } else if (kind === 'session-toggle') {
         PRT.sessionOpen = !PRT.sessionOpen;

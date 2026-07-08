@@ -896,14 +896,6 @@ function PR_evalShowdown(prHand) {
         return { seatLabel: s.label, seat: s, rank: best.rank, handLabel: best.label, tiebreaker: best.tiebreaker };
     });
 
-    // Determine last aggressor (must show); everyone else can muck unless called
-    const allActions = Object.values(prHand.gameState.streetHistory)
-        .flat()
-        .concat(prHand.gameState.streetState.actions);
-    const lastAggrAction = [...allActions].reverse()
-        .find(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
-    const lastAggrLabel = lastAggrAction ? lastAggrAction.seatLabel : null;
-
     // Build side pots from all-in players
     // Collect total committed per seat across all streets
     const totalCommitted = {};
@@ -943,13 +935,9 @@ function PR_evalShowdown(prHand) {
         return { ...pot, winners, share };
     });
 
-    // Muck logic: called hands must show; uncalled hands can muck
-    // Simplification: all-in players and called players show; uncalled folders are already marked folded
-    const mustShow = new Set();
-    if (lastAggrLabel) mustShow.add(lastAggrLabel);
-    potResults.forEach(function(pot) {
-        pot.winners.forEach(function(l) { mustShow.add(l); });
-    });
+    // Everyone who reaches showdown shows — this is a training tool, and
+    // real-world muck etiquette was hiding losers' cards from hand review.
+    const mustShow = new Set(evals.map(function(e) { return e.seatLabel; }));
     const showdown = evals.map(function(e) {
         return { seatLabel: e.seatLabel, holeCards: e.seat.holeCards, rank: e.rank,
                  handLabel: e.handLabel, show: mustShow.has(e.seatLabel) };
@@ -1146,8 +1134,10 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
     const heroPos  = heroSeat.label;
     const ss       = prHand.gameState.streetState;
 
-    // Determine scenario from table context
-    const ctx = prHand.preflopContext || {};
+    // Determine scenario from table context. The live table grades hero's
+    // decision before the preflop loop stamps prHand.preflopContext, so
+    // derive it on demand — otherwise every spot fell through to "Complex".
+    const ctx = prHand.preflopContext || _PR_buildPreflopContext(prHand);
     let scenario, oppPos;
 
     if (!ctx.opener && !ctx.threeBettor && ctx.limpers && ctx.limpers.length === 0) {
@@ -1261,7 +1251,14 @@ function _PR_gradeCbetV2(prHand, heroAction, heroSeat) {
             return null;
         }
         family = _PR_proxyFamily(family);
-        const fi = POSTFLOP_PREFLOP_FAMILIES[family];
+        let fi = POSTFLOP_PREFLOP_FAMILIES[family];
+        if (!fi && potType === 'SRP') {
+            // Trees are keyed vs specific callers (mostly _vs_BB). When this
+            // exact matchup has no tree, grade vs the BB-caller tree — the
+            // same proxying the trainer's LANE_FAMILY applies.
+            family = _PR_proxyFamily(heroSeat.label + '_vs_BB');
+            fi = POSTFLOP_PREFLOP_FAMILIES[family];
+        }
         if (!fi) return null;
 
         const board = prHand.gameState.board;
@@ -1338,13 +1335,23 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
         const villain = active.find(s => !s.isHero);
         if (!villain) return null;
 
-        // Villain must be the preflop aggressor; hero the caller (SRP only)
+        // Villain must be the preflop aggressor; hero the caller. Covered pots:
+        // SRP (villain opened, hero called) and 3BP (hero opened, villain
+        // 3-bet, hero called — the CALL_3BP defender trees).
         const hist = prHand.gameState.streetHistory;
         const pre = hist.preflop || [];
         const lastRaise = [...pre].reverse().find(a => ['raise', '3bet', '4bet'].includes(a.action));
         if (!lastRaise || lastRaise.seatLabel !== villain.label) return null;
         const ctx = prHand.preflopContext || {};
-        if (ctx.potStructure !== 'SRP' || ctx.opener !== villain.label) return null;
+        let potType;
+        if (ctx.potStructure === 'SRP' && ctx.opener === villain.label) {
+            potType = 'SRP';
+        } else if (ctx.potStructure === '3BP' && ctx.threeBettor === villain.label &&
+                   ctx.opener === heroSeat.label) {
+            potType = '3BP';
+        } else {
+            return null;
+        }
 
         // Facing exactly one unraised bet this street, made by the villain
         const cur = prHand.gameState.streetState.actions;
@@ -1352,9 +1359,13 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
         if (aggressive.length !== 1 || aggressive[0].seatLabel !== villain.label ||
             aggressive[0].action !== 'bet') return null;
 
-        const family = _PR_proxyFamily(villain.label + '_vs_' + heroSeat.label); // keyed PFR_vs_caller
+        const family = _PR_proxyFamily(potType === 'SRP'
+            ? villain.label + '_vs_' + heroSeat.label            // SRP: PFR_vs_caller
+            : heroSeat.label + '_CALL_3BP_vs_' + villain.label); // 3BP: caller-first
         const fi = POSTFLOP_PREFLOP_FAMILIES[family];
         if (!fi) return null;
+        // SRP defend tables are built with a literal OOP position state
+        const posState = potType === 'SRP' ? 'OOP' : fi.positionState;
 
         const board = prHand.gameState.board;
         const flop = board.slice(0, 3);
@@ -1364,16 +1375,22 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
         if (street === 'flop') {
             if (typeof POSTFLOP_DEFEND_VS_CBET === 'undefined' || typeof makePostflopSpotKeyV2 !== 'function') return null;
             heroHandClass = classifyFlopHand(heroHand, flop);
-            strat = POSTFLOP_DEFEND_VS_CBET[makePostflopSpotKeyV2({
-                potType: 'SRP', preflopFamily: family, street: 'FLOP', heroRole: 'DEFENDER',
-                positionState: 'OOP', nodeType: 'VS_CBET_DECISION',
+            const flopReg = potType === '3BP'
+                ? (typeof POSTFLOP_3BP_DEFEND_VS_CBET !== 'undefined' ? POSTFLOP_3BP_DEFEND_VS_CBET : {})
+                : POSTFLOP_DEFEND_VS_CBET;
+            strat = flopReg[makePostflopSpotKeyV2({
+                potType, preflopFamily: family, street: 'FLOP', heroRole: 'DEFENDER',
+                positionState: posState, nodeType: 'VS_CBET_DECISION',
                 boardArchetype: classifyFlop(flop).archetype, heroHandClass,
             })];
         } else if (street === 'turn') {
             if (typeof POSTFLOP_TURN_DEFEND_STRATEGY === 'undefined' || typeof classifyTurnCard !== 'function') return null;
             if (board.length < 4 || !_PR_betWasCalled(hist.flop || [], villain.label)) return null;
             heroHandClass = classifyTurnHand(heroHand, flop, board[3]);
-            strat = POSTFLOP_TURN_DEFEND_STRATEGY['SRP|' + family + '|TURN|DEFENDER|OOP|TURN_VS_BET_DECISION|' +
+            const tdReg = potType === '3BP'
+                ? (typeof POSTFLOP_3BP_TURN_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_3BP_TURN_DEFEND_STRATEGY : {})
+                : POSTFLOP_TURN_DEFEND_STRATEGY;
+            strat = tdReg[potType + '|' + family + '|TURN|DEFENDER|' + posState + '|TURN_VS_BET_DECISION|' +
                 classifyTurnCard(board[3], flop) + '|' + heroHandClass];
         } else {
             if (typeof POSTFLOP_RIVER_DEFEND_STRATEGY === 'undefined' || typeof classifyRiverCard !== 'function') return null;
@@ -1381,7 +1398,10 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
                 !_PR_betWasCalled(hist.flop || [], villain.label) ||
                 !_PR_betWasCalled(hist.turn || [], villain.label)) return null;
             heroHandClass = classifyRiverHand(heroHand, flop, board[3], board[4]);
-            strat = POSTFLOP_RIVER_DEFEND_STRATEGY['SRP|' + family + '|RIVER|DEFENDER|OOP|RIVER_VS_BET_DECISION|' +
+            const rdReg = potType === '3BP'
+                ? (typeof POSTFLOP_3BP_RIVER_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_3BP_RIVER_DEFEND_STRATEGY : {})
+                : POSTFLOP_RIVER_DEFEND_STRATEGY;
+            strat = rdReg[potType + '|' + family + '|RIVER|DEFENDER|' + posState + '|RIVER_VS_BET_DECISION|' +
                 classifyRiverCard(board[4], board.slice(0, 4)) + '|' + heroHandClass];
         }
         if (!strat || !strat.actions) return null;
