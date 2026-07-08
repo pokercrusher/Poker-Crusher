@@ -86,6 +86,8 @@ async function PRT_dealNext() {
     PRT.handNo++;
 
     const built = PR_buildHandSeatsRotated(PRT.cfg, PRT.room.heroProfile, PRT.offset, PRT.session.stackBB);
+    PRT.dealtBoardLen = 0;
+    PRT.revealAnim = false;
     let hand = PR_createHand({ heroPos: built.heroPos, seats: built.seats,
                                heroStackBB: PRT.session.stackBB, sizing: PRT.room.sizing });
     PRT.hand = hand;
@@ -195,8 +197,10 @@ async function PRT_settle(myToken) {
     const heroSeat = hand.seats[hand.heroSeatIndex];
     const heroLabel = heroSeat.label;
 
-    // Reveal + banner
+    // Reveal + banner. revealAnim gates the play-once card-flip / winner
+    // pulse to THIS render — toggles and re-renders afterwards stay still.
     PRT.revealAll = true;
+    PRT.revealAnim = true;
     const heroNet = outcome.heroNetBB || 0;
     // A pot that is entirely the winner's own uncalled bet is a refund, not a
     // win — without this, losing after an under-called all-in said "You win!"
@@ -218,6 +222,7 @@ async function PRT_settle(myToken) {
             : winnerNames.join(', ') + ' takes it')
         : 'Hand over';
     PRT_render();
+    PRT.revealAnim = false; // animations played; later re-renders stay still
 
     // Session + per-villain bookkeeping (lifetime reads accrue to regulars)
     PR_applySessionHandResult(PRT.session, heroNet);
@@ -403,11 +408,16 @@ function PRT_render() {
             .some(p => (p.winners || []).includes(seat.label));
         const winRing = isWinner ? 'box-shadow:0 0 0 2px #4ade80;' : '';
 
+        // Play-once flourishes on the settle render only (PRT.revealAnim):
+        // villain cards flip face-up, the winner's seat ring pulses.
+        const flipCls = (showCards && !isHero && PRT.revealAnim) ? ' class="prt-flip"' : '';
+        const winCls = (isWinner && PRT.revealAnim) ? ' prt-win' : '';
+
         return '<div' + (villain ? ' data-prt="seat" data-vid="' + villain.id + '"' : '') +
             ' style="position:absolute;left:' + c.left + ';top:' + c.top + ';transform:translate(-50%,-50%);' + dim + 'z-index:20;text-align:center;min-width:60px' +
             (villain ? ';cursor:pointer' : '') + '">' +
-            '<div style="display:flex;gap:2px;justify-content:center;margin-bottom:2px;min-height:' + (isHero ? '48' : '26') + 'px;pointer-events:none">' + cards + '</div>' +
-            '<div class="bg-slate-800 border border-slate-600 rounded-lg" style="padding:2px 7px;pointer-events:none;transition:transform 0.2s;' + acting$ + winRing + '">' +
+            '<div' + flipCls + ' style="display:flex;gap:2px;justify-content:center;margin-bottom:2px;min-height:' + (isHero ? '48' : '26') + 'px;pointer-events:none">' + cards + '</div>' +
+            '<div class="bg-slate-800 border border-slate-600 rounded-lg' + winCls + '" style="padding:2px 7px;pointer-events:none;transition:transform 0.2s;' + acting$ + winRing + '">' +
                 '<div class="font-black" style="font-size:11px;color:' + (isHero ? '#fcd34d' : '#cbd5e1') + '">' + seat.label + '</div>' +
                 '<div style="font-size:8px;font-weight:700;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">' +
                     avatar + ' ' + escapeHtml(seat.name) + ' · ' + PRT_fmtBB(seat.stackBB) +
@@ -434,7 +444,13 @@ function PRT_render() {
     }).join('');
 
     // ---- Board + pot + dealer button (white "D" disc, as in the trainer) ----
-    const boardHtml = (gs.board || []).map(function(cd) { return PRT_cardHtml(cd, false); }).join('');
+    // Cards past PRT.dealtBoardLen are new this render → deal-in animation
+    const dealtLen = PRT.dealtBoardLen || 0;
+    const boardHtml = (gs.board || []).map(function(cd, bi) {
+        const card = PRT_cardHtml(cd, false);
+        return bi >= dealtLen ? '<span class="prt-deal" style="display:inline-flex">' + card + '</span>' : card;
+    }).join('');
+    PRT.dealtBoardLen = (gs.board || []).length;
     const btnSeatIdx = players.findIndex(s => s.label === 'BTN');
     let dealerHtml = '';
     if (btnSeatIdx >= 0) {

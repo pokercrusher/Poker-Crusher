@@ -76,7 +76,13 @@ renderer and mostly unnecessary.
   draws facing bets stay with the pot-odds heuristic. Spots carry stable
   SR keys 'MW|CBET|tier' / 'MW|DEFEND|tier'; `PRT_feedSR` now honors
   `spot.srKey` directly. Heuristic fallback: 14.4% → 6.9% of decisions.
-- Roadmap: Phase 5 polish (card-flip/chip-slide, popup read-sheet pass).
+- Phase 5 DONE (polish): play-once animations on element creation (fits
+  the state-driven renderer, no choreography): board cards deal in
+  (`PRT.dealtBoardLen` tracks what's new), villain cards flip at reveal +
+  winner seat pulses (gated to the settle render by `PRT.revealAnim`).
+  Keyframes in index.html style block (prt-flip-in/prt-deal-in/
+  prt-win-glow) with prefers-reduced-motion off-switch.
+- LIVE-CRUSHER ROADMAP COMPLETE (Phases 1–5, 2026-07-08).
 
 ### Architecture decisions (deviations from the original 7-pass spec)
 - **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids
