@@ -643,7 +643,7 @@ function PRT_render() {
     // re-renders don't snap it shut.
     const sessionPanel = !PRT.sessionOpen ? '' :
         '<div data-prt="session-toggle" style="position:fixed;inset:0;background:rgba(2,6,23,0.8);z-index:55;display:flex;align-items:flex-start;justify-content:center;padding:56px 16px 16px">' +
-            '<div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 w-full" style="max-width:384px;max-height:74vh;overflow-y:auto" onclick="event.stopPropagation()">' +
+            '<div data-prt="session-panel" class="bg-slate-900 border border-slate-700 rounded-2xl p-4 w-full" style="max-width:384px;max-height:74vh;overflow-y:auto">' +
                 '<p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">' +
                     'Session · ' + (sess.handsPlayed || 0) + ' hands · VPIP ' + vp + ' · PFR ' + pf + ' · accuracy ' + acc + '</p>' +
                 (histRows || '<p class="text-[10px] text-slate-600">Hand history appears here after your first hand.</p>') +
@@ -727,6 +727,10 @@ function PRT_onClick(e) {
         if (!PRT.openHands) PRT.openHands = new Set();
         PRT.openHands.has(hn) ? PRT.openHands.delete(hn) : PRT.openHands.add(hn);
         PRT_render();
+    } else if (kind === 'session-panel') {
+        // Taps inside the log panel (not on a row) neither close nor toggle.
+        // The old inline stopPropagation here also swallowed row taps before
+        // they reached this delegated handler — rows never expanded.
     } else if (kind === 'session-toggle') {
         PRT.sessionOpen = !PRT.sessionOpen;
         PRT_render();
