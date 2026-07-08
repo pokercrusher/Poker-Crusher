@@ -2287,3 +2287,89 @@ describe('Poker Room — exploit notes', () => {
         expect(g.grade).toBe('correct');
     });
 });
+
+// =============================================================================
+// Poker Room — multiway rules (Phase 4): tighter value, no bluffs, no
+// one-pair raises. Rule-graded spots carry MW| SR keys for Study Mode.
+// =============================================================================
+
+describe('Poker Room — multiway rule grading', () => {
+
+    const flop = [C('K', 's'), C('7', 'h'), C('2', 'd')];
+
+    // 3-handed flop: hero at seat 0, UTG + LJ live. preflop: hero raised, both called.
+    function mwHand(heroCards, { heroPFR = true, villainBet = false } = {}) {
+        return {
+            seats: [
+                { label: 'CO',  isHero: true,  folded: false, name: 'You',  holeCards: heroCards },
+                { label: 'UTG', isHero: false, folded: false, name: 'Sal',  holeCards: cards2('9', 'c', '8', 'c') },
+                { label: 'LJ',  isHero: false, folded: false, name: 'Duke', holeCards: cards2('5', 'c', '4', 'c') },
+            ],
+            heroSeatIndex: 0,
+            gameState: {
+                potBB: 9.5, board: flop, street: 'flop',
+                streetState: {
+                    street: 'flop',
+                    betMadeThisStreet: villainBet,
+                    actions: villainBet ? [{ seatLabel: 'UTG', action: 'bet', sizingBB: 5 }] : [],
+                    committedBB: villainBet ? { UTG: 5, CO: 0, LJ: 0 } : {},
+                },
+                streetHistory: {
+                    preflop: heroPFR
+                        ? [{ seatLabel: 'CO', action: 'raise', sizingBB: 3 },
+                           { seatLabel: 'UTG', action: 'call', sizingBB: 3 },
+                           { seatLabel: 'LJ',  action: 'call', sizingBB: 3 }]
+                        : [{ seatLabel: 'UTG', action: 'raise', sizingBB: 3 },
+                           { seatLabel: 'CO',  action: 'call', sizingBB: 3 },
+                           { seatLabel: 'LJ',  action: 'call', sizingBB: 3 }],
+                    flop: [], turn: [], river: [],
+                },
+            },
+            preflopContext: { potStructure: 'SRP', opener: heroPFR ? 'CO' : 'UTG' },
+        };
+    }
+
+    it('MW c-bet: bluffing air into two callers is an error; checking is correct', () => {
+        const air = cards2('5', 'h', '4', 'd');
+        const bet = PROD.PR_gradeHeroAction(mwHand(air), 'bet');
+        expect(bet.grade).toBe('error');
+        expect(bet.spot.srKey).toBe('MW|CBET|WEAK');
+        expect(PROD.PR_gradeHeroAction(mwHand(air), 'check').grade).toBe('correct');
+    });
+
+    it('MW c-bet: sets bet for value; top pair checks more', () => {
+        const set = cards2('7', 's', '7', 'c');
+        const g1 = PROD.PR_gradeHeroAction(mwHand(set), 'bet');
+        expect(g1.grade).toBe('correct');
+        expect(g1.spot.srKey).toBe('MW|CBET|STRONG');
+        const tptk = cards2('K', 'h', 'A', 'd');
+        expect(PROD.PR_gradeHeroAction(mwHand(tptk), 'check').grade).toBe('correct');
+        expect(PROD.PR_gradeHeroAction(mwHand(tptk), 'bet').grade).toBe('mixed');
+    });
+
+    it('MW facing a bet: one pair calls, never raises; weak hands fold', () => {
+        const tptk = cards2('K', 'h', 'A', 'd');
+        const call = PROD.PR_gradeHeroAction(mwHand(tptk, { heroPFR: false, villainBet: true }), 'call');
+        expect(call.grade).toBe('correct');
+        expect(call.spot.srKey).toBe('MW|DEFEND|MEDIUM');
+        expect(PROD.PR_gradeHeroAction(mwHand(tptk, { heroPFR: false, villainBet: true }), 'raise').grade).toBe('error');
+        const air = cards2('5', 'h', '4', 'd');
+        expect(PROD.PR_gradeHeroAction(mwHand(air, { heroPFR: false, villainBet: true }), 'fold').grade).toBe('correct');
+        expect(PROD.PR_gradeHeroAction(mwHand(air, { heroPFR: false, villainBet: true }), 'call').grade).toBe('error');
+    });
+
+    it('MW facing a bet with a draw falls to the pot-odds heuristic (no MW key)', () => {
+        const fd = cards2('A', 'h', 'Q', 'h'); // backdoor... use real flush draw board
+        const h = mwHand(cards2('A', 'h', 'Q', 'h'), { heroPFR: false, villainBet: true });
+        h.gameState.board = [C('K', 'h'), C('7', 'h'), C('2', 'd')]; // nut flush draw
+        const g = PROD.PR_gradeHeroAction(h, 'call');
+        expect(g.spot ? g.spot.srKey : null).toBeFalsy();
+    });
+
+    it('heads-up pots never hit the multiway rules', () => {
+        const h = mwHand(cards2('5', 'h', '4', 'd'));
+        h.seats[2].folded = true; // now heads-up
+        const g = PROD.PR_gradeHeroAction(h, 'bet');
+        expect((g.explanation || '')).not.toContain('Multiway');
+    });
+});

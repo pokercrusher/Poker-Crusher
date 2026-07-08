@@ -70,8 +70,13 @@ renderer and mostly unnecessary.
   re-shuffled per session so answer position never leaks). SR keys
   'EXPLOIT|id'. Same principles as the table READ notes — earn the read
   live, drill the theory here.
-- Roadmap: Phase 4 multiway rules + SR keys (add, never rename) →
-  Phase 5 polish.
+- Phase 4 DONE (multiway rules): `_PR_gradeMultiwayNode` — 3+ active,
+  tier-based live rules (value shrinks, bluffs disappear, one pair never
+  raises). Node A hero-PFR unopened, Node B facing one unraised bet;
+  draws facing bets stay with the pot-odds heuristic. Spots carry stable
+  SR keys 'MW|CBET|tier' / 'MW|DEFEND|tier'; `PRT_feedSR` now honors
+  `spot.srKey` directly. Heuristic fallback: 14.4% → 6.9% of decisions.
+- Roadmap: Phase 5 polish (card-flip/chip-slide, popup read-sheet pass).
 
 ### Architecture decisions (deviations from the original 7-pass spec)
 - **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids

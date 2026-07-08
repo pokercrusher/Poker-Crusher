@@ -294,11 +294,18 @@ async function PRT_settle(myToken) {
 function PRT_feedSR(gradeEntry) {
     if (!PRT.room || !PRT.room.studyMode) return;
     if (!gradeEntry || !gradeEntry.spot || gradeEntry.grade === 'mixed') return;
-    if (!['RFI', 'FACING_RFI', 'RFI_VS_3BET'].includes(gradeEntry.spot.scenario)) return;
     try {
-        if (typeof SR === 'undefined' || typeof buildSRKey !== 'function') return;
+        if (typeof SR === 'undefined') return;
         const sp = gradeEntry.spot;
-        const key = buildSRKey(sp.scenario, sp.heroPos, sp.oppPos, null, null, sp.hand);
+        let key = null;
+        if (sp.srKey) {
+            // Rule-based spots (multiway etc.) carry their own stable key
+            key = sp.srKey;
+        } else if (['RFI', 'FACING_RFI', 'RFI_VS_3BET'].includes(sp.scenario) &&
+                   typeof buildSRKey === 'function') {
+            key = buildSRKey(sp.scenario, sp.heroPos, sp.oppPos, null, null, sp.hand);
+        }
+        if (!key) return;
         SR.update(key, gradeEntry.grade === 'correct' ? 'Good' : 'Again');
         if (typeof markCloudDirty === 'function') markCloudDirty();
     } catch (_) {}

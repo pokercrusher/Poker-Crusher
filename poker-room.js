@@ -1651,14 +1651,96 @@ function PR_exploitNote(prHand, statsByLabel) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4: multiway rules. Solver trees are heads-up; multiway pots follow
+// three live rules instead — value bets shrink to strong hands, bluffs
+// disappear, and one pair stops being a raising hand. Rule-graded spots
+// carry a stable SR key ('MW|CBET|tier' / 'MW|DEFEND|tier') so Study Mode
+// turns multiway errors into review cards. Draws facing a bet are LEFT to
+// the equity heuristic — that decision is pot-odds math, not a rule.
+// ---------------------------------------------------------------------------
+function _PR_gradeMultiwayNode(prHand, heroAction, heroSeat) {
+    try {
+        const street = prHand.gameState.street;
+        if (!['flop', 'turn', 'river'].includes(street)) return null;
+        const active = prHand.seats.filter(s => s !== null && !s.folded);
+        if (active.length < 3) return null;
+        const n = active.length;
+
+        const ss = prHand.gameState.streetState;
+        const pre = prHand.gameState.streetHistory.preflop || [];
+        const lastRaise = [...pre].reverse().find(a => ['raise', '3bet', '4bet'].includes(a.action));
+        const heroIsPFR = !!(lastRaise && lastRaise.seatLabel === heroSeat.label);
+        const facing = _PR_facingAmount(prHand, heroSeat.label);
+        const tier = _PR_seatHandTier(heroSeat, prHand);
+        const mw = 'Multiway (' + n + ' players): ';
+
+        // Node A — hero is the PFR, first decision with no bet in front
+        if (heroIsPFR && !ss.betMadeThisStreet && facing <= 0 &&
+            (heroAction === 'bet' || heroAction === 'check')) {
+            const spot = { srKey: 'MW|CBET|' + tier };
+            if (tier === 'NUT_VALUE' || tier === 'STRONG') {
+                return heroAction === 'bet'
+                    ? { grade: 'correct', spot, explanation: mw + 'strong hands bet for value — more callers means a bigger pot to win.' }
+                    : { grade: 'mixed', spot, explanation: mw + 'trapping is an option, but with this many players a strong hand usually just bets.' };
+            }
+            if (tier === 'MEDIUM') {
+                return heroAction === 'check'
+                    ? { grade: 'correct', spot, explanation: mw + 'one pair shrinks with every extra player — check more and treat it as a bluff-catcher.' }
+                    : { grade: 'mixed', spot, explanation: mw + 'betting top pair thins out multiway; smaller and more careful is the way if you do.' };
+            }
+            if (tier === 'DRAW') {
+                return heroAction === 'check'
+                    ? { grade: 'correct', spot, explanation: mw + 'take the free card — semi-bluffs need much more equity against several callers.' }
+                    : { grade: 'mixed', spot, explanation: mw + 'semi-bluffing into a crowd is thin — someone usually has a pair that won\'t fold.' };
+            }
+            return heroAction === 'check'
+                ? { grade: 'correct', spot, explanation: mw + 'never bluff multiway — with several players someone always has a piece.' }
+                : { grade: 'error', spot, explanation: mw + 'c-bet bluffs burn money against multiple callers. Check and give up cheap.' };
+        }
+
+        // Node B — facing exactly one unraised bet, hero didn't make it
+        const aggr = ss.actions.filter(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
+        if (facing > 0 && aggr.length === 1 && aggr[0].action === 'bet' &&
+            aggr[0].seatLabel !== heroSeat.label &&
+            ['fold', 'call', 'raise'].includes(heroAction)) {
+            if (tier === 'DRAW') return null; // pot-odds math — heuristic's job
+            const spot = { srKey: 'MW|DEFEND|' + tier };
+            if (tier === 'NUT_VALUE') {
+                if (heroAction === 'raise') return { grade: 'correct', spot, explanation: mw + 'raise your monsters — multiway rivers get ugly and the crowd pays you now.' };
+                if (heroAction === 'call')  return { grade: 'mixed', spot, explanation: mw + 'slow-playing is riskier multiway — raising builds the pot while everyone still likes their hand.' };
+                return { grade: 'error', spot, explanation: mw + 'folding a monster — check the board again.' };
+            }
+            if (tier === 'STRONG') {
+                return heroAction === 'fold'
+                    ? { grade: 'error', spot, explanation: mw + 'two pair and sets are still value hands multiway — continuing is clear.' }
+                    : { grade: 'correct', spot, explanation: mw + 'strong hands continue happily, even into a crowd.' };
+            }
+            if (tier === 'MEDIUM') {
+                if (heroAction === 'call')  return { grade: 'correct', spot, explanation: mw + 'one pair is a call, not a raise — keep the pot medium with a medium hand.' };
+                if (heroAction === 'raise') return { grade: 'error', spot, explanation: mw + 'raising one pair multiway isolates you against the one hand that beats you.' };
+                return { grade: 'mixed', spot, explanation: mw + 'folding top pair is tight but defensible when a bet fires into a crowd.' };
+            }
+            // THIN / WEAK
+            if (heroAction === 'fold') return { grade: 'correct', spot, explanation: mw + 'weak pairs and air fold to aggression — someone in the crowd has you beaten.' };
+            return { grade: 'error', spot, explanation: mw + 'continuing with a weak hand into a bet AND a field behind you pays everyone but you.' };
+        }
+
+        return null;
+    } catch (_) {
+        return null;
+    }
+}
+
 function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
     // Heads-up decisions grade against the real strategy tables:
     // c-bets/barrels when hero was the aggressor, fold/call/raise when
     // hero defends against the aggressor's bet — plus the donk node, where
-    // check-to-the-raiser is near-universal.
+    // check-to-the-raiser is near-universal, and the multiway rule set.
     const v2 = _PR_gradeCbetV2(prHand, heroAction, heroSeat) ||
                _PR_gradeDefendV2(prHand, heroAction, heroSeat) ||
-               _PR_gradeDonkNode(prHand, heroAction, heroSeat);
+               _PR_gradeDonkNode(prHand, heroAction, heroSeat) ||
+               _PR_gradeMultiwayNode(prHand, heroAction, heroSeat);
     if (v2) return v2;
 
     // Everything else: lightweight equity-heuristic grading (multiway/turn/river)
