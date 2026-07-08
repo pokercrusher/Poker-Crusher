@@ -2136,3 +2136,78 @@ describe('Poker Room — sizing profile', () => {
         expect(g.explanation).not.toContain('GTO');
     });
 });
+
+// =============================================================================
+// Poker Room — persistent regulars roster (Phase 2)
+// =============================================================================
+
+describe('Poker Room — regulars roster', () => {
+
+    it('a re-drawn regular keeps archetype and avatar across table generations', () => {
+        const regulars = {};
+        // Full 9-seat tables draw 8 of 48 names; loop until we see a repeat
+        const seen = {};
+        for (let i = 0; i < 30; i++) {
+            const cfg = PROD.PR_generateTableConfig('1/2', 9, null, regulars);
+            cfg.villains.forEach(v => {
+                expect(regulars[v.name]).toBeTruthy();
+                expect(v.type).toBe(regulars[v.name].type);       // stable identity
+                expect(v.avatar).toBe(regulars[v.name].avatar);
+                if (seen[v.name]) {
+                    expect(v.type).toBe(seen[v.name].type);       // same as first meeting
+                    expect(v.avatar).toBe(seen[v.name].avatar);
+                } else {
+                    seen[v.name] = { type: v.type, avatar: v.avatar };
+                }
+            });
+        }
+        // With 30 draws of 8 from 48, repeats are certain
+        const sessions = Object.values(regulars).map(r => r.lifetime.sessions);
+        expect(Math.max(...sessions)).toBeGreaterThan(1);
+    });
+
+    it('lifetime stats accumulate by name and survive a table regeneration', () => {
+        const regulars = {};
+        const cfg = PROD.PR_generateTableConfig('1/2', 3, null, regulars);
+        const v = cfg.villains[0];
+        const prHand = {
+            seats: [
+                { label: 'BTN', villainId: v.id, holeCards: [] },
+                { label: 'SB',  villainId: cfg.villains[1].id, holeCards: [] },
+            ],
+            gameState: {
+                street: 'flop',
+                streetState: { actions: [] },
+                streetHistory: { preflop: [
+                    { seatLabel: 'BTN', action: '3bet', sizingBB: 9 },
+                    { seatLabel: 'SB',  action: 'fold', sizingBB: 0 },
+                ], flop: [], turn: [], river: [] },
+            },
+        };
+        PROD.PR_accumulateSeatStats(cfg, prHand, regulars);
+        const lt = regulars[v.name].lifetime;
+        expect(lt.handsDealt).toBe(1);
+        expect(lt.vpipHands).toBe(1);
+        expect(lt.pfrHands).toBe(1);
+        expect(lt.threeBetHands).toBe(1);
+        const lt2 = regulars[cfg.villains[1].name].lifetime;
+        expect(lt2.handsDealt).toBe(1);
+        expect(lt2.vpipHands).toBe(0);
+    });
+
+    it('room state sanitizes the roster: corrupt entries dropped, counters floored', () => {
+        const st = PROD.PR_defaultRoomState();
+        st.regulars = {
+            Rocky:  { type: 'NIT', avatar: '🦊', lifetime: { handsDealt: 12.7, vpipHands: -3, pfrHands: 2, threeBetHands: 1, sessions: 2 } },
+            Broken: { type: 'NOT_A_TYPE', lifetime: {} },
+            Junk:   'string',
+        };
+        PROD.PR_saveRoomState(st);
+        const loaded = PROD.PR_loadRoomState();
+        expect(Object.keys(loaded.regulars)).toEqual(['Rocky']);
+        expect(loaded.regulars.Rocky.lifetime.handsDealt).toBe(12);
+        expect(loaded.regulars.Rocky.lifetime.vpipHands).toBe(0);
+        expect(loaded.regulars.Rocky.lifetime.sessions).toBe(2);
+        expect(loaded.regulars.Rocky.avatar).toBe('🦊');
+    });
+});

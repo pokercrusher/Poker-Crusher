@@ -144,6 +144,21 @@ function PRT_awaitHero(myToken) {
     });
 }
 
+// All-time reads on a regular: shown only once there's history beyond this
+// session, so first meetings stay clean and repeat opponents reward memory.
+function PRT_lifetimeLine(villain, sessionStats) {
+    const reg = PRT.room && PRT.room.regulars ? PRT.room.regulars[villain.name] : null;
+    if (!reg || !reg.lifetime || reg.lifetime.handsDealt <= sessionStats.handsDealt) return '';
+    const lt = reg.lifetime;
+    const p = function(n) { return lt.handsDealt > 0 ? Math.round((n / lt.handsDealt) * 100) + '%' : '—'; };
+    return '<div class="mt-2 pt-2 border-t border-slate-800 text-left">' +
+        '<p class="text-[9px] text-amber-500/80 font-bold uppercase tracking-widest">Regular · ' +
+            (lt.sessions || 1) + ' session' + ((lt.sessions || 1) === 1 ? '' : 's') + '</p>' +
+        '<p class="text-[10px] text-slate-400 font-bold mt-0.5">All-time: ' + lt.handsDealt + ' hands · VPIP ' +
+            p(lt.vpipHands) + ' · PFR ' + p(lt.pfrHands) + ' · 3-bet ' + p(lt.threeBetHands || 0) + '</p>' +
+    '</div>';
+}
+
 // ---------------------------------------------------------------------------
 // Hand settlement: pots → stacks, session, persistence, next hand
 // ---------------------------------------------------------------------------
@@ -177,9 +192,9 @@ async function PRT_settle(myToken) {
         : 'Hand over';
     PRT_render();
 
-    // Session + per-villain bookkeeping
+    // Session + per-villain bookkeeping (lifetime reads accrue to regulars)
     PR_applySessionHandResult(PRT.session, heroNet);
-    PR_accumulateSeatStats(PRT.cfg, hand);
+    PR_accumulateSeatStats(PRT.cfg, hand, PRT.room.regulars);
 
     // Hero session stats: VPIP/PFR from the preflop log, accuracy from grades
     const s = PRT.session;
@@ -516,6 +531,7 @@ function PRT_render() {
                             '<div><p class="text-[9px] text-slate-500 font-bold uppercase">VPIP</p><p class="text-sm font-black text-slate-200">' + pct(st.vpipHands) + '</p></div>' +
                             '<div><p class="text-[9px] text-slate-500 font-bold uppercase">PFR</p><p class="text-sm font-black text-slate-200">' + pct(st.pfrHands) + '</p></div>' +
                         '</div>' +
+                        PRT_lifetimeLine(v, st) +
                         '<p class="text-[9px] text-slate-600 mt-2">Stack ' + PRT_fmtBB(v.stackBB) + ' · tap anywhere to close</p>' +
                     '</div>' +
                 '</div>';

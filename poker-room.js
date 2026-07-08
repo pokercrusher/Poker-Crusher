@@ -1635,10 +1635,37 @@ function PR_defaultRoomState() {
         heroProfile: { name: 'You', avatar: '😎' },
         studyMode: false,           // opt-in: graded room decisions feed the trainer's SR queue
         sizing: 'live',             // 'live' 3bb+1/limper (default) | 'online' 2.5bb
+        regulars: {},               // persistent roster by name: { type, avatar, lifetime }
         tableConfig: null,          // built on sit-down via PR_generateTableConfig
         sessionHistory: [],         // newest first: { date, handsPlayed, netBB, netDollars, stake }
         allTimeStats: { handsPlayed: 0, biggestWin: 0, biggestLoss: 0, totalNetBB: 0 },
     };
+}
+
+// Roster entries are persisted user-adjacent data — validate per entry so one
+// corrupt regular can never brick startup. Capped at twice the name pool
+// (renames can mint names outside it).
+function PR_sanitizeRegulars(raw) {
+    if (!raw || typeof raw !== 'object') return {};
+    const out = {};
+    const num = function(v) { return (typeof v === 'number' && isFinite(v) && v >= 0) ? Math.floor(v) : 0; };
+    Object.keys(raw).slice(0, PR_VILLAIN_NAME_POOL.length * 2).forEach(function(name) {
+        const r = raw[name];
+        if (!r || typeof r !== 'object' || PR_ARCHETYPE_KEYS.indexOf(r.type) === -1) return;
+        const lt = (r.lifetime && typeof r.lifetime === 'object') ? r.lifetime : {};
+        out[String(name).slice(0, 24)] = {
+            type:   r.type,
+            avatar: (typeof r.avatar === 'string' && r.avatar) ? r.avatar.slice(0, 8) : PR_AVATAR_POOL[0],
+            lifetime: {
+                handsDealt:    num(lt.handsDealt),
+                vpipHands:     num(lt.vpipHands),
+                pfrHands:      num(lt.pfrHands),
+                threeBetHands: num(lt.threeBetHands),
+                sessions:      Math.max(1, num(lt.sessions)),
+            },
+        };
+    });
+    return out;
 }
 
 // Load persisted room state; malformed or missing data falls back per-field
@@ -1661,6 +1688,7 @@ function PR_loadRoomState() {
             : def.heroProfile,
         studyMode: raw.studyMode === true,
         sizing: raw.sizing === 'online' ? 'online' : 'live',
+        regulars: PR_sanitizeRegulars(raw.regulars),
         // Table config holds VILLAINS only — hero is always the remaining seat.
         // (Older saves stored a 'seats' array including all positions; discard those.)
         tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.villains)) ? raw.tableConfig : null,
@@ -1717,21 +1745,39 @@ function PR_randomVillainStackBB(stake) {
     return Math.round(minBB + Math.random() * (maxBB - minBB));
 }
 
-// Build a fresh table: hero seat + villains with random names/types/stacks.
+// Mirrors PRUI_AVATARS (poker-room-ui.js) — regulars get a stable face at
+// creation instead of the old index-based fallback that shifted with seating.
+const PR_AVATAR_POOL = ['🐻', '🦊', '🦅', '🦈', '🐺', '🦁', '🐸', '🐙', '🐴', '🐹'];
+
+function PR_freshLifetime() {
+    return { handsDealt: 0, vpipHands: 0, pfrHands: 0, threeBetHands: 0, sessions: 1 };
+}
+
 // Build a fresh table. seatCount (2–9) is TOTAL players INCLUDING hero, so
 // this generates seatCount−1 villains. Villains carry stable ids (not
 // position labels) because positions rotate with the button every hand;
 // per-hand seat assignment happens at deal time.
 // typeWeights: optional archetype weight map for the distribution editor.
-function PR_generateTableConfig(stake, seatCount, typeWeights) {
+// regulars (optional, mutated): the room's persistent roster keyed by name.
+// A re-drawn name keeps its archetype and avatar forever — a regular is the
+// same player every time you sit down, so reads carry across sessions.
+function PR_generateTableConfig(stake, seatCount, typeWeights, regulars) {
     const count = Math.min(9, Math.max(2, seatCount || 9));
     const names = PR_randomVillainNames(count - 1);
     const villains = names.map(function(name, i) {
+        const reg = regulars ? regulars[name] : null;
+        const type = reg ? reg.type : PR_randomArchetype(typeWeights);
+        const avatar = (reg && reg.avatar)
+            ? reg.avatar : PR_AVATAR_POOL[Math.floor(Math.random() * PR_AVATAR_POOL.length)];
+        if (regulars) {
+            if (reg) reg.lifetime.sessions = (reg.lifetime.sessions || 0) + 1;
+            else regulars[name] = { type, avatar, lifetime: PR_freshLifetime() };
+        }
         return {
             id:      'v' + (i + 1),
             name,
-            type:    PR_randomArchetype(typeWeights),
-            avatar:  'default',
+            type,
+            avatar,
             stackBB: PR_randomVillainStackBB(stake),
             sessionStats: { handsDealt: 0, vpipHands: 0, pfrHands: 0 },
         };
@@ -1881,7 +1927,7 @@ function PR_buildHandSeatsRotated(tableConfig, heroProfile, offset, heroStackBB)
 // VPIP: voluntarily put money in preflop (call/limp/raise — blinds excluded).
 // PFR:  raised preflop (raise/3bet/4bet).
 // ---------------------------------------------------------------------------
-function PR_accumulateSeatStats(tableConfig, prHand) {
+function PR_accumulateSeatStats(tableConfig, prHand, regulars) {
     if (!tableConfig || !prHand) return;
     const preflopActions = (prHand.gameState.streetHistory.preflop || [])
         .concat(prHand.gameState.street === 'preflop' ? prHand.gameState.streetState.actions : []);
@@ -1889,9 +1935,22 @@ function PR_accumulateSeatStats(tableConfig, prHand) {
         const seat = prHand.seats.find(s => s && s.villainId === villain.id);
         if (!seat) return;
         const stats = villain.sessionStats || (villain.sessionStats = { handsDealt: 0, vpipHands: 0, pfrHands: 0 });
-        stats.handsDealt++;
         const acts = preflopActions.filter(a => a.seatLabel === seat.label);
-        if (acts.some(a => ['call', 'limp', 'raise', '3bet', '4bet'].includes(a.action))) stats.vpipHands++;
-        if (acts.some(a => ['raise', '3bet', '4bet'].includes(a.action))) stats.pfrHands++;
+        const vpip = acts.some(a => ['call', 'limp', 'raise', '3bet', '4bet'].includes(a.action));
+        const pfr  = acts.some(a => ['raise', '3bet', '4bet'].includes(a.action));
+        const threeBet = acts.some(a => ['3bet', '4bet'].includes(a.action));
+        stats.handsDealt++;
+        if (vpip) stats.vpipHands++;
+        if (pfr) stats.pfrHands++;
+        // Lifetime roster: reads on a named regular survive re-seats and
+        // sessions (upsert by name — a renamed seat starts a fresh identity).
+        if (regulars) {
+            const reg = regulars[villain.name] ||
+                (regulars[villain.name] = { type: villain.type, avatar: villain.avatar, lifetime: PR_freshLifetime() });
+            reg.lifetime.handsDealt++;
+            if (vpip) reg.lifetime.vpipHands++;
+            if (pfr) reg.lifetime.pfrHands++;
+            if (threeBet) reg.lifetime.threeBetHands = (reg.lifetime.threeBetHands || 0) + 1;
+        }
     });
 }

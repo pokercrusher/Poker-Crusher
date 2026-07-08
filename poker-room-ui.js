@@ -41,7 +41,7 @@ function PRUI_show() {
         PRUI.draft.stake = PRUI.room.stake;
         PRUI.draft.tableConfig = PRUI.room.tableConfig && PRUI.room.tableConfig.stake === PRUI.draft.stake
             ? PRUI.room.tableConfig
-            : PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights);
+            : PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights, PRUI.room.regulars);
         PRUI.draft.seatCount = PRUI.draft.tableConfig.seatCount;
     }
     if (PRUI.draft.buyIn === null) {
@@ -256,7 +256,7 @@ function PRUI_onClick(e) {
         if (!PR_STAKE_CONFIG[stake]) return;
         PRUI.draft.stake = stake;
         PRUI.draft.buyIn = PRUI_defaultBuyIn(stake, PRUI.room.bankroll);
-        PRUI.draft.tableConfig = PR_generateTableConfig(stake, PRUI.draft.seatCount, PRUI.draft.typeWeights);
+        PRUI.draft.tableConfig = PR_generateTableConfig(stake, PRUI.draft.seatCount, PRUI.draft.typeWeights, PRUI.room.regulars);
         PRUI_render();
     } else if (kind === 'weight') {
         const t = el.dataset.type;
@@ -264,13 +264,18 @@ function PRUI_onClick(e) {
         w[t] = Math.max(0, Math.min(5, (w[t] !== undefined ? w[t] : 1) + parseInt(el.dataset.delta, 10)));
         PRUI_render();
     } else if (kind === 'shuffle') {
-        PRUI.draft.tableConfig = PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights);
+        PRUI.draft.tableConfig = PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights, PRUI.room.regulars);
         PRUI_render();
     } else if (kind === 'avatar') {
         const villain = PRUI.draft.tableConfig.villains[parseInt(el.dataset.idx, 10)];
         if (!villain) return;
         const cur = PRUI_AVATARS.indexOf(villain.avatar);
         villain.avatar = PRUI_AVATARS[(cur + 1) % PRUI_AVATARS.length];
+        // Regulars keep their face across sessions — persist the change
+        if (PRUI.room.regulars && PRUI.room.regulars[villain.name]) {
+            PRUI.room.regulars[villain.name].avatar = villain.avatar;
+            PR_saveRoomState(PRUI.room);
+        }
         PRUI_render();
     } else if (kind === 'hero-avatar') {
         const cur = PRUI_AVATARS.indexOf(PRUI.room.heroProfile.avatar);
@@ -336,7 +341,7 @@ function PRUI_onChange(e) {
     if (!el) return;
     if (el.dataset.pr === 'seats') {
         PRUI.draft.seatCount = parseInt(el.value, 10) || 9;
-        PRUI.draft.tableConfig = PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights);
+        PRUI.draft.tableConfig = PR_generateTableConfig(PRUI.draft.stake, PRUI.draft.seatCount, PRUI.draft.typeWeights, PRUI.room.regulars);
         PRUI_render();
     } else if (el.dataset.pr === 'buyin') {
         PRUI_render(); // settle full render once the slider is released

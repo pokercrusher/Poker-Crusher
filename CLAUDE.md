@@ -49,9 +49,16 @@ renderer and mostly unnecessary.
   online = 2.5bb. Lobby "Table style" chips; raise slider defaults are
   street-aware (preflop unopened → profile open, vs raise → 3x, postflop
   → 2/3 pot). Trainer already sized live via stake presets ($ opens).
-- Roadmap: Phase 2 named villains → Phase 3 exploit layer (baseline grade
-  feeds SR, exploit notes ride on reads; exploit principles become drills)
-  → Phase 4 multiway rules + SR keys (add, never rename) → Phase 5 polish.
+- Phase 2 DONE: persistent regulars roster (`room.regulars` by name:
+  {type, avatar, lifetime{handsDealt,vpipHands,pfrHands,threeBetHands,
+  sessions}}). `PR_generateTableConfig(..., regulars)` keeps a re-drawn
+  name's archetype+avatar forever; `PR_accumulateSeatStats(cfg, hand,
+  regulars)` upserts lifetime reads; sanitized on load
+  (`PR_sanitizeRegulars`). Popup shows "Regular · N sessions · All-time"
+  once history exceeds this session (`PRT_lifetimeLine`).
+- Roadmap: Phase 3 exploit layer (baseline grade feeds SR, exploit notes
+  ride on reads; exploit principles become drills) → Phase 4 multiway
+  rules + SR keys (add, never rename) → Phase 5 polish.
 
 ### Architecture decisions (deviations from the original 7-pass spec)
 - **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids
