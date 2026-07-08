@@ -54,23 +54,36 @@ renderer and mostly unnecessary.
   cards), correct → 'Good' (real play maintains intervals), mixed skipped.
   Spot metadata rides on `heroGrades[].spot` = {scenario, heroPos, oppPos, hand}.
 - Chip movement has ONE choke point (`_PR_applyAction`): calls/limps derive
-  from facing amount, commitments clamp at stack → all-in, conservation is
-  property-tested (300 random hands/run).
+  from facing amount, commitments clamp at stack → all-in, min-raise enforced
+  (`PR_minRaiseTo`), illegal raises (betting not reopened) convert to calls,
+  conservation is property-tested (300 random hands/run).
+- Betting completeness DONE (2026-07-08): TDA short-all-in rule
+  (`PR_canRaise` + `streetState.lastFullRaiseIdx`; table UI hides raise in
+  call-or-fold spots), uncalled-bet excess tagged as refund
+  (`pot.refundBB` + `outcome.refund`) so settlement/history never call a
+  refund a win. Side-pot eligibility verified correct for partial calls.
 
-### Engine invariants (tests/engine.test.js, ~125 tests, run vs PRODUCTION code)
+### Grading coverage (audited 2026-07-08, 4k-hand sim)
+- Preflop: 100% covered — ranges (78%), premium cold-vs-3bet heuristic (6%),
+  limp-pot iso rule vs RFI range (`_PR_gradePreflopAction` limp branch).
+- Postflop: V2 tables (c-bet/barrel + SRP/3BP defend) + `_PR_gradeDonkNode`
+  (check-to-the-raiser rule; turn/river only when aggressor barreled prior
+  street — probes stay heuristic). ~11% of all decisions fall to the honest
+  tier heuristic: delayed c-bets, probes, multiway — no data by design.
+
+### Engine invariants (tests/engine.test.js, ~167 tests, run vs PRODUCTION code)
 - Tests load real files via `tests/helpers/load-production.js` (node:vm).
   NEVER copy production functions into tests — a drifted copy once masked a
   showdown that awarded no pots.
 - Conservation property test + kicker battles + split pots + side pots +
-  walk/BB-option + 3-bet re-act + archetype gates + persistence round-trips.
+  walk/BB-option + 3-bet re-act + archetype gates + persistence round-trips +
+  short-all-in no-reopen + refund tagging + limp/donk grading rules.
 
 ### Remaining Poker Room work
 - Pass 6 cosmetic polish: card-flip animation, chip-slide to winner (optional).
-- Postflop grading depth: replace the tier heuristic with POSTFLOP_STRATEGY_V2
-  lookups where heads-up-equivalent spots exist.
-- Betting completeness (audit §5.4 leftovers): min-raise rule, uncalled-bet
-  refund fairness for undercall all-ins, side-pot eligibility for partial calls.
 - Named villain profiles persisting across sessions (optional Pass 7 ext).
+- OPEN USER DECISION: house RFI ranges ~20-30% tighter than solver baselines
+  (RANGE-AUDIT.md Finding 2) — keep as house style or loosen.
 
 ## Trainer notes (2026-07-02 fixes)
 - `isTerminal` = hero folded OR <2 active (NOT "any fold").

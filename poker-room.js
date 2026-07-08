@@ -1220,6 +1220,37 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
         return premium
             ? { grade: 'correct', explanation: 'Continuing cold vs a 3-bet with a premium hand is correct.' }
             : { grade: 'error',   explanation: 'Cold vs a 3-bet, only premium hands (QQ+, AK) can continue.' };
+    } else if (!ctx.opener && !ctx.threeBettor && ctx.limpers && ctx.limpers.length > 0) {
+        // Limped pot: no dedicated ranges, but the house style is clear —
+        // iso-raise every hand you would have opened, fold the rest.
+        if (heroAction === 'check') {
+            return { grade: 'correct', explanation: 'Checking your option in a limped pot is free — see the flop.' };
+        }
+        let rfiAction;
+        try {
+            rfiAction = computeCorrectAction(hand, 'RFI', heroPos, 'BB', null);
+        } catch (e) {
+            return { grade: 'mixed', explanation: 'GTO data unavailable for this spot.' };
+        }
+        const inRfi = rfiAction === 'RAISE';
+        const limpTxt = ctx.limpers.length === 1 ? 'the limper' : ctx.limpers.length + ' limpers';
+        if (heroAction === 'raise') {
+            return inRfi
+                ? { grade: 'correct', explanation: 'Iso-raising ' + limpTxt + ' with a hand you would open is the standard play.' }
+                : { grade: 'error', explanation: hand + ' is not in your opening range — iso-raising ' + limpTxt + ' with it is too loose.' };
+        }
+        if (heroAction === 'call' || heroAction === 'limp') {
+            return inRfi
+                ? { grade: 'mixed', explanation: 'Overlimping is passive — prefer iso-raising ' + limpTxt + ' with a hand you would open.' }
+                : { grade: 'error', explanation: 'Overlimping weak hands bleeds chips — fold ' + hand + ' behind ' + limpTxt + '.' };
+        }
+        // fold
+        if (!inRfi) {
+            return { grade: 'correct', explanation: 'Folding behind ' + limpTxt + ' is right without a hand you would open.' };
+        }
+        return checkRangeHelper(hand, ['QQ+', 'AKs', 'AKo'])
+            ? { grade: 'error', explanation: 'Folding a premium hand to limpers is a significant error — iso-raise big.' }
+            : { grade: 'mixed', explanation: hand + ' is strong enough to iso-raise ' + limpTxt + ' — folding gives up value.' };
     } else {
         return { grade: 'mixed', explanation: 'Complex spot — no GTO data available.' };
     }
@@ -1477,12 +1508,53 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// _PR_gradeDonkNode — hero called preflop and is first to act with no bet in
+// front. Betting into the raiser (donking) is a rare part of any solid
+// strategy; checking to the aggressor is near-universal. Turn/river only
+// qualify when the aggressor barreled the previous street — a lead after the
+// aggressor checks back is a probe, a real strategy left to the heuristic.
+// ---------------------------------------------------------------------------
+function _PR_gradeDonkNode(prHand, heroAction, heroSeat) {
+    try {
+        const street = prHand.gameState.street;
+        if (!['flop', 'turn', 'river'].includes(street)) return null;
+        if (heroAction !== 'bet' && heroAction !== 'check') return null;
+        const ss = prHand.gameState.streetState;
+        if (ss.betMadeThisStreet || _PR_facingAmount(prHand, heroSeat.label) > 0) return null;
+
+        const hist = prHand.gameState.streetHistory;
+        const pre = hist.preflop || [];
+        const lastRaise = [...pre].reverse().find(a => ['raise', '3bet', '4bet'].includes(a.action));
+        if (!lastRaise || lastRaise.seatLabel === heroSeat.label) return null;
+        const aggr = prHand.seats.find(s => s !== null && s.label === lastRaise.seatLabel);
+        if (!aggr || aggr.folded) return null;
+
+        if (street === 'turn' && !_PR_betWasCalled(hist.flop || [], aggr.label)) return null;
+        if (street === 'river' && (!_PR_betWasCalled(hist.flop || [], aggr.label) ||
+                                   !_PR_betWasCalled(hist.turn || [], aggr.label))) return null;
+
+        if (heroAction === 'check') {
+            return { grade: 'correct', explanation: 'Standard — as the preflop caller you check to the raiser. Strong hands too: check-raising builds a bigger pot.' };
+        }
+        const tier = _PR_seatHandTier(heroSeat, prHand);
+        if (tier === 'NUT_VALUE' || tier === 'STRONG') {
+            return { grade: 'mixed', explanation: 'Donk-leading a strong hand can work, but GTO overwhelmingly checks to the raiser here — check-raise instead.' };
+        }
+        return { grade: 'error', explanation: 'Donk-betting into the preflop raiser is rarely correct — check and let the aggressor act first.' };
+    } catch (_) {
+        return null;
+    }
+}
+
 function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
     // Heads-up decisions grade against the real strategy tables:
     // c-bets/barrels when hero was the aggressor, fold/call/raise when
-    // hero defends against the aggressor's bet.
+    // hero defends against the aggressor's bet — plus the donk node, where
+    // check-to-the-raiser is near-universal.
     const v2 = _PR_gradeCbetV2(prHand, heroAction, heroSeat) ||
-               _PR_gradeDefendV2(prHand, heroAction, heroSeat);
+               _PR_gradeDefendV2(prHand, heroAction, heroSeat) ||
+               _PR_gradeDonkNode(prHand, heroAction, heroSeat);
     if (v2) return v2;
 
     // Everything else: lightweight equity-heuristic grading (multiway/turn/river)

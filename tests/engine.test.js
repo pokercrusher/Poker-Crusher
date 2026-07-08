@@ -2016,3 +2016,74 @@ describe('Poker Room — uncalled bets are refunds, not wins', () => {
         expect(h.outcome.pots[0].refundBB).toBe(h.outcome.refund.amountBB);
     });
 });
+
+// =============================================================================
+// Poker Room — limp-pot and donk-node grading (coverage-audit additions)
+// =============================================================================
+
+describe('Poker Room — limp-pot preflop grading (iso vs RFI range)', () => {
+
+    function limpHand(handNotation, holeCards) {
+        return {
+            seats: [{ label: 'BTN', isHero: true, folded: false, allIn: false, stackBB: 100,
+                      holeCards, handNotation }],
+            heroSeatIndex: 0,
+            gameState: {
+                street: 'preflop',
+                streetState: { street: 'preflop', actions: [], committedBB: {} },
+                streetHistory: { preflop: [], flop: [], turn: [], river: [] },
+            },
+            preflopContext: { opener: null, threeBettor: null, limpers: ['UTG'], potStructure: 'LIMP_POT' },
+        };
+    }
+
+    it('iso-raising a limper with an opening hand is correct; with trash it is an error', () => {
+        expect(PROD.PR_gradeHeroAction(limpHand('AA', cards2('A', 's', 'A', 'h')), 'raise').grade).toBe('correct');
+        expect(PROD.PR_gradeHeroAction(limpHand('72o', cards2('7', 's', '2', 'h')), 'raise').grade).toBe('error');
+    });
+
+    it('folding: correct with trash, error with a premium', () => {
+        expect(PROD.PR_gradeHeroAction(limpHand('72o', cards2('7', 's', '2', 'h')), 'fold').grade).toBe('correct');
+        expect(PROD.PR_gradeHeroAction(limpHand('AA', cards2('A', 's', 'A', 'h')), 'fold').grade).toBe('error');
+    });
+
+    it('overlimping an opening hand is mixed (prefer the iso)', () => {
+        expect(PROD.PR_gradeHeroAction(limpHand('KTs', cards2('K', 's', 'T', 's')), 'call').grade).toBe('mixed');
+    });
+});
+
+describe('Poker Room — donk-node grading (caller first to act, no bet in front)', () => {
+
+    const flop = [C('K', 's'), C('7', 'h'), C('2', 'd')];
+    const pre = [
+        { seatLabel: 'UTG', action: 'raise', sizingBB: 2.5 },
+        { seatLabel: 'BB',  action: 'call',  sizingBB: 1.5 },
+    ];
+    const ctx = { potStructure: 'SRP', opener: 'UTG' };
+    const donkHand = (heroCards) => gradeHand('BB', 'UTG', heroCards, flop, pre, ctx, [], { BB: 0, UTG: 0 }, 5.5);
+
+    it('checking to the raiser is correct', () => {
+        const g = PROD.PR_gradeHeroAction(donkHand(cards2('9', 'c', '8', 'c')), 'check');
+        expect(g.grade).toBe('correct');
+        expect(g.explanation).toContain('check to the raiser');
+    });
+
+    it('donk-betting air is an error; donk-betting a set is mixed (prefer check-raise)', () => {
+        expect(PROD.PR_gradeHeroAction(donkHand(cards2('9', 'c', '8', 'c')), 'bet').grade).toBe('error');
+        expect(PROD.PR_gradeHeroAction(donkHand(cards2('7', 's', '7', 'c')), 'bet').grade).toBe('mixed');
+    });
+
+    it('turn probe after the aggressor checks back is NOT graded as a donk', () => {
+        const h = donkHand(cards2('9', 'c', '8', 'c'));
+        h.gameState.street = 'turn';
+        h.gameState.streetState.street = 'turn';
+        h.gameState.board = flop.concat([C('4', 's')]);
+        h.gameState.streetHistory.flop = [
+            { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+            { seatLabel: 'UTG', action: 'check', sizingBB: 0 },
+        ];
+        const g = PROD.PR_gradeHeroAction(h, 'bet');
+        expect(g.explanation || '').not.toContain('Donk-betting');
+        expect(g.explanation || '').not.toContain('check to the raiser');
+    });
+});
