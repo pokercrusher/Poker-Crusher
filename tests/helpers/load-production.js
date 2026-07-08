@@ -50,7 +50,7 @@ function makeSandbox() {
 }
 
 // Browser order matters: cloud.js defines profileKey used by engine.js's SR init
-const FILES = ['ranges.js', 'cloud.js', 'engine.js', 'sim.js', 'poker-room.js'];
+const FILES = ['ranges.js', 'ranges-postflop-data.js', 'cloud.js', 'engine.js', 'sim.js', 'poker-room.js'];
 
 // Names the tests need. Mix of `function` and `const` declarations —
 // both are reachable from an expression evaluated inside the context.

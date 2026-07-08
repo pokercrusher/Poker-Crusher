@@ -9,7 +9,8 @@
 ## Key Files
 | File | Purpose |
 |------|---------|
-| `ranges.js` (8600 LOC) | All range data, `POSTFLOP_STRATEGY_V2`, hand classifiers, `PLAYER_TYPE_RANGE_PROFILES` |
+| `ranges.js` (5570 LOC) | Preflop ranges, classifiers, generators, empty `POSTFLOP_*` table declarations, `PLAYER_TYPE_RANGE_PROFILES` |
+| `ranges-postflop-data.js` (3040 LOC) | The 25 IIFEs that POPULATE the strategy tables. Loaded async after window.load (inline loader in index.html) — until it lands, postflop lanes report unavailable and room grading uses the heuristic. Order: after ranges.js; never reference from top-level code |
 | `sim.js` (1880 LOC) | Full Hand Trainer state machine (`createHandRun`), `_runPreflopTableLoop` |
 | `engine.js` (1230 LOC) | `computeCorrectAction`, `checkRangeHelper`, SR (spaced rep) engine |
 | `training.js` (4800 LOC) | `generateNextRound`, medals, challenges, session loop |
