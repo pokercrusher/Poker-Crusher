@@ -42,6 +42,14 @@ function PRT_fmtBB(n) {
     return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + 'bb';
 }
 
+// Table surfaces show cash, like the live game being simulated. Engine math
+// stays in BB; this converts at the stake's BB dollar value for display only.
+function PRT_fmt$(bb) {
+    const v = Math.round(bb * PRT_bb$() * 100) / 100;
+    return (v < 0 ? '-' : '') + '$' +
+        Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
 // ---------------------------------------------------------------------------
 // Enter / leave
 // ---------------------------------------------------------------------------
@@ -222,7 +230,7 @@ async function PRT_settle(myToken) {
     const heroCollected = heroNet + (outcome.totalCommitted ? (outcome.totalCommitted[heroLabel] || 0) : 0) - heroRefund;
     PRT.banner = winners.length
         ? (winners.includes(heroLabel)
-            ? 'You win ' + PRT_fmtBB(heroCollected) + '!'
+            ? 'You win ' + PRT_fmt$(heroCollected) + '!'
             : winnerNames.join(', ') + ' takes it')
         : 'Hand over';
     PRT_render();
@@ -427,10 +435,10 @@ function PRT_render() {
             '<div class="bg-slate-800 border border-slate-600 rounded-lg' + winCls + '" style="padding:2px 7px;pointer-events:none;transition:transform 0.2s;' + acting$ + winRing + '">' +
                 '<div class="font-black" style="font-size:11px;color:' + (isHero ? '#fcd34d' : '#cbd5e1') + '">' + seat.label + '</div>' +
                 '<div style="font-size:8px;font-weight:700;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">' +
-                    avatar + ' ' + escapeHtml(seat.name) + ' · ' + PRT_fmtBB(seat.stackBB) +
+                    avatar + ' ' + escapeHtml(seat.name) + ' · ' + PRT_fmt$(seat.stackBB) +
                     (seat.allIn ? ' <span style="color:#f87171">ALL-IN</span>' : '') + '</div>' +
                 (lastAct && inHand ? '<div style="font-size:8px;font-weight:900;color:#fbbf24;text-transform:uppercase">' +
-                    lastAct.action + (lastAct.sizingBB > 0 ? ' ' + PRT_fmtBB(lastAct.sizingBB) : '') + '</div>' : '') +
+                    lastAct.action + (lastAct.sizingBB > 0 ? ' ' + PRT_fmt$(lastAct.sizingBB) : '') + '</div>' : '') +
                 (!inHand ? '<div style="font-size:8px;font-weight:900;color:#64748b">FOLD</div>' : '') +
             '</div>' +
             (showCards && !isHero && showdownEntry ? '<div style="font-size:8px;color:#a5b4fc;font-weight:700;margin-top:1px">' +
@@ -447,7 +455,7 @@ function PRT_render() {
         return '<div style="position:absolute;left:' + bl + '%;top:' + bt + '%;transform:translate(-50%,-50%);z-index:15;display:flex;align-items:center;gap:2px">' +
             '<div class="rounded-full bg-rose-600 border border-white/20" style="width:11px;height:11px"></div>' +
             '<span class="font-black text-yellow-400 bg-black/40 px-1 rounded" style="font-size:9px">' +
-                PRT_fmtBB(ss.committedBB[seat.label]) + '</span></div>';
+                PRT_fmt$(ss.committedBB[seat.label]) + '</span></div>';
     }).join('');
 
     // ---- Board + pot + dealer button (white "D" disc, as in the trainer) ----
@@ -476,7 +484,7 @@ function PRT_render() {
             '<div class="text-center" data-prt="session-toggle" style="cursor:pointer">' +
                 '<p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Hand ' + PRT.handNo + ' · ' + escapeHtml(PRT.session.stake) + ' · tap for log</p>' +
                 '<p class="text-[12px] font-black ' + (net >= 0 ? 'text-emerald-400' : 'text-rose-400') + '">' +
-                    (net >= 0 ? '+' : '') + PRT_fmtBB(net) + ' · stack ' + PRT_fmtBB(PRT.session.stackBB) + '</p>' +
+                    (net >= 0 ? '+' : '') + PRT_fmt$(net) + ' · stack ' + PRT_fmt$(PRT.session.stackBB) + '</p>' +
             '</div>' +
             '<button data-prt="speed" class="pc-btn-utility px-3 py-2 text-xs capitalize">' + PRT.speed + '</button>' +
         '</div>';
@@ -487,7 +495,7 @@ function PRT_render() {
             seatHtml + betHtml + dealerHtml +
             '<div style="position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);text-align:center;z-index:10">' +
                 '<div style="display:flex;gap:3px;justify-content:center;min-height:48px">' + boardHtml + '</div>' +
-                '<div style="font-size:11px;font-weight:900;color:#fde68a;margin-top:4px">Pot ' + PRT_fmtBB(potBB) + '</div>' +
+                '<div style="font-size:11px;font-weight:900;color:#fde68a;margin-top:4px">Pot ' + PRT_fmt$(potBB) + '</div>' +
                 (PRT.banner && PRT.banner !== 'busted'
                     ? '<div style="font-size:12px;font-weight:900;color:#4ade80;margin-top:2px">' + escapeHtml(PRT.banner) + '</div>' : '') +
             '</div>' +
@@ -537,7 +545,7 @@ function PRT_render() {
         actionArea =
             '<div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 flex flex-col gap-2">' +
                 '<div class="flex items-center justify-between text-[10px] font-bold text-slate-400">' +
-                    '<span>Pot ' + PRT_fmtBB(potBB) + (facing > 0 ? ' · call ' + PRT_fmtBB(facing) + ' (' + potOdds + '%)' : '') + '</span>' +
+                    '<span>Pot ' + PRT_fmt$(potBB) + (facing > 0 ? ' · call ' + PRT_fmt$(facing) + ' (' + potOdds + '%)' : '') + '</span>' +
                     (PRT.lastGrade ? '<span data-prt="grade" class="cursor-pointer">' +
                         (PRT.lastGrade.grade === 'correct' ? '✓' : PRT.lastGrade.grade === 'mixed' ? '~' : '✗') +
                         (PRT.lastGrade.exploit ? ' <span class="text-amber-400">●</span>' : '') + '</span>' : '<span></span>') +
@@ -545,14 +553,14 @@ function PRT_render() {
                 (canRaise
                     ? '<div class="flex items-center gap-2">' +
                         '<input data-prt="slider" type="range" min="' + minTo + '" max="' + maxTo + '" step="0.5" value="' + sliderVal + '" class="flex-1" />' +
-                        '<span id="prt-slider-label" class="text-[11px] font-black text-slate-200 w-20 text-right">' + PRT_fmtBB(sliderVal) + ' ($' + Math.round(sliderVal * bb$) + ')</span>' +
+                        '<span id="prt-slider-label" class="text-[11px] font-black text-slate-200 w-20 text-right">' + '$' + Math.round(sliderVal * bb$) + ' (' + PRT_fmtBB(sliderVal) + ')</span>' +
                       '</div>'
                     : '') +
                 '<div class="grid ' + (canRaise ? 'grid-cols-3' : 'grid-cols-2') + ' gap-2">' +
                     '<button data-prt="fold" class="py-3 rounded-xl font-black text-sm bg-rose-900/60 text-rose-200 border border-rose-700/40">FOLD</button>' +
                     (canCheck
                         ? '<button data-prt="check" class="py-3 rounded-xl font-black text-sm bg-slate-800 text-slate-200 border border-slate-600">CHECK</button>'
-                        : '<button data-prt="call" class="py-3 rounded-xl font-black text-sm bg-slate-800 text-slate-200 border border-slate-600">CALL ' + PRT_fmtBB(facing) + '</button>') +
+                        : '<button data-prt="call" class="py-3 rounded-xl font-black text-sm bg-slate-800 text-slate-200 border border-slate-600">CALL ' + PRT_fmt$(facing) + '</button>') +
                     (canRaise
                         ? '<button data-prt="aggr" class="py-3 rounded-xl font-black text-sm bg-amber-600 text-white">' + aggrLabel.toUpperCase() + '</button>'
                         : '') +
@@ -594,7 +602,7 @@ function PRT_render() {
                             '<div><p class="text-[9px] text-slate-500 font-bold uppercase">PFR</p><p class="text-sm font-black text-slate-200">' + pct(st.pfrHands) + '</p></div>' +
                         '</div>' +
                         PRT_lifetimeLine(v, st) +
-                        '<p class="text-[9px] text-slate-600 mt-2">Stack ' + PRT_fmtBB(v.stackBB) + ' · tap anywhere to close</p>' +
+                        '<p class="text-[9px] text-slate-600 mt-2">Stack ' + PRT_fmt$(v.stackBB) + ' · tap anywhere to close</p>' +
                     '</div>' +
                 '</div>';
         }
@@ -613,7 +621,7 @@ function PRT_render() {
             '<div class="flex items-center gap-2 pl-3 py-1">' +
                 '<span class="text-[8px] text-slate-500 font-bold uppercase">You</span>' + mini(h.heroCards) +
                 (h.board && h.board.length ? '<span class="text-[8px] text-slate-500 font-bold uppercase ml-1">Board</span>' + mini(h.board) : '') +
-                '<span class="text-[8px] text-slate-500 font-bold ml-1">pot ' + PRT_fmtBB(h.potBB || 0) + '</span>' +
+                '<span class="text-[8px] text-slate-500 font-bold ml-1">pot ' + PRT_fmt$(h.potBB || 0) + '</span>' +
             '</div>' +
             (h.reveals || []).map(function(r) {
                 return '<div class="flex items-center gap-2 pl-3 py-0.5">' +
@@ -635,7 +643,7 @@ function PRT_render() {
             '<div data-prt="hist" data-hn="' + h.handNo + '" class="flex justify-between text-[10px] cursor-pointer select-none">' +
                 '<span class="text-slate-400 font-bold pointer-events-none">' + (open ? '▾' : '▸') + ' #' + h.handNo + ' · ' + escapeHtml(h.pos) + ' · ' + escapeHtml(h.cards) + '</span>' +
                 '<span class="font-black pointer-events-none" style="color:' + (h.netBB >= 0 ? '#4ade80' : '#f87171') + '">' +
-                    (h.netBB >= 0 ? '+' : '') + PRT_fmtBB(h.netBB) + '</span>' +
+                    (h.netBB >= 0 ? '+' : '') + PRT_fmt$(h.netBB) + '</span>' +
             '</div>' + (open ? (gradeRows || '<div class="text-[9px] text-slate-600 pl-3">no decisions</div>') : '') + '</div>';
     }).join('');
     // Session log renders as an overlay opened from the header (keeps the
@@ -679,13 +687,13 @@ function PRT_summaryHtml() {
         '<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full" style="max-width:340px">' +
             '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-center">Session summary</p>' +
             '<p class="text-3xl font-black text-center mt-1 ' + netCls + '">' +
-                (net >= 0 ? '+' : '') + PRT_fmtBB(net) + '</p>' +
+                (net >= 0 ? '+' : '') + PRT_fmt$(net) + '</p>' +
             '<p class="text-[11px] text-slate-500 text-center mb-3">' +
                 (net >= 0 ? '+' : '−') + '$' + Math.abs(Math.round(net * bb$)) + ' at ' + escapeHtml(s.stake) + '</p>' +
             row('Hands', hands) +
             row('Win rate', (bb100 >= 0 ? '+' : '') + bb100.toFixed(0) + ' bb/100', netCls) +
-            row('Biggest pot won', '+' + PRT_fmtBB(PRT.bestHandBB || 0), 'text-emerald-400') +
-            row('Toughest loss', PRT_fmtBB(PRT.worstHandBB || 0), 'text-rose-400') +
+            row('Biggest pot won', '+' + PRT_fmt$(PRT.bestHandBB || 0), 'text-emerald-400') +
+            row('Toughest loss', PRT_fmt$(PRT.worstHandBB || 0), 'text-rose-400') +
             row('Decision accuracy', acc) +
             row('Your VPIP / PFR', vp + ' / ' + pf) +
             srLine +
@@ -783,7 +791,7 @@ function PRT_onInput(e) {
     PRT.sliderTo = parseFloat(el.value);
     const label = document.getElementById('prt-slider-label');
     if (label) {
-        label.textContent = PRT_fmtBB(PRT.sliderTo) + ' ($' + Math.round(PRT.sliderTo * PRT_bb$()) + ')';
+        label.textContent = '$' + Math.round(PRT.sliderTo * PRT_bb$()) + ' (' + PRT_fmtBB(PRT.sliderTo) + ')';
     }
 }
 
