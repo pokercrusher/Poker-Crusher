@@ -2087,3 +2087,52 @@ describe('Poker Room — donk-node grading (caller first to act, no bet in front
         expect(g.explanation || '').not.toContain('check to the raiser');
     });
 });
+
+// =============================================================================
+// Poker Room — live sizing profile (Phase 1: live-optimized identity)
+// =============================================================================
+
+describe('Poker Room — sizing profile', () => {
+
+    it('room state: sizing defaults to live, persists online, rejects garbage', () => {
+        expect(PROD.PR_defaultRoomState().sizing).toBe('live');
+        const st = PROD.PR_defaultRoomState();
+        st.sizing = 'online';
+        PROD.PR_saveRoomState(st);
+        expect(PROD.PR_loadRoomState().sizing).toBe('online');
+        st.sizing = 'weird-value';
+        PROD.PR_saveRoomState(st);
+        expect(PROD.PR_loadRoomState().sizing).toBe('live');
+    });
+
+    it('createHand: live profile opens 3bb, online 2.5bb, explicit override wins', () => {
+        expect(PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats() }).openSizeBB).toBe(3);
+        expect(PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats(), sizing: 'online' }).openSizeBB).toBe(2.5);
+        expect(PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats(), openSizeBB: 4 }).openSizeBB).toBe(4);
+    });
+
+    it('live iso over limpers: hero default raise is open size + 1bb per limper', () => {
+        const mk = (sizing) => {
+            const h = PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats(), sizing });
+            const ss = h.gameState.streetState;
+            ss.actions.push({ seatLabel: 'UTG', action: 'limp', sizingBB: 1 });
+            ss.actions.push({ seatLabel: 'HJ',  action: 'limp', sizingBB: 1 });
+            ss.committedBB.UTG = 1; ss.committedBB.HJ = 1;
+            return h;
+        };
+        const live = PROD.PR_applyHeroAction(mk('live'), 'raise', 0);
+        expect(live.gameState.streetState.committedBB.BTN).toBe(5);   // 3 + 2 limpers
+        const online = PROD.PR_applyHeroAction(mk('online'), 'raise', 0);
+        expect(online.gameState.streetState.committedBB.BTN).toBe(2.5); // flat
+    });
+
+    it('grading language: house-range verdicts say baseline, not GTO', () => {
+        const h = PROD.PR_createHand({ heroPos: 'UTG', seats: makeSeats() });
+        const hs = h.seats[h.heroSeatIndex];
+        hs.holeCards = cards2('A', 's', 'A', 'h');
+        hs.handNotation = 'AA';
+        const g = PROD.PR_gradeHeroAction(h, 'raise');
+        expect(g.explanation).toContain('baseline');
+        expect(g.explanation).not.toContain('GTO');
+    });
+});

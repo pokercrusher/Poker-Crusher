@@ -205,6 +205,19 @@ function PRUI_lobbyHtml() {
             '<p class="text-[9px] text-slate-600 mt-2">Tap an avatar to change it · tap a name to rename · seats rotate with the button, player types stay hidden</p>' +
         '</div>' +
 
+        // Table style — live cardroom sizing (default) vs online solver sizing
+        '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
+            '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Table style</p>' +
+            '<div class="grid grid-cols-2 gap-2 mt-2">' +
+                '<button data-pr="sizing" data-val="live" class="py-2.5 rounded-xl text-xs font-black transition-all ' +
+                    (room.sizing !== 'online' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 border border-slate-700 text-slate-500') +
+                    '">LIVE<span class="block text-[9px] font-bold opacity-80">3bb opens · +1/limper</span></button>' +
+                '<button data-pr="sizing" data-val="online" class="py-2.5 rounded-xl text-xs font-black transition-all ' +
+                    (room.sizing === 'online' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 border border-slate-700 text-slate-500') +
+                    '">ONLINE<span class="block text-[9px] font-bold opacity-80">2.5bb opens</span></button>' +
+            '</div>' +
+        '</div>' +
+
         // Study mode — opt-in bridge to the trainer's spaced repetition
         '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3">' +
             '<div class="flex-1">' +
@@ -270,6 +283,10 @@ function PRUI_onClick(e) {
         PRUI_render();
     } else if (kind === 'study') {
         PRUI.room.studyMode = !PRUI.room.studyMode;
+        PR_saveRoomState(PRUI.room);
+        PRUI_render();
+    } else if (kind === 'sizing') {
+        PRUI.room.sizing = el.dataset.val === 'online' ? 'online' : 'live';
         PR_saveRoomState(PRUI.room);
         PRUI_render();
     } else if (kind === 'sit') {

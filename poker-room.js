@@ -302,7 +302,10 @@ function _PR_applyAction(prHand, seatLabel, action, sizingBB) {
 // ---------------------------------------------------------------------------
 function PR_createHand(config) {
     const heroPos     = config.heroPos;
-    const openSizeBB  = config.openSizeBB || 2.5;
+    // Sizing profile: 'live' (default — 3bb opens, +1bb per limper on isos,
+    // matching real cardroom sizing) or 'online' (2.5bb solver-style opens).
+    const sizing      = config.sizing === 'online' ? 'online' : 'live';
+    const openSizeBB  = config.openSizeBB || (sizing === 'online' ? 2.5 : 3);
     const heroStackBB = config.heroStackBB || 100;
 
     // Build normalized seats array — index = position order, value = seat or null
@@ -379,6 +382,7 @@ function PR_createHand(config) {
             streetHistory: { preflop: [], flop: [], turn: [], river: [] },
         },
         openSizeBB:   openSizeBB,
+        sizing:       sizing,
         heroGrades:   [],
         heroFolded:   false,
         terminal:     false,
@@ -420,6 +424,11 @@ function _PR_deriveTableState(prHand) {
         } else if (a.action === 'limp') {
             ts.limpers.push(a.seatLabel);
         }
+    }
+    // Live sizing: iso-raises over limpers go 1bb bigger per limper (nobody
+    // folds a limped hand to a min-ish raise in a cardroom).
+    if (prHand.sizing !== 'online' && !ts.opener && ts.limpers.length > 0) {
+        ts.openSizeBB = parseFloat((ts.openSizeBB + ts.limpers.length).toFixed(2));
     }
     return ts;
 }
@@ -628,7 +637,7 @@ function PR_applyHeroAction(prHand, action, sizingBB) {
     // Derive sizing if not provided
     let sizing = sizingBB || 0;
     if (action === 'raise' && street === 'preflop' && !sizingBB) {
-        sizing = hr.openSizeBB || 2.5;
+        sizing = _PR_deriveTableState(hr).openSizeBB; // profile open, +1bb/limper live
     } else if (action === 'call' && !sizingBB) {
         sizing = _PR_facingAmount(hr, heroLabel);
     }
@@ -1230,7 +1239,7 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
         try {
             rfiAction = computeCorrectAction(hand, 'RFI', heroPos, 'BB', null);
         } catch (e) {
-            return { grade: 'mixed', explanation: 'GTO data unavailable for this spot.' };
+            return { grade: 'mixed', explanation: 'No baseline data for this spot.' };
         }
         const inRfi = rfiAction === 'RAISE';
         const limpTxt = ctx.limpers.length === 1 ? 'the limper' : ctx.limpers.length + ' limpers';
@@ -1252,7 +1261,7 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
             ? { grade: 'error', explanation: 'Folding a premium hand to limpers is a significant error — iso-raise big.' }
             : { grade: 'mixed', explanation: hand + ' is strong enough to iso-raise ' + limpTxt + ' — folding gives up value.' };
     } else {
-        return { grade: 'mixed', explanation: 'Complex spot — no GTO data available.' };
+        return { grade: 'mixed', explanation: 'Complex spot — no baseline data available.' };
     }
 
     // computeCorrectAction expects browser globals (rfiRanges etc.)
@@ -1260,7 +1269,7 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
     try {
         correctAction = computeCorrectAction(hand, scenario, heroPos, oppPos, null);
     } catch (e) {
-        return { grade: 'mixed', explanation: 'GTO data unavailable for this spot.' };
+        return { grade: 'mixed', explanation: 'No baseline data for this spot.' };
     }
 
     // Map trainer action codes to PR action strings
@@ -1272,12 +1281,12 @@ function _PR_gradePreflopAction(prHand, heroAction, heroSeat) {
     const spot = { scenario, heroPos, oppPos, hand };
 
     if (heroAction === correct) {
-        return { grade: 'correct', spot, explanation: `${correct.toUpperCase()} is the GTO play in this spot.` };
+        return { grade: 'correct', spot, explanation: `${correct.toUpperCase()} is the baseline play in this spot.` };
     }
     if ((correct === 'raise' || correct === '3bet') && (heroAction === 'call')) {
-        return { grade: 'mixed', spot, explanation: `GTO prefers ${correct.toUpperCase()}; calling is not a blunder but gives up equity.` };
+        return { grade: 'mixed', spot, explanation: `The live baseline prefers ${correct.toUpperCase()} — calling is not a blunder, but it gives up equity.` };
     }
-    return { grade: 'error', spot, explanation: `GTO play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
+    return { grade: 'error', spot, explanation: `Baseline play is ${correct.toUpperCase()}; ${heroAction.toUpperCase()} is a significant error here.` };
 }
 
 // ---------------------------------------------------------------------------
@@ -1625,6 +1634,7 @@ function PR_defaultRoomState() {
         stake: '1/2',
         heroProfile: { name: 'You', avatar: '😎' },
         studyMode: false,           // opt-in: graded room decisions feed the trainer's SR queue
+        sizing: 'live',             // 'live' 3bb+1/limper (default) | 'online' 2.5bb
         tableConfig: null,          // built on sit-down via PR_generateTableConfig
         sessionHistory: [],         // newest first: { date, handsPlayed, netBB, netDollars, stake }
         allTimeStats: { handsPlayed: 0, biggestWin: 0, biggestLoss: 0, totalNetBB: 0 },
@@ -1650,6 +1660,7 @@ function PR_loadRoomState() {
               }
             : def.heroProfile,
         studyMode: raw.studyMode === true,
+        sizing: raw.sizing === 'online' ? 'online' : 'live',
         // Table config holds VILLAINS only — hero is always the remaining seat.
         // (Older saves stored a 'seats' array including all positions; discard those.)
         tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.villains)) ? raw.tableConfig : null,

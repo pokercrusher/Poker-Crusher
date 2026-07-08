@@ -39,6 +39,20 @@ renderer and mostly unnecessary.
 | `poker-room-ui.js` (~330 LOC) | Lobby: bankroll, stake chips + buy-in slider, table size (players incl. hero), type-mix editor, hero profile + villain seat editor, study-mode toggle |
 | `poker-room-table.js` (~550 LOC) | Live table: state-driven renderer + ONE cancellable async loop per hand (no setTimeout choreography), speed scalar, spectator = same loop, settlement, rebuy, villain popups, session panel |
 
+### Live-optimized identity (Phase 1, 2026-07-08)
+- House ranges are deliberately tight = the LIVE baseline (RANGE-AUDIT
+  Finding 2 resolved: keep, own it). Grading language says "baseline",
+  not "GTO", for house-range verdicts; V2 postflop tables still say GTO
+  (they are solver-derived).
+- Sizing profile in room state (`sizing: 'live'|'online'`, default live):
+  live = 3bb opens +1bb per limper (iso bump in `_PR_deriveTableState`),
+  online = 2.5bb. Lobby "Table style" chips; raise slider defaults are
+  street-aware (preflop unopened → profile open, vs raise → 3x, postflop
+  → 2/3 pot). Trainer already sized live via stake presets ($ opens).
+- Roadmap: Phase 2 named villains → Phase 3 exploit layer (baseline grade
+  feeds SR, exploit notes ride on reads; exploit principles become drills)
+  → Phase 4 multiway rules + SR keys (add, never rename) → Phase 5 polish.
+
 ### Architecture decisions (deviations from the original 7-pass spec)
 - **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids
   v1..vN). Each hand `PR_buildHandSeatsRotated` deals position labels clockwise

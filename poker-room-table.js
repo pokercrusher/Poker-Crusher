@@ -86,7 +86,8 @@ async function PRT_dealNext() {
     PRT.handNo++;
 
     const built = PR_buildHandSeatsRotated(PRT.cfg, PRT.room.heroProfile, PRT.offset, PRT.session.stackBB);
-    let hand = PR_createHand({ heroPos: built.heroPos, seats: built.seats, heroStackBB: PRT.session.stackBB });
+    let hand = PR_createHand({ heroPos: built.heroPos, seats: built.seats,
+                               heroStackBB: PRT.session.stackBB, sizing: PRT.room.sizing });
     PRT.hand = hand;
     PRT_render();
     await PRT_delay(PRT_speedMs());
@@ -443,11 +444,21 @@ function PRT_render() {
         // Raising requires an unmatched stack AND reopened betting (a short
         // all-in since hero last acted doesn't reopen — call or fold only).
         const canRaise = stack > facing && PR_canRaise(hand, heroLabel);
-        // Raise-to slider: total for this street; floor at the legal min-raise
+        // Raise-to slider: total for this street; floor at the legal min-raise.
+        // Default: preflop unopened → profile open size (+1bb/limper live),
+        // preflop vs a raise → 3x the raise, postflop → 2/3 pot.
         const maxTo = myCommitted + stack;
         const minTo = Math.min(maxTo, PR_minRaiseTo(hand, heroLabel));
+        let defaultTo;
+        if (hand.gameState.street === 'preflop') {
+            const ts = _PR_deriveTableState(hand);
+            const maxC = Math.max(0, ...Object.values(ss.committedBB));
+            defaultTo = ts.opener ? maxC * 3 : ts.openSizeBB;
+        } else {
+            defaultTo = potBB * 0.66;
+        }
         const slider = PRT.sliderTo !== null && PRT.sliderTo !== undefined
-            ? Math.min(maxTo, Math.max(minTo, PRT.sliderTo)) : Math.min(maxTo, Math.max(minTo, potBB * 0.66));
+            ? Math.min(maxTo, Math.max(minTo, PRT.sliderTo)) : Math.min(maxTo, Math.max(minTo, defaultTo));
         const sliderVal = Math.round(slider * 2) / 2;
         const aggrLabel = facing > 0 ? 'Raise to' : 'Bet';
 
