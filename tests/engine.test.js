@@ -2373,3 +2373,117 @@ describe('Poker Room — multiway rule grading', () => {
         expect((g.explanation || '')).not.toContain('Multiway');
     });
 });
+
+// =============================================================================
+// SR engine — scheduling (audit §4.4). The spaced-repetition scheduler is the
+// app's core loop; these lock its behavior. Reviews are backdated between
+// updates (previousSeenAt) because same-session repeats deliberately don't
+// advance the interval (anti-cramming).
+// =============================================================================
+
+describe('SR engine — scheduling', () => {
+    const DAY = 86400000;
+    let seq = 0;
+    const freshKey = () => 'TEST|SR|' + (++seq) + '|' + Date.now();
+
+    // Simulate "reviewed again N days later": backdate the record's clock
+    function backdate(key, days) {
+        const r = PROD.SR.get(key);
+        r.previousSeenAt = Date.now() - days * DAY;
+        r.dueAt = Date.now() - 1000;
+    }
+
+    it('first correct answer: rep 1, half-day interval, due date fuzzed ±15%', () => {
+        const key = freshKey();
+        const before = Date.now();
+        PROD.SR.update(key, 'Good');
+        const r = PROD.SR.get(key);
+        expect(r.reps).toBe(1);
+        expect(r.intervalDays).toBe(0.5);
+        expect(r.totalAttempts).toBe(1);
+        expect(r.totalWrong).toBe(0);
+        const dueDays = (r.dueAt - before) / DAY;
+        expect(dueDays).toBeGreaterThan(0.5 * 0.84);
+        expect(dueDays).toBeLessThan(0.5 * 1.16);
+    });
+
+    it('interval ladder grows 0.5 → 1 → 2 → 3 → 5 → 7 → +5/rep across day-spaced reviews', () => {
+        const key = freshKey();
+        const expected = [0.5, 1, 2, 3, 5, 7, 12, 17];
+        expected.forEach((want, i) => {
+            if (i > 0) backdate(key, 1); // "next day" — not cramming, not absent
+            PROD.SR.update(key, 'Good');
+            expect(PROD.SR.get(key).intervalDays).toBe(want);
+        });
+        expect(PROD.SR.get(key).reps).toBe(expected.length);
+    });
+
+    it('anti-cramming: an immediate repeat does not advance reps or interval', () => {
+        const key = freshKey();
+        PROD.SR.update(key, 'Good');
+        PROD.SR.update(key, 'Good'); // seconds later — same session
+        const r = PROD.SR.get(key);
+        expect(r.reps).toBe(1);
+        expect(r.intervalDays).toBe(0.5);
+        expect(r.totalAttempts).toBe(2); // still counted as an attempt
+    });
+
+    it('a miss halves reps, cuts the interval to 30%, and resets the streak', () => {
+        const key = freshKey();
+        [1, 1, 1, 1, 1, 1].forEach((d, i) => {
+            if (i > 0) backdate(key, d);
+            PROD.SR.update(key, 'Good');
+        });
+        let r = PROD.SR.get(key);
+        expect(r.reps).toBe(6);
+        expect(r.intervalDays).toBe(7);
+        expect(r.streakCorrect).toBe(6);
+
+        backdate(key, 1);
+        PROD.SR.update(key, 'Again');
+        r = PROD.SR.get(key);
+        expect(r.reps).toBe(3);                       // halved, not zeroed
+        expect(r.intervalDays).toBeCloseTo(2.1, 5);   // 7 × 0.3
+        expect(r.streakCorrect).toBe(0);
+        expect(r.totalWrong).toBe(1);
+        expect(r.lapses).toBe(1);
+    });
+
+    it('three lapses drop the card to the minimum interval (truly struggling)', () => {
+        const key = freshKey();
+        PROD.SR.update(key, 'Good');
+        for (let i = 0; i < 3; i++) { backdate(key, 1); PROD.SR.update(key, 'Again'); }
+        expect(PROD.SR.get(key).intervalDays).toBe(0.02);
+        expect(PROD.SR.get(key).lapses).toBe(3);
+    });
+
+    it('relearning damper: correct after a long absence does not rocket the interval', () => {
+        const key = freshKey();
+        [0, 1, 1, 1].forEach((d, i) => {
+            if (i > 0) backdate(key, d);
+            PROD.SR.update(key, 'Good');
+        });
+        expect(PROD.SR.get(key).intervalDays).toBe(3); // rep 4
+        backdate(key, 30); // way past 2.5× the 3-day interval
+        PROD.SR.update(key, 'Good');
+        // Ladder would say rep 5 → 5 days; damper applies ×0.6 → 3
+        expect(PROD.SR.get(key).intervalDays).toBeCloseTo(3, 5);
+    });
+
+    it('confidence cap: under 15 reps the interval never exceeds 21 days', () => {
+        const key = freshKey();
+        for (let i = 0; i < 12; i++) {
+            if (i > 0) backdate(key, 1);
+            PROD.SR.update(key, 'Good');
+        }
+        const r = PROD.SR.get(key);
+        expect(r.reps).toBe(12);
+        expect(r.intervalDays).toBe(21); // ladder says 7+(12-6)*5 = 37 → capped
+    });
+
+    it('recentResults window is capped at 50 entries', () => {
+        const key = freshKey();
+        for (let i = 0; i < 60; i++) PROD.SR.update(key, i % 2 ? 'Good' : 'Again');
+        expect(PROD.SR.get(key).recentResults.length).toBe(50);
+    });
+});

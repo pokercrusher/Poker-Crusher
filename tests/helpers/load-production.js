@@ -60,7 +60,7 @@ const EXPORT_NAMES = [
     'classifyFlopHand', 'classifyTurnHand', 'classifyRiverHand',
     'PLAYER_TYPE_RANGE_PROFILES',
     // engine.js
-    'checkRangeHelper', 'buildSRKey', 'buildSpotKey', 'computeCorrectAction',
+    'checkRangeHelper', 'buildSRKey', 'buildSpotKey', 'computeCorrectAction', 'SR',
     // sim.js
     'FULL_TABLE_POSITIONS', '_freshDeck', '_shuffle', '_cardsToHandNotation',
     '_deepCopy', '_resolveVillainPreflopAction',

@@ -139,6 +139,8 @@ renderer and mostly unnecessary.
   incremental size.
 
 ## Deployment checklist additions
+- `npm test` (193 unit/property) AND `npm run smoke` (headless walk of every
+  screen at phone size; catches script-order/global breaks tests can't see).
 - Rebuild `tailwind.min.css` whenever new utility classes appear in ANY js/html
   (`npx @tailwindcss/cli -i src/input.css -o tailwind.min.css --minify`).
 - **Cache busting: bump the `?v=` param on every script/css tag in index.html
