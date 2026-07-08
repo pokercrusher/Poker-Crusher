@@ -1871,3 +1871,148 @@ describe('Poker Room — table-UI grading regressions', () => {
         prHand.outcome.showdown.forEach(e => expect(e.show).toBe(true));
     });
 });
+
+// =============================================================================
+// Poker Room — betting completeness (audit §5.4 leftovers)
+// Short all-in must not reopen betting; uncalled bets are refunds, not wins.
+// =============================================================================
+
+describe('Poker Room — short all-in does not reopen betting', () => {
+
+    // Flop, 3-handed: CO bets 10, BTN calls, BB is short.
+    function flopHand(bbStack) {
+        return {
+            seats: [
+                { label: 'CO',  isHero: true,  folded: false, allIn: false, stackBB: 90, holeCards: cards2('A', 's', 'K', 'h') },
+                { label: 'BTN', isHero: false, folded: false, allIn: false, stackBB: 90, holeCards: cards2('9', 'c', '8', 'c') },
+                { label: 'BB',  isHero: false, folded: false, allIn: false, stackBB: bbStack, holeCards: cards2('5', 'd', '5', 'h') },
+            ],
+            heroSeatIndex: 0,
+            gameState: {
+                potBB: 9, board: [C('K', 's'), C('7', 'h'), C('2', 'd')], street: 'flop',
+                streetState: { street: 'flop', betMadeThisStreet: false, actions: [], committedBB: {}, lastRaiseBB: 0 },
+                streetHistory: { preflop: [], flop: [], turn: [], river: [] },
+            },
+        };
+    }
+
+    it('a short all-in raise leaves prior actors call/fold only; their raise becomes a call', () => {
+        const h = flopHand(14);
+        PROD._PR_applyAction(h, 'CO', 'bet', 10);    // full bet — reopens
+        PROD._PR_applyAction(h, 'BTN', 'call', 0);
+        PROD._PR_applyAction(h, 'BB', 'raise', 30);  // clamps to all-in 14 — SHORT (< min-raise 20)
+        expect(h.seats[2].allIn).toBe(true);
+        expect(h.gameState.streetState.committedBB.BB).toBe(14);
+
+        expect(PROD.PR_canRaise(h, 'CO')).toBe(false);
+        expect(PROD.PR_canRaise(h, 'BTN')).toBe(false);
+
+        // The choke point converts an illegal raise into a call of the extra 4
+        PROD._PR_applyAction(h, 'CO', 'raise', 40);
+        const last = h.gameState.streetState.actions[h.gameState.streetState.actions.length - 1];
+        expect(last.action).toBe('call');
+        expect(last.sizingBB).toBe(4);
+        expect(h.gameState.streetState.committedBB.CO).toBe(14);
+    });
+
+    it('a full all-in raise reopens betting for everyone', () => {
+        const h = flopHand(24);
+        PROD._PR_applyAction(h, 'CO', 'bet', 10);
+        PROD._PR_applyAction(h, 'BTN', 'call', 0);
+        PROD._PR_applyAction(h, 'BB', 'raise', 24);  // all-in to 24 — a FULL raise (≥ 20)
+        expect(PROD.PR_canRaise(h, 'CO')).toBe(true);
+        expect(PROD.PR_canRaise(h, 'BTN')).toBe(true);
+
+        PROD._PR_applyAction(h, 'CO', 'raise', 40);  // legal re-raise stands
+        const last = h.gameState.streetState.actions[h.gameState.streetState.actions.length - 1];
+        expect(last.action).toBe('raise');
+    });
+
+    it('a seat that has not yet acted may always raise', () => {
+        const h = flopHand(14);
+        PROD._PR_applyAction(h, 'CO', 'bet', 10);
+        expect(PROD.PR_canRaise(h, 'BTN')).toBe(true);
+        expect(PROD.PR_canRaise(h, 'BB')).toBe(true);
+    });
+});
+
+describe('Poker Room — uncalled bets are refunds, not wins', () => {
+
+    const dryBoard = [C('K', 's'), C('9', 'h'), C('4', 'c'), C('J', 'd'), C('3', 's')];
+
+    it('showdown: over-bet under-called all-in → excess tagged refundBB, outcome.refund set', () => {
+        const h = {
+            seats: [
+                { label: 'CO',  isHero: true,  folded: false, allIn: false, stackBB: 30, holeCards: cards2('7', 'c', '2', 'd') }, // loses
+                { label: 'BTN', isHero: false, folded: false, allIn: true,  stackBB: 0,  holeCards: cards2('A', 's', 'A', 'h') }, // wins matched
+            ],
+            heroSeatIndex: 0,
+            gameState: {
+                potBB: 0, board: dryBoard, street: 'river',
+                streetState: { street: 'river', actions: [
+                    { seatLabel: 'CO',  action: 'bet',  sizingBB: 50 },
+                    { seatLabel: 'BTN', action: 'call', sizingBB: 20 },
+                ], committedBB: { CO: 50, BTN: 20 } },
+                streetHistory: { preflop: [
+                    { seatLabel: 'CO',  action: 'raise', sizingBB: 2.5 },
+                    { seatLabel: 'BTN', action: 'call',  sizingBB: 2.5 },
+                ], flop: [], turn: [], river: [] },
+            },
+        };
+        PROD.PR_evalShowdown(h);
+        const pots = h.outcome.pots;
+        expect(pots.length).toBe(2);
+        const refundPot = pots[pots.length - 1];
+        expect(refundPot.winners).toEqual(['CO']);
+        expect(refundPot.refundBB).toBe(30);          // hero's uncalled 30 is a refund
+        expect(pots[0].refundBB).toBeUndefined();     // the contested pot is not
+        expect(h.outcome.refund).toEqual({ seatLabel: 'CO', amountBB: 30 });
+        expect(h.outcome.heroNetBB).toBe(-22.5);      // loses only the matched 20 + preflop 2.5
+    });
+
+    it('exactly-called bets produce no refund tag', () => {
+        const h = {
+            seats: [
+                { label: 'CO',  isHero: true,  folded: false, allIn: false, stackBB: 50, holeCards: cards2('A', 's', 'A', 'h') },
+                { label: 'BTN', isHero: false, folded: false, allIn: false, stackBB: 50, holeCards: cards2('9', 'c', '8', 'c') },
+            ],
+            heroSeatIndex: 0,
+            gameState: {
+                potBB: 0, board: dryBoard, street: 'river',
+                streetState: { street: 'river', actions: [
+                    { seatLabel: 'CO',  action: 'bet',  sizingBB: 20 },
+                    { seatLabel: 'BTN', action: 'call', sizingBB: 20 },
+                ], committedBB: { CO: 20, BTN: 20 } },
+                streetHistory: { preflop: [
+                    { seatLabel: 'CO',  action: 'raise', sizingBB: 2.5 },
+                    { seatLabel: 'BTN', action: 'call',  sizingBB: 2.5 },
+                ], flop: [], turn: [], river: [] },
+            },
+        };
+        PROD.PR_evalShowdown(h);
+        expect(h.outcome.refund).toBeNull();
+        h.outcome.pots.forEach(p => expect(p.refundBB).toBeUndefined());
+    });
+
+    it('fold-win: an open that steals the blinds tags the unmatched raise portion as refund', () => {
+        let prHand = PROD.PR_createHand({ heroPos: 'BTN', seats: makeSeats() });
+        const heroSeat = prHand.seats[prHand.heroSeatIndex];
+        heroSeat.holeCards = cards2('A', 's', 'A', 'h');
+        heroSeat.handNotation = 'AA';
+        // Everyone before hero folds; hero opens 2.5; blinds fold.
+        prHand = PROD.PR_runPreflopToHero(prHand);
+        if (prHand.terminal) return; // villains contested this run — scenario needs the fold-out
+        const afterHero = PROD.PR_applyHeroAction(prHand, 'raise', 2.5);
+        let h = afterHero.prHand || afterHero;
+        // Force remaining villains to fold so hero wins uncontested
+        h.seats.forEach(s => { if (s && !s.isHero && !s.folded) s.folded = true; });
+        PROD.PR_resolveOutcome(h);
+        expect(h.outcome.winner).toBe('BTN');
+        // Refund = hero's 2.5 minus the largest opposing commitment (BB's 1.0
+        // blind, unless an earlier villain limped/called more before folding).
+        expect(h.outcome.refund).toBeTruthy();
+        expect(h.outcome.refund.seatLabel).toBe('BTN');
+        expect(h.outcome.refund.amountBB).toBeGreaterThan(0);
+        expect(h.outcome.pots[0].refundBB).toBe(h.outcome.refund.amountBB);
+    });
+});

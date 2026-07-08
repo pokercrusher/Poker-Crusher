@@ -155,17 +155,23 @@ async function PRT_settle(myToken) {
     // Reveal + banner
     PRT.revealAll = true;
     const heroNet = outcome.heroNetBB || 0;
+    // A pot that is entirely the winner's own uncalled bet is a refund, not a
+    // win — without this, losing after an under-called all-in said "You win!"
     const winners = [];
     (outcome.pots || []).forEach(function(pot) {
+        if (pot.refundBB && pot.refundBB >= pot.amount) return;
         (pot.winners || []).forEach(function(w) { if (!winners.includes(w)) winners.push(w); });
     });
     const winnerNames = winners.map(function(label) {
         const s = hand.seats.find(x => x && x.label === label);
         return s ? s.name : label;
     });
+    const heroRefund = (outcome.refund && outcome.refund.seatLabel === heroLabel)
+        ? outcome.refund.amountBB : 0;
+    const heroCollected = heroNet + (outcome.totalCommitted ? (outcome.totalCommitted[heroLabel] || 0) : 0) - heroRefund;
     PRT.banner = winners.length
         ? (winners.includes(heroLabel)
-            ? 'You win ' + PRT_fmtBB(Math.abs(heroNet) + (outcome.totalCommitted ? (outcome.totalCommitted[heroLabel] || 0) : 0)) + '!'
+            ? 'You win ' + PRT_fmtBB(heroCollected) + '!'
             : winnerNames.join(', ') + ' takes it')
         : 'Hand over';
     PRT_render();
@@ -196,7 +202,7 @@ async function PRT_settle(myToken) {
         cards: heroSeat.handNotation || '',
         heroCards: (heroSeat.holeCards || []).slice(),
         board: (hand.gameState.board || []).slice(),
-        potBB: (outcome.pots || []).reduce(function(a, p) { return a + p.amount; }, 0),
+        potBB: (outcome.pots || []).reduce(function(a, p) { return a + p.amount - (p.refundBB || 0); }, 0),
         reveals: (outcome.showdown || [])
             .filter(function(e) { return e.show && e.seatLabel !== heroLabel; })
             .map(function(e) {
@@ -434,6 +440,9 @@ function PRT_render() {
         const stack = heroSeat.stackBB;
         const canCheck = facing <= 0;
         const potOdds = facing > 0 ? Math.round((facing / (potBB + facing)) * 100) : 0;
+        // Raising requires an unmatched stack AND reopened betting (a short
+        // all-in since hero last acted doesn't reopen — call or fold only).
+        const canRaise = stack > facing && PR_canRaise(hand, heroLabel);
         // Raise-to slider: total for this street; floor at the legal min-raise
         const maxTo = myCommitted + stack;
         const minTo = Math.min(maxTo, PR_minRaiseTo(hand, heroLabel));
@@ -449,16 +458,20 @@ function PRT_render() {
                     (PRT.lastGrade ? '<span data-prt="grade" class="cursor-pointer">' +
                         (PRT.lastGrade.grade === 'correct' ? '✓' : PRT.lastGrade.grade === 'mixed' ? '~' : '✗') + '</span>' : '<span></span>') +
                 '</div>' +
-                '<div class="flex items-center gap-2">' +
-                    '<input data-prt="slider" type="range" min="' + minTo + '" max="' + maxTo + '" step="0.5" value="' + sliderVal + '" class="flex-1" />' +
-                    '<span id="prt-slider-label" class="text-[11px] font-black text-slate-200 w-20 text-right">' + PRT_fmtBB(sliderVal) + ' ($' + Math.round(sliderVal * bb$) + ')</span>' +
-                '</div>' +
-                '<div class="grid grid-cols-3 gap-2">' +
+                (canRaise
+                    ? '<div class="flex items-center gap-2">' +
+                        '<input data-prt="slider" type="range" min="' + minTo + '" max="' + maxTo + '" step="0.5" value="' + sliderVal + '" class="flex-1" />' +
+                        '<span id="prt-slider-label" class="text-[11px] font-black text-slate-200 w-20 text-right">' + PRT_fmtBB(sliderVal) + ' ($' + Math.round(sliderVal * bb$) + ')</span>' +
+                      '</div>'
+                    : '') +
+                '<div class="grid ' + (canRaise ? 'grid-cols-3' : 'grid-cols-2') + ' gap-2">' +
                     '<button data-prt="fold" class="py-3 rounded-xl font-black text-sm bg-rose-900/60 text-rose-200 border border-rose-700/40">FOLD</button>' +
                     (canCheck
                         ? '<button data-prt="check" class="py-3 rounded-xl font-black text-sm bg-slate-800 text-slate-200 border border-slate-600">CHECK</button>'
                         : '<button data-prt="call" class="py-3 rounded-xl font-black text-sm bg-slate-800 text-slate-200 border border-slate-600">CALL ' + PRT_fmtBB(facing) + '</button>') +
-                    '<button data-prt="aggr" class="py-3 rounded-xl font-black text-sm bg-amber-600 text-white">' + aggrLabel.toUpperCase() + '</button>' +
+                    (canRaise
+                        ? '<button data-prt="aggr" class="py-3 rounded-xl font-black text-sm bg-amber-600 text-white">' + aggrLabel.toUpperCase() + '</button>'
+                        : '') +
                 '</div>' +
             '</div>';
     } else {

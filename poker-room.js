@@ -213,6 +213,20 @@ function PR_minRaiseTo(prHand, seatLabel) {
     return parseFloat((maxCommitted + lastRaise).toFixed(2));
 }
 
+// ---------------------------------------------------------------------------
+// PR_canRaise — TDA short-all-in rule: an all-in wager of less than a full
+// raise does not reopen betting. A seat may raise only if it hasn't acted
+// this street yet, or a FULL bet/raise (tracked as ss.lastFullRaiseIdx by
+// _PR_applyAction) came in after its last action.
+// ---------------------------------------------------------------------------
+function PR_canRaise(prHand, seatLabel) {
+    const ss = prHand.gameState.streetState;
+    let lastActIdx = -1;
+    ss.actions.forEach(function(a, i) { if (a.seatLabel === seatLabel) lastActIdx = i; });
+    if (lastActIdx === -1) return true; // hasn't acted this street
+    return typeof ss.lastFullRaiseIdx === 'number' && ss.lastFullRaiseIdx > lastActIdx;
+}
+
 // Apply a resolved action to prHand state (mutates in place — caller deep-copies first).
 // Single choke point for chip movement: call/limp amounts are derived from the
 // facing amount here (resolver-provided sizes ignore blinds already committed),
@@ -222,6 +236,13 @@ function PR_minRaiseTo(prHand, seatLabel) {
 function _PR_applyAction(prHand, seatLabel, action, sizingBB) {
     const seat = prHand.seats.find(s => s !== null && s.label === seatLabel);
     const ss = prHand.gameState.streetState;
+
+    // Betting not reopened for this seat (only a short all-in has come in
+    // since it last acted) → an attempted raise is illegal and becomes a call.
+    if (['bet', 'raise', '3bet', '4bet'].includes(action) &&
+        ss.betMadeThisStreet && !PR_canRaise(prHand, seatLabel)) {
+        action = 'call';
+    }
     const isAggressive = ['bet', 'raise', '3bet', '4bet'].includes(action);
 
     let sizing = sizingBB || 0;
@@ -251,6 +272,7 @@ function _PR_applyAction(prHand, seatLabel, action, sizingBB) {
         const increment = parseFloat((newTo - prevMax).toFixed(2));
         if (increment >= (ss.lastRaiseBB || 1)) {
             ss.lastRaiseBB = increment;
+            ss.lastFullRaiseIdx = ss.actions.length - 1; // reopens betting for everyone
         }
     }
     if (sizing > 0 && seat) {
@@ -935,6 +957,23 @@ function PR_evalShowdown(prHand) {
         return { ...pot, winners, share };
     });
 
+    // Uncalled excess: whatever the top contributor committed beyond the
+    // second-highest commitment was never matched by anyone. The side-pot
+    // machinery already returns it (a top pot they alone are eligible for),
+    // but it's a refund, not winnings — tag it so settlement and history
+    // don't report a losing hand as "You win".
+    let refund = null;
+    const sortedCommits = Object.values(totalCommitted).filter(v => v > 0).sort((a, b) => b - a);
+    const excess = sortedCommits.length >= 2
+        ? parseFloat((sortedCommits[0] - sortedCommits[1]).toFixed(2)) : 0;
+    if (excess > 0 && potResults.length > 0) {
+        const top = potResults[potResults.length - 1];
+        if (top.eligible.length === 1 && top.winners.length === 1) {
+            top.refundBB = Math.min(excess, top.amount);
+            refund = { seatLabel: top.winners[0], amountBB: top.refundBB };
+        }
+    }
+
     // Everyone who reaches showdown shows — this is a training tool, and
     // real-world muck etiquette was hiding losers' cards from hand review.
     const mustShow = new Set(evals.map(function(e) { return e.seatLabel; }));
@@ -957,6 +996,7 @@ function PR_evalShowdown(prHand) {
         pots:          potResults,
         showdown:      showdown,
         heroNetBB:     heroNet,
+        refund:        refund,
         totalCommitted,
     };
 }
@@ -1104,11 +1144,29 @@ function PR_resolveOutcome(prHand) {
         heroNetBB = -heroCommitted;
     }
 
+    // The winner's commitment beyond the best-matched opponent is their own
+    // uncalled bet coming back, not winnings (e.g. an open that steals the
+    // blinds "wins" 2.5bb less than the raise size suggests).
+    let refund = null;
+    const pot = { amount: parseFloat(totalPot.toFixed(2)), eligible: activeSeats.map(s => s.label), winners: winner ? [winner.label] : [] };
+    if (winner) {
+        const others = Object.entries(totalCommitted)
+            .filter(function([l, v]) { return l !== winner.label && v > 0; })
+            .map(function([, v]) { return v; });
+        const secondTop = others.length ? Math.max(...others) : 0;
+        const excess = Math.max(0, parseFloat(((totalCommitted[winner.label] || 0) - secondTop).toFixed(2)));
+        if (excess > 0) {
+            pot.refundBB = excess;
+            refund = { seatLabel: winner.label, amountBB: excess };
+        }
+    }
+
     prHand.outcome = {
         winner:        winner ? winner.label : null,
-        pots:          [{ amount: parseFloat(totalPot.toFixed(2)), eligible: activeSeats.map(s => s.label), winners: winner ? [winner.label] : [] }],
+        pots:          [pot],
         showdown:      [],
         heroNetBB:     parseFloat(heroNetBB.toFixed(2)),
+        refund:        refund,
         totalCommitted,
     };
 }
