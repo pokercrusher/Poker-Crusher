@@ -54,6 +54,10 @@ function PRT_enter(room, session, tableConfig) {
     PRT.offset = 1; // decremented before each hand → first hand at offset 0
     PRT.handNo = 0;
     PRT.lastGrade = null;
+    PRT.summaryOpen = false;
+    PRT.bestHandBB = 0;   // session extremes for the cash-out summary
+    PRT.worstHandBB = 0;
+    PRT.srFed = { good: 0, again: 0 };
     try {
         const sp = localStorage.getItem(PRT_SPEED_KEY);
         if (PRT_SPEEDS[sp]) PRT.speed = sp;
@@ -227,6 +231,8 @@ async function PRT_settle(myToken) {
     // Session + per-villain bookkeeping (lifetime reads accrue to regulars)
     PR_applySessionHandResult(PRT.session, heroNet);
     PR_accumulateSeatStats(PRT.cfg, hand, PRT.room.regulars);
+    if (heroNet > (PRT.bestHandBB || 0)) PRT.bestHandBB = heroNet;
+    if (heroNet < (PRT.worstHandBB || 0)) PRT.worstHandBB = heroNet;
 
     // Hero session stats: VPIP/PFR from the preflop log, accuracy from grades
     const s = PRT.session;
@@ -312,6 +318,7 @@ function PRT_feedSR(gradeEntry) {
         }
         if (!key) return;
         SR.update(key, gradeEntry.grade === 'correct' ? 'Good' : 'Again');
+        if (PRT.srFed) PRT.srFed[gradeEntry.grade === 'correct' ? 'good' : 'again']++;
         if (typeof markCloudDirty === 'function') markCloudDirty();
     } catch (_) {}
 }
@@ -644,7 +651,50 @@ function PRT_render() {
             '</div>' +
         '</div>';
 
-    body.innerHTML = header + felt + actionArea + gradeLine + sessionPanel + popup;
+    body.innerHTML = header + felt + actionArea + gradeLine + sessionPanel + popup + PRT_summaryHtml();
+}
+
+// Cash-out confirmation: the session at a glance before leaving the table.
+function PRT_summaryHtml() {
+    if (!PRT.summaryOpen) return '';
+    const s = PRT.session;
+    const hands = s.handsPlayed || 0;
+    const net = s.netBB || 0;
+    const bb100 = hands > 0 ? (net / hands) * 100 : 0;
+    const netCls = net >= 0 ? 'text-emerald-400' : 'text-rose-400';
+    const acc = s.decisions > 0 ? Math.round((s.correctDecisions / s.decisions) * 100) + '%' : '—';
+    const vp = s.heroHands > 0 ? Math.round(((s.heroVpip || 0) / s.heroHands) * 100) + '%' : '—';
+    const pf = s.heroHands > 0 ? Math.round(((s.heroPfr || 0) / s.heroHands) * 100) + '%' : '—';
+    const bb$ = PRT_bb$();
+    const row = function(k, v, cls) {
+        return '<div class="flex justify-between py-1.5 border-b border-slate-800/50 text-[12px]">' +
+            '<span class="text-slate-500 font-bold">' + k + '</span>' +
+            '<span class="font-black ' + (cls || 'text-slate-200') + '">' + v + '</span></div>';
+    };
+    const srLine = PRT.room.studyMode
+        ? row('Fed to trainer SR', (PRT.srFed.again || 0) + ' review card' + (PRT.srFed.again === 1 ? '' : 's') +
+              ' · ' + (PRT.srFed.good || 0) + ' reinforced')
+        : '';
+    return '<div style="position:fixed;inset:0;background:rgba(2,6,23,0.85);z-index:70;display:flex;align-items:center;justify-content:center;padding:20px">' +
+        '<div class="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full" style="max-width:340px">' +
+            '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-center">Session summary</p>' +
+            '<p class="text-3xl font-black text-center mt-1 ' + netCls + '">' +
+                (net >= 0 ? '+' : '') + PRT_fmtBB(net) + '</p>' +
+            '<p class="text-[11px] text-slate-500 text-center mb-3">' +
+                (net >= 0 ? '+' : '−') + '$' + Math.abs(Math.round(net * bb$)) + ' at ' + escapeHtml(s.stake) + '</p>' +
+            row('Hands', hands) +
+            row('Win rate', (bb100 >= 0 ? '+' : '') + bb100.toFixed(0) + ' bb/100', netCls) +
+            row('Biggest pot won', '+' + PRT_fmtBB(PRT.bestHandBB || 0), 'text-emerald-400') +
+            row('Toughest loss', PRT_fmtBB(PRT.worstHandBB || 0), 'text-rose-400') +
+            row('Decision accuracy', acc) +
+            row('Your VPIP / PFR', vp + ' / ' + pf) +
+            srLine +
+            '<div class="grid grid-cols-2 gap-2 mt-4">' +
+                '<button data-prt="summary-stay" class="py-3 rounded-xl font-black text-sm bg-slate-800 border border-slate-600 text-slate-200">KEEP PLAYING</button>' +
+                '<button data-prt="leave" class="py-3 rounded-xl font-black text-sm bg-amber-600 text-white">CASH OUT</button>' +
+            '</div>' +
+        '</div>' +
+    '</div>';
 }
 
 // ---------------------------------------------------------------------------
@@ -656,7 +706,16 @@ function PRT_onClick(e) {
     const kind = el.dataset.prt;
 
     if (kind === 'leave') {
-        PRT_leave();
+        // Show the session summary once before actually cashing out
+        if (!PRT.summaryOpen && (PRT.session.handsPlayed || 0) > 0) {
+            PRT.summaryOpen = true;
+            PRT_render();
+        } else {
+            PRT_leave();
+        }
+    } else if (kind === 'summary-stay') {
+        PRT.summaryOpen = false;
+        PRT_render();
     } else if (kind === 'seat') {
         PRT.inspect = el.dataset.vid;
         PRT_render();
