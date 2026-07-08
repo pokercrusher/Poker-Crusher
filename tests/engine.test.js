@@ -2487,3 +2487,57 @@ describe('SR engine — scheduling', () => {
         expect(PROD.SR.get(key).recentResults.length).toBe(50);
     });
 });
+
+// =============================================================================
+// Cloud merge-on-load (audit §3.2) — two-device training must not clobber
+// =============================================================================
+
+describe('Cloud merge-on-load', () => {
+
+    it('SR db: reviews from both devices survive; newest lastSeenAt wins conflicts', () => {
+        const local = JSON.stringify({
+            'SPOT|A': { lastSeenAt: 2000, reps: 5, intervalDays: 5 },   // newer here
+            'SPOT|B': { lastSeenAt: 1000, reps: 2, intervalDays: 1 },   // only here
+        });
+        const cloud = JSON.stringify({
+            'SPOT|A': { lastSeenAt: 1500, reps: 4, intervalDays: 3 },   // stale copy
+            'SPOT|C': { lastSeenAt: 3000, reps: 1, intervalDays: 0.5 }, // only in cloud
+        });
+        const merged = JSON.parse(PROD._mergeCloudKey('gto_sr_v2', cloud, local));
+        expect(Object.keys(merged).sort()).toEqual(['SPOT|A', 'SPOT|B', 'SPOT|C']);
+        expect(merged['SPOT|A'].reps).toBe(5);  // local was newer
+        expect(merged['SPOT|C'].reps).toBe(1);  // cloud-only preserved
+    });
+
+    it('medals union with local winning conflicts; stats picks the larger totalHands side', () => {
+        const medals = PROD._mergeCloudKey('gto_medals_v1',
+            JSON.stringify({ m1: 'gold', m2: 'silver' }),
+            JSON.stringify({ m2: 'gold', m3: 'bronze' }));
+        expect(JSON.parse(medals)).toEqual({ m1: 'gold', m2: 'gold', m3: 'bronze' });
+
+        const bigLocal = JSON.stringify({ global: { totalHands: 500 } });
+        const smallCloud = JSON.stringify({ global: { totalHands: 200 } });
+        expect(PROD._mergeCloudKey('gto_rfi_stats_v2', smallCloud, bigLocal)).toBe(bigLocal);
+        const bigCloud = JSON.stringify({ global: { totalHands: 900 } });
+        expect(PROD._mergeCloudKey('gto_rfi_stats_v2', bigCloud, bigLocal)).toBe(bigCloud);
+    });
+
+    it('fresh device (no local) and corrupt local both take the cloud copy; unknown keys untouched', () => {
+        const cloud = JSON.stringify({ 'SPOT|X': { lastSeenAt: 1 } });
+        expect(PROD._mergeCloudKey('gto_sr_v2', cloud, null)).toBe(cloud);
+        expect(PROD._mergeCloudKey('gto_sr_v2', cloud, '{{{corrupt')).toBe(cloud);
+        expect(PROD._mergeCloudKey('gto_config_v2', '{"a":1}', '{"b":2}')).toBe('{"a":1}'); // LWW keys
+    });
+
+    it('applyTrainerPayload end-to-end: local SR reviews survive a cloud load', () => {
+        // Seed "this device trained since its last sync"
+        const localSr = { 'SPOT|LOCAL': { lastSeenAt: Date.now(), reps: 3, intervalDays: 2, totalAttempts: 3, totalWrong: 0, recentResults: [true] } };
+        PROD.__setLocal('gto_sr_v2', JSON.stringify(localSr));
+        const cloudSr = { 'SPOT|CLOUD': { lastSeenAt: 5, reps: 1, intervalDays: 0.5, totalAttempts: 1, totalWrong: 0, recentResults: [true] } };
+        const ok = PROD.applyTrainerPayload({ data: { gto_sr_v2: JSON.stringify(cloudSr) } });
+        expect(ok).toBe(true);
+        const after = JSON.parse(PROD.__getLocal('gto_sr_v2'));
+        expect(after['SPOT|LOCAL']).toBeTruthy(); // would have been wiped before §3.2
+        expect(after['SPOT|CLOUD']).toBeTruthy();
+    });
+});

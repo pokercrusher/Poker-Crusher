@@ -439,6 +439,44 @@ function buildTrainerPayloadForSync() {
 }
 
 
+// ---------------------------------------------------------------------------
+// Merge-on-load (audit §3.2): "Load from cloud" merges instead of clobbering,
+// so training done on THIS device since its last sync survives a load. Only
+// keys with a safe, shape-aware policy merge; everything else stays
+// last-writer-wins (the cloud copy, since the user explicitly loaded).
+//   gto_sr_v2        per SR record: newest lastSeenAt wins — reviews from
+//                    both devices survive with coherent scheduler state
+//   gto_medals_v1    union of entries, local wins conflicts (medals accrue)
+//   gto_rfi_stats_v2 whichever side has more global.totalHands (monotone)
+// The merge runs only in the load path (which reloads the page right after),
+// never during autosave — merging under live in-memory state would race the
+// SR engine's own saves.
+// ---------------------------------------------------------------------------
+function _mergeCloudKey(key, cloudRaw, localRaw) {
+    if (localRaw === null || localRaw === undefined) return cloudRaw;
+    try {
+        const c = JSON.parse(cloudRaw), l = JSON.parse(localRaw);
+        if (!c || typeof c !== 'object' || !l || typeof l !== 'object') return cloudRaw;
+        if (key === 'gto_sr_v2') {
+            const out = Object.assign({}, c);
+            Object.keys(l).forEach(function(k) {
+                const lr = l[k], cr = out[k];
+                if (!cr || (lr && (lr.lastSeenAt || 0) >= (cr.lastSeenAt || 0))) out[k] = lr;
+            });
+            return JSON.stringify(out);
+        }
+        if (key === 'gto_medals_v1') {
+            return JSON.stringify(Object.assign({}, c, l));
+        }
+        if (key === 'gto_rfi_stats_v2') {
+            const ch = (c.global && c.global.totalHands) || 0;
+            const lh = (l.global && l.global.totalHands) || 0;
+            return lh > ch ? localRaw : cloudRaw;
+        }
+    } catch (e) { /* unparseable local — take the validated cloud copy */ }
+    return cloudRaw;
+}
+
 function applyTrainerPayload(payload) {
     if (!payload || typeof payload !== 'object' || !payload.data || typeof payload.data !== 'object') {
         showToast('Cloud load failed (bad data)', 'incorrect', 2000);
@@ -496,7 +534,9 @@ function applyTrainerPayload(payload) {
                 return;
             }
         }
-        try { localStorage.setItem(profileKey(k), raw); wrote++; } catch(e) {}
+        let toWrite = raw;
+        try { toWrite = _mergeCloudKey(k, raw, localStorage.getItem(profileKey(k))); } catch(e) {}
+        try { localStorage.setItem(profileKey(k), toWrite); wrote++; } catch(e) {}
     });
 
     // Friendly "last imported" marker

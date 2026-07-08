@@ -80,7 +80,7 @@ const EXPORT_NAMES = [
     'PR_accumulateSeatStats', 'PR_STORAGE_KEY', 'PR_buildHandSeats',
     'PR_buildHandSeatsRotated', 'PR_minRaiseTo', 'PR_canRaise', 'PR_exploitNote',
     // cloud.js
-    'applyTrainerPayload', 'profileKey',
+    'applyTrainerPayload', 'profileKey', '_mergeCloudKey',
 ];
 
 let cached = null;
@@ -95,5 +95,10 @@ export function loadProduction() {
     }
     cached = vm.runInContext(`({ ${EXPORT_NAMES.join(', ')} })`, ctx);
     cached.__rangeGlobals = vm.runInContext('({ rfiRanges, facingRfiRanges, rfiVs3BetRanges, vs4BetRanges })', ctx);
+    // Bridge to the sandbox's localStorage for persistence-path tests
+    cached.__setLocal = (k, v) =>
+        vm.runInContext(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`, ctx);
+    cached.__getLocal = (k) =>
+        vm.runInContext(`localStorage.getItem(${JSON.stringify(k)})`, ctx);
     return cached;
 }
