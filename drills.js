@@ -75,6 +75,20 @@ function buildMathQueue(type) {
         (POT_ODDS_SCENARIOS || []).forEach(s =>
             items.push({ s, srKey: 'POT_ODDS|' + s.id, drillType: 'POT_ODDS' }));
     }
+    // Exploit reads stay out of MIXED — that session is branded pure math.
+    // Options are re-shuffled every session so the answer position never leaks.
+    if (type === 'EXPLOIT') {
+        (EXPLOIT_SCENARIOS || []).forEach(s => {
+            const order = s.options.map((_, i) => i);
+            for (let i = order.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [order[i], order[j]] = [order[j], order[i]];
+            }
+            const shuffled = { ...s, options: order.map(i => s.options[i]),
+                               correctIdx: order.indexOf(s.correctIdx) };
+            items.push({ s: shuffled, srKey: 'EXPLOIT|' + s.id, drillType: 'EXPLOIT' });
+        });
+    }
     if (type === 'BET_SIZE' || type === 'MIXED') {
         BS_CATEGORIES.forEach(textureCategory => {
             BS_POSITIONS.forEach(position => {
@@ -240,6 +254,7 @@ function renderMathDrillView(view) {
                         : item.drillType === 'RATIO_PCT'    ? 'Ratio to %'
                         : item.drillType === 'OUT_COUNTING' ? 'Out Counting'
                         : item.drillType === 'EQUITY_DEC'   ? 'Equity Decision'
+                        : item.drillType === 'EXPLOIT'      ? 'Exploit Reads'
                         :                                     'Bet Sizing';
         if (titleEl) titleEl.textContent = typeLabel;
         if (progEl)  progEl.textContent  = `${mathDrill.idx + 1} / ${mathDrill.queue.length}`;
@@ -250,6 +265,7 @@ function renderMathDrillView(view) {
                           : item.drillType === 'RATIO_PCT'    ? renderRatioPctQuestion(item.s)
                           : item.drillType === 'OUT_COUNTING' ? renderOutCountingQuestion(item.s)
                           : item.drillType === 'EQUITY_DEC'   ? renderEquityDecQuestion(item.s)
+                          : item.drillType === 'EXPLOIT'      ? renderExploitQuestion(item.s)
                           :                                     renderBetSizeQuestion(item.s);
     } else if (view === 'feedback') {
         const item = mathDrill.queue[mathDrill.idx];
@@ -263,6 +279,7 @@ function renderMathDrillView(view) {
                           : item.drillType === 'RATIO_PCT'    ? renderRatioPctFeedback(item.s)
                           : item.drillType === 'OUT_COUNTING' ? renderOutCountingFeedback(item.s)
                           : item.drillType === 'EQUITY_DEC'   ? renderEquityDecFeedback(item.s)
+                          : item.drillType === 'EXPLOIT'      ? renderExploitFeedback(item.s)
                           :                                     renderBetSizeFeedback(item.s);
     } else if (view === 'summary') {
         if (titleEl) titleEl.textContent = 'Session Complete';
@@ -359,6 +376,7 @@ function renderMenuView() {
     const rpAcc  = generatorAccuracy('RATIO_PCT', rpIds);
     const edAcc  = generatorAccuracy('EQUITY_DEC', edIds);
     const bsAcc  = prefixAccuracy('BET_SIZE', BET_SIZING_SCENARIOS);
+    const exAcc  = prefixAccuracy('EXPLOIT', typeof EXPLOIT_SCENARIOS !== 'undefined' ? EXPLOIT_SCENARIOS : []);
 
     return `
     <div class="flex flex-col items-center gap-4 px-4 py-8 max-w-md md:max-w-2xl mx-auto w-full h-full overflow-y-auto">
@@ -398,6 +416,11 @@ function renderMenuView() {
                 'Bet Sizing',
                 'Pick the right size for the situation',
                 bsAcc)}
+
+            ${node("startMathDrill('EXPLOIT')", 7,
+                'Exploit Reads',
+                'Profile a player from their stats, pick the adjustment that prints',
+                exAcc)}
 
             <button onclick="startMathDrill('MIXED')"
                 class="w-full bg-indigo-900/40 border border-indigo-700/50 hover:border-indigo-400 active:scale-[0.98] rounded-2xl p-4 text-left transition-all">
@@ -715,6 +738,99 @@ function submitPotOddsAnswer(action) {
     try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
 
     renderMathDrillView('feedback');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPLOIT READS QUESTION — profile from stats, pick the profitable deviation
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderExploitQuestion(s) {
+    const catLabel = (EXPLOIT_CATEGORIES && EXPLOIT_CATEGORIES[s.category])
+        ? EXPLOIT_CATEGORIES[s.category].label : s.category;
+    const btns = s.options.map((opt, i) =>
+        `<button onclick="submitExploitAnswer(${i})"
+            class="w-full py-3.5 px-4 rounded-2xl font-bold text-[13px] text-left bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500 hover:text-amber-200 active:scale-[0.98] transition-all">
+            ${opt}
+        </button>`
+    ).join('');
+
+    return `
+    <div class="flex-1 flex flex-col justify-between items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full gap-4 overflow-y-auto">
+
+        <span class="text-[9px] font-bold uppercase tracking-widest text-amber-400">${catLabel}</span>
+
+        <!-- The read: observed stats -->
+        <div class="w-full bg-slate-900 border border-amber-800/40 rounded-2xl p-4 text-center">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Your read on this player</p>
+            <p class="text-lg font-black text-amber-300">${s.stats}</p>
+        </div>
+
+        <!-- The spot -->
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+            <p class="text-[13px] text-slate-300 leading-relaxed">${s.spot}</p>
+        </div>
+
+        <p class="text-sm font-black text-slate-200">${s.question}</p>
+
+        <div class="w-full flex flex-col gap-2">${btns}</div>
+
+    </div>`;
+}
+
+function submitExploitAnswer(idx) {
+    if (mathDrill.answered) return;
+    mathDrill.answered = true;
+
+    const item    = mathDrill.queue[mathDrill.idx];
+    const correct = idx === item.s.correctIdx;
+    mathDrill.lastCorrect = correct;
+    mathDrill.lastGrade   = correct ? 'good' : 'wrong';
+    mathDrill.lastPicked  = idx;
+    mathDrill.sessionTotal++;
+    if (correct) mathDrill.sessionCorrect++;
+    mathDrill.sessionLog.push({
+        id: item.s.id, drillType: 'EXPLOIT',
+        category: item.s.category, correct
+    });
+
+    try { SR.update(item.srKey, correct ? 'Good' : 'Again'); } catch(_) {}
+
+    renderMathDrillView('feedback');
+}
+
+function renderExploitFeedback(s) {
+    const rows = s.options.map((opt, i) => {
+        const isAnswer = i === s.correctIdx;
+        const isPicked = i === mathDrill.lastPicked;
+        const cls = isAnswer
+            ? 'bg-emerald-900/40 border-emerald-600/60 text-emerald-200'
+            : isPicked
+                ? 'bg-rose-900/40 border-rose-700/60 text-rose-300'
+                : 'bg-slate-900 border-slate-800 text-slate-500';
+        const mark = isAnswer ? ' ✓' : isPicked ? ' ✗' : '';
+        return `<div class="w-full py-2.5 px-4 rounded-xl font-bold text-[12px] border ${cls}">${opt}${mark}</div>`;
+    }).join('');
+
+    return `
+    <div class="flex-1 flex flex-col items-center px-4 md:px-8 py-4 max-w-md md:max-w-2xl mx-auto w-full gap-3 overflow-y-auto">
+
+        <div class="w-full bg-slate-900 border border-amber-800/40 rounded-2xl p-3 text-center">
+            <p class="text-sm font-black text-amber-300">${s.stats}</p>
+        </div>
+
+        <div class="w-full flex flex-col gap-2">${rows}</div>
+
+        <div class="w-full bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+            <p class="text-[9px] font-bold uppercase tracking-widest text-amber-500/80 mb-1.5">Why</p>
+            <p class="text-[13px] text-slate-300 leading-relaxed">${s.explanation}</p>
+        </div>
+
+        <button onclick="advanceMathDrill()"
+            class="w-full py-4 rounded-2xl font-black text-base bg-indigo-600 hover:bg-indigo-500 text-white active:scale-[0.98] transition-all">
+            ${mathDrill.idx + 1 >= mathDrill.queue.length ? 'FINISH' : 'NEXT →'}
+        </button>
+
+    </div>`;
 }
 
 function submitBetSizeAnswer(size) {
@@ -1716,6 +1832,7 @@ function renderSummaryView() {
                       : c.drillType === 'RATIO_PCT'    ? 'Ratio Conversion'
                       : c.drillType === 'OUT_COUNTING' ? (c.category.replace(/-/g, ' '))
                       : c.drillType === 'EQUITY_DEC'   ? (c.category.replace(/-/g, ' '))
+                      : c.drillType === 'EXPLOIT'      ? (EXPLOIT_CATEGORIES?.[c.category]?.label || c.category)
                       : (BET_SIZING_CATEGORIES?.[c.category]?.label || c.category);
         const typeTag = c.drillType === 'POT_MATH'     ? 'PM'
                       : c.drillType === 'POT_ODDS'     ? 'PO'
@@ -1724,6 +1841,7 @@ function renderSummaryView() {
                       : c.drillType === 'RATIO_PCT'    ? 'RP'
                       : c.drillType === 'OUT_COUNTING' ? 'OC'
                       : c.drillType === 'EQUITY_DEC'   ? 'ED'
+                      : c.drillType === 'EXPLOIT'      ? 'EX'
                       : 'BS';
         return `<div class="flex items-center gap-2 py-2 border-b border-slate-800/30 last:border-0">
             <span class="text-[8px] font-bold text-slate-700 w-5 shrink-0">${typeTag}</span>
@@ -1745,6 +1863,7 @@ function renderSummaryView() {
          : weakest.drillType === 'RATIO_PCT'    ? 'Ratio Conversion'
          : weakest.drillType === 'OUT_COUNTING' ? (weakest.category.replace(/-/g, ' '))
          : weakest.drillType === 'EQUITY_DEC'   ? (weakest.category.replace(/-/g, ' ') + ' (equity decision)')
+         : weakest.drillType === 'EXPLOIT'      ? ((EXPLOIT_CATEGORIES?.[weakest.category]?.label || weakest.category) + ' (exploit reads)')
          : (_weakCatMap?.[weakest.category]?.label || weakest.category))
         : null;
     const weakLabel = weakest && weakest.correct < weakest.total ? _weakCatLabel : null;

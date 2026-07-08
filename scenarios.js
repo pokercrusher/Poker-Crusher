@@ -2257,3 +2257,228 @@ function generateBetSizingScenario(textureCategory, position, street) {
         explanation
     };
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// EXPLOIT DRILLS — live-game reads → adjustments (Phase 3b)
+// The same principles the Poker Room's READ notes teach, as spaced-rep
+// material: profile an opponent from stats, pick the profitable deviation.
+// SR keys: 'EXPLOIT|' + id (additive — never rename).
+// ═════════════════════════════════════════════════════════════════════════════
+
+const EXPLOIT_CATEGORIES = {
+    VS_NIT:     { label: 'vs Nit' },
+    VS_STATION: { label: 'vs Calling Station' },
+    VS_MANIAC:  { label: 'vs Maniac' },
+    VS_LAG:     { label: 'vs LAG' },
+};
+
+const EXPLOIT_SCENARIOS = [
+
+    // ── VS NIT (super tight: VPIP ≤ 18) ──────────────────────────────────────
+    {
+        id: 'nit-3bet-jj',
+        category: 'VS_NIT',
+        stats: 'VPIP 12 · PFR 10 · 90 hands',
+        spot: 'You open JJ from the CO. This player 3-bets from the button — only the second 3-bet you\'ve seen from them all night.',
+        question: 'Best response?',
+        options: ['4-bet for value', 'Call and play a pot in position... wait, you\'re OOP — call anyway', 'Fold', 'Shove'],
+        correctIdx: 2,
+        explanation: 'A 12/10 player\'s 3-bet range is roughly QQ+/AK. JJ is in terrible shape against that — you\'re either a small dog to AK or crushed. Against a nit\'s 3-bet, fold everything that doesn\'t beat their range. Yes, folding JJ is correct here — that\'s the whole point of the read.'
+    },
+    {
+        id: 'nit-cbet-fold',
+        category: 'VS_NIT',
+        stats: 'VPIP 14 · PFR 11 · 120 hands',
+        spot: 'This player opened UTG, you called on the button with 87s. Flop A-K-4 rainbow. They c-bet 2/3 pot.',
+        question: 'Best response?',
+        options: ['Raise as a bluff — that board hits your range too', 'Call and take it away on the turn', 'Fold and move on', 'Call to hit your gutshot... which you don\'t have'],
+        correctIdx: 2,
+        explanation: 'A tight player\'s UTG open plus a c-bet on A-K-x connects with their exact range (big aces, big pairs). They are never folding better than your 8-high, and bluffing a nit on the board that smashes them is lighting money on fire. Fold instantly.'
+    },
+    {
+        id: 'nit-steal-blinds',
+        category: 'VS_NIT',
+        stats: 'VPIP 13 · PFR 9 · 150 hands',
+        spot: 'It folds to you on the button. Both blinds are this player type — tight, straightforward.',
+        question: 'What adjustment prints money here?',
+        options: ['Open your normal button range', 'Open much wider — steal relentlessly', 'Tighten up — they only play good hands', 'Limp to see cheap flops'],
+        correctIdx: 1,
+        explanation: 'Nits defend their blinds far too little. When both blinds fold too much, raising any two reasonable cards shows an immediate profit before the flop even comes. Widen your button opens dramatically and take the blinds until they adapt (they won\'t).'
+    },
+    {
+        id: 'nit-turn-raise',
+        category: 'VS_NIT',
+        stats: 'VPIP 15 · PFR 12 · 80 hands',
+        spot: 'You have top pair good kicker. The tight player calls your flop bet, then raises you on the turn.',
+        question: 'What does the turn raise mean?',
+        options: ['A draw trying to buy a free river', 'A bluff — everyone bluffs sometimes', 'Two pair or better — you\'re beaten', 'Top pair worse kicker'],
+        correctIdx: 2,
+        explanation: 'Passive tight players do not raise the turn without a hand that beats top pair — it\'s two pair, a set, or better essentially always. One pair is a fold, even a good one. The raise from a nit IS the information; believe it.'
+    },
+    {
+        id: 'nit-value-thin',
+        category: 'VS_NIT',
+        stats: 'VPIP 12 · PFR 10 · 100 hands',
+        spot: 'River. You have second pair. The nit has check-called flop and turn, and checks again.',
+        question: 'Value bet or check back?',
+        options: ['Bet — they always have a draw that missed', 'Check back — their calls are stronger than they look', 'Overbet to make them fold', 'Bet tiny to "get value from anything"'],
+        correctIdx: 1,
+        explanation: 'A tight player\'s check-calls are made of real pairs, not floats. Second pair is rarely good enough for three streets of their calling range, and they don\'t pay off with worse. Take the showdown — thin value bets are for stations, not nits.'
+    },
+
+    // ── VS CALLING STATION (loose-passive: VPIP ≥ 40, PFR < 15) ──────────────
+    {
+        id: 'station-bluff-river',
+        category: 'VS_STATION',
+        stats: 'VPIP 55 · PFR 6 · 110 hands',
+        spot: 'River. Your flush draw missed — you have 9-high. The station check-called flop and turn and checks the river.',
+        question: 'Best play?',
+        options: ['Big bluff — it\'s the only way to win', 'Small bluff — better price on the lie', 'Check back and lose the minimum', 'Overbet shove for maximum fold equity'],
+        correctIdx: 2,
+        explanation: 'Stations do not fold — that\'s what makes them stations. A player who calls 55% of hands preflop will call the river with fourth pair. Bluffing them is the single most expensive habit in live poker. Give up; the hand is over.'
+    },
+    {
+        id: 'station-value-thin',
+        category: 'VS_STATION',
+        stats: 'VPIP 48 · PFR 8 · 95 hands',
+        spot: 'River. You have second pair, decent kicker. The station checks to you.',
+        question: 'Best play?',
+        options: ['Check back — second pair is too thin to bet', 'Bet — they call with worse pairs and ace-high', 'Bet only if you close the action', 'Check-raise... you can\'t, they checked'],
+        correctIdx: 1,
+        explanation: 'Against a station, flip your river standards: bluff never, value bet relentlessly. Second pair is a clear value bet because their calling range includes bottom pair, ace-high, and hands you\'d never expect. Thin value from stations is where live win-rates actually come from.'
+    },
+    {
+        id: 'station-iso-size',
+        category: 'VS_STATION',
+        stats: 'VPIP 60 · PFR 4 · 140 hands',
+        spot: 'The station limps UTG. You have AQo on the button. Standard online iso would be 3bb.',
+        question: 'What\'s the right size live?',
+        options: ['3bb — standard is standard', '5-6bb — they call any size, so charge more', 'Limp behind and keep the pot small', 'Shove to end the guessing'],
+        correctIdx: 1,
+        explanation: 'A station\'s limp-call range is inelastic — they call 6bb exactly as often as 3bb. Every extra blind you charge preflop is pure profit when you have the best hand, and AQ crushes a 60% limping range. Size up mercilessly with value; skip the bluff isos entirely.'
+    },
+    {
+        id: 'station-cbet-air',
+        category: 'VS_STATION',
+        stats: 'VPIP 52 · PFR 7 · 85 hands',
+        spot: 'You raised AKo, the station called. Flop 9-6-2 — you missed completely.',
+        question: 'C-bet?',
+        options: ['Yes — always c-bet, it\'s standard', 'Yes, and barrel every turn too', 'Check — they don\'t fold, so bluffing has no point', 'Bet huge to "protect"'],
+        correctIdx: 2,
+        explanation: 'The auto-c-bet exists because average players fold too much. Stations don\'t fold at all, which removes the entire reason to bluff. Check, take your free card with two overs, and save the c-bet money for when you actually make a pair.'
+    },
+    {
+        id: 'station-3bet-warning',
+        category: 'VS_STATION',
+        stats: 'VPIP 58 · PFR 5 · 130 hands',
+        spot: 'The station — who has raised twice all night — suddenly 3-bets your open out of nowhere.',
+        question: 'What is their range?',
+        options: ['Wide — they play everything', 'A monster — passive players only raise the nuts', 'Balanced — some value, some bluffs', 'Random — no read possible'],
+        correctIdx: 1,
+        explanation: 'Loose-PASSIVE means they play everything but raise nothing. When the player who never raises suddenly raises, the 55% VPIP is irrelevant — the 5% PFR is the read. That 3-bet is QQ+ or AK almost every time. Continue only with a real hand.'
+    },
+
+    // ── VS MANIAC (hyper-aggressive: PFR ≥ 28) ───────────────────────────────
+    {
+        id: 'maniac-3bet-defend',
+        category: 'VS_MANIAC',
+        stats: 'VPIP 65 · PFR 45 · 75 hands',
+        spot: 'You open ATs from the HJ. The maniac 3-bets you for the fifth time tonight.',
+        question: 'Best response?',
+        options: ['Fold — ATs can\'t stand a 3-bet', 'Call — your hand is way ahead of their range', '4-bet bluff — fight fire with fire', 'Fold and wait for aces'],
+        correctIdx: 1,
+        explanation: 'A 45% PFR player\'s 3-bet range is stuffed with junk. ATs is comfortably ahead of it — folding hands this strong is exactly what the maniac\'s strategy preys on. Call, let them keep barreling with air, and pick off their bluffs. (4-betting works too, but calling keeps their bluffs in.)'
+    },
+    {
+        id: 'maniac-bluffcatch',
+        category: 'VS_MANIAC',
+        stats: 'VPIP 70 · PFR 40 · 60 hands',
+        spot: 'You have second pair. The maniac has bet flop, turn, and now bombs the river.',
+        question: 'Best play?',
+        options: ['Fold — three barrels means a real hand', 'Call — their range is full of air on all three streets', 'Raise — turn your pair into a bluff', 'Fold and show them respect'],
+        correctIdx: 1,
+        explanation: 'Against normal players, three barrels is strength. Against a maniac, barreling IS their baseline — the aggression carries no information. Your bluff-catchers go way up in value: call down with pairs you\'d fold to anyone else. It feels gross and it prints money.'
+    },
+    {
+        id: 'maniac-slowplay',
+        category: 'VS_MANIAC',
+        stats: 'VPIP 62 · PFR 38 · 90 hands',
+        spot: 'You flop a set. The maniac is behind you and has stabbed at every checked pot tonight.',
+        question: 'Best line?',
+        options: ['Bet big — get value now', 'Check — let them hang themselves', 'Check-fold if they bet... obviously not', 'Bet tiny to keep them in'],
+        correctIdx: 1,
+        explanation: 'Maniacs cannot resist betting when checked to — weakness triggers them. Checking your monsters lets them stack themselves with hands that would have folded to a bet. Against aggression, trap; against passivity, bet. This is the inverse of the station adjustment.'
+    },
+    {
+        id: 'maniac-value-wide',
+        category: 'VS_MANIAC',
+        stats: 'VPIP 68 · PFR 42 · 55 hands',
+        spot: 'The maniac opens for the ninth time in ten hands. You look down at AJo in the blinds.',
+        question: 'Best response?',
+        options: ['Fold — AJo is a trap hand OOP', 'Call and play fit-or-fold', '3-bet for value — your hand crushes their range', 'Limp-reraise... you can\'t, but you wish'],
+        correctIdx: 2,
+        explanation: 'AJo against a 42% opening range is a big value hand — not a trap. 3-bet it like you\'d 3-bet QQ against a normal player, because relative to their range, it is. The mistake live players make vs maniacs is staying passive with hands that are way ahead.'
+    },
+    {
+        id: 'maniac-stack-depth',
+        category: 'VS_MANIAC',
+        stats: 'VPIP 66 · PFR 44 · 70 hands',
+        spot: 'The maniac has you covered. You have QQ, they 3-bet, you 4-bet, they shove.',
+        question: 'What\'s the call?',
+        options: ['Fold — shoves are always KK+', 'Call — their shoving range is wide enough that QQ crushes it', 'It was a mistake to 4-bet — should have flatted', 'Time bank and fold'],
+        correctIdx: 1,
+        explanation: 'Against a normal player, a 5-bet shove says KK+. This player has shown they raise 44% of hands — their shove range includes JJ, TT, AK, AQ, and pure spite. QQ is a snap call. The read changes the math: the same action means a different range from a different player.'
+    },
+
+    // ── VS LAG (loose-aggressive but not crazy: VPIP ~32+, PFR ~22+) ─────────
+    {
+        id: 'lag-3bet-position',
+        category: 'VS_LAG',
+        stats: 'VPIP 34 · PFR 26 · 100 hands',
+        spot: 'The LAG opens from the CO. You have KQs on the button.',
+        question: 'Best response?',
+        options: ['Fold — KQ is dominated too often', 'Call quietly in position', '3-bet — punish the wide open with a hand that plays great', 'Depends on your mood'],
+        correctIdx: 2,
+        explanation: 'A 26% CO open is wide, and KQs plays beautifully in a 3-bet pot in position. Flatting lets the blinds in and lets the LAG realize equity cheaply. 3-betting folds out their junk now or builds a pot where you have position and the range edge. Attack wide opens with your strong-but-not-premium hands.'
+    },
+    {
+        id: 'lag-float-cbet',
+        category: 'VS_LAG',
+        stats: 'VPIP 36 · PFR 24 · 85 hands',
+        spot: 'The LAG c-bets half pot on a K-7-2 flop after opening. You called preflop in position with 98s and missed.',
+        question: 'Best response?',
+        options: ['Fold — you have 9-high', 'Call (float) — their c-bet range is wide, and they give up turns', 'Raise huge', 'Call and fold every turn'],
+        correctIdx: 1,
+        explanation: 'A LAG c-bets that dry flop with their entire range, which mostly missed it too. Floating in position with backdoor equity lets you take the pot on later streets when they slow down — and 98s has enough going on to continue. Against auto-c-bettors, position + persistence beats cards.'
+    },
+    {
+        id: 'lag-vs-nit-contrast',
+        category: 'VS_LAG',
+        stats: 'VPIP 33 · PFR 23 · 120 hands',
+        spot: 'The LAG raises your check on the turn. Earlier tonight, a nit made the same raise and you folded top pair correctly.',
+        question: 'Same action, same response?',
+        options: ['Yes — turn raises mean strength, period', 'No — the LAG\'s raise range includes draws and bluffs; continue with top pair', 'No — fold even faster', 'Flip a coin'],
+        correctIdx: 1,
+        explanation: 'This is the heart of exploitative play: the same action from different players means different ranges. The nit\'s turn raise was two pair plus. The LAG\'s includes semi-bluffs, top pair raised for "protection", and pure aggression. Top pair is a continue here and a fold there — the read IS the strategy.'
+    },
+    {
+        id: 'lag-blind-defense',
+        category: 'VS_LAG',
+        stats: 'VPIP 35 · PFR 27 · 95 hands',
+        spot: 'The LAG opens from the button for the fourth orbit in a row. You\'re in the big blind with K9s.',
+        question: 'Best response?',
+        options: ['Fold — out of position, marginal hand', 'Defend — their button range is too wide for you to fold this much equity', '3-bet all-in', 'Fold and change seats'],
+        correctIdx: 1,
+        explanation: 'Against a wide button open, K9s is far too strong to fold in the big blind — you\'re getting a discount and their range is full of worse kings and junk. Folding hands this strong to serial stealers is exactly how LAGs print. Defend wider against wider ranges.'
+    },
+    {
+        id: 'lag-river-raise',
+        category: 'VS_LAG',
+        stats: 'VPIP 38 · PFR 25 · 110 hands',
+        spot: 'You value-bet top pair on the river. The LAG — aggressive but not insane — raises you.',
+        question: 'Best response?',
+        options: ['Call — LAGs are always bluffing', 'Fold — even aggressive players have it when they raise rivers', 'Shove', 'Call and berate them either way'],
+        correctIdx: 1,
+        explanation: 'The nuance that separates LAG from maniac: good aggressive players bluff earlier streets, but river raises — the most expensive bluff in poker — stay value-heavy even for them. Aggression frequency isn\'t uniform across streets. Respect the river raise; pick off their flop and turn stabs instead.'
+    },
+];

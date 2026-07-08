@@ -64,8 +64,14 @@ renderer and mostly unnecessary.
   `grade.exploit`; renders as amber "READ:" line in grade detail + history
   rows + ● dot on the grade indicator. Baseline grade/SR feed untouched.
   Exploit-principles drill family still TODO (Phase 3b).
-- Roadmap: Phase 3b exploit drills → Phase 4 multiway rules + SR keys
-  (add, never rename) → Phase 5 polish.
+- Phase 3b DONE (exploit drills): `EXPLOIT_SCENARIOS` (scenarios.js, 20
+  MCQs, 5 per read type VS_NIT/VS_STATION/VS_MANIAC/VS_LAG) + EXPLOIT
+  drill family in drills.js (menu step 7, not in MIXED; options
+  re-shuffled per session so answer position never leaks). SR keys
+  'EXPLOIT|id'. Same principles as the table READ notes — earn the read
+  live, drill the theory here.
+- Roadmap: Phase 4 multiway rules + SR keys (add, never rename) →
+  Phase 5 polish.
 
 ### Architecture decisions (deviations from the original 7-pass spec)
 - **Hero is a seat, not a label**: tableConfig stores VILLAINS only (stable ids
