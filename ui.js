@@ -600,7 +600,13 @@ function renderHand(handKeyOrHeroHand) {
         cards = [{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }];
     }
 
-    document.getElementById('hand-display').innerHTML = cards.map(c => card(c.rank, c.suit)).join('');
+    const handEl = document.getElementById('hand-display');
+    handEl.innerHTML = cards.map(c => card(c.rank, c.suit)).join('');
+    // Spoken name for screen readers ("Your hand: Jack of hearts, Nine of hearts")
+    const RANK_NAMES = { A: 'Ace', K: 'King', Q: 'Queen', J: 'Jack', T: 'Ten', '9': 'Nine', '8': 'Eight', '7': 'Seven', '6': 'Six', '5': 'Five', '4': 'Four', '3': 'Three', '2': 'Two' };
+    const SUIT_NAMES = { '♠': 'spades', '♥': 'hearts', '♣': 'clubs', '♦': 'diamonds' };
+    handEl.setAttribute('role', 'img');
+    handEl.setAttribute('aria-label', 'Your hand: ' + cards.map(c => (RANK_NAMES[c.rank] || c.rank) + ' of ' + (SUIT_NAMES[c.suit] || c.suit)).join(', '));
 }
 
 // Show card backs (placeholder) immediately
@@ -1206,6 +1212,8 @@ function showChart(pos, target, scenario, oppPos, bucketOverride) {
     _chartCtx = { pos, target, scenario, oppPos, bucket: chartBucket };
     _renderChart(pos, target, scenario, oppPos);
     document.getElementById('chart-modal').classList.remove('hidden');
+    // Move focus into the dialog so keyboard/screen-reader users land on it
+    try { document.getElementById('btn-close-chart').focus({ preventScroll: true }); } catch(_) {}
 }
 
 
