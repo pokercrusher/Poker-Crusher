@@ -1829,6 +1829,109 @@ describe('Imported data hygiene', () => {
 });
 
 // =============================================================================
+// evaluateRawHand — direct edge cases against the production evaluator (audit §4.3)
+// =============================================================================
+
+describe('evaluateRawHand edge cases', () => {
+    const H = (str) => str.split(' ').map(t => C(t[0], t[1]));   // 'Ah Kd' → cards
+    const ev = (hero, board) => PROD.evaluateRawHand(H(hero), H(board)).label;
+
+    it.each([
+        ['royal flush',                     'Ah Kh', 'Qh Jh Th 2c 3d', 'ROYAL_FLUSH'],
+        ['steel wheel (A-5 straight flush)', 'Ah 2h', '3h 4h 5h Kc Kd', 'STRAIGHT_FLUSH'],
+        ['wheel straight, ace plays low',    'Ac 2d', '3h 4s 5c Kd 9h', 'STRAIGHT'],
+        ['no wrap-around K-A-2-3-4',         'Kc Ad', '2h 3s 4c 9d 8h', 'HIGH_CARD'],
+        ['flush + straight, different cards → FLUSH, not SF', '9h 8h', '7c 6h 5h 2h Kd', 'FLUSH'],
+        ['six-card straight flush picks the SF', '9s 8s', '7s 6s 5s 4s Kd', 'STRAIGHT_FLUSH'],
+        ['quads beat a full house on board', 'Kc Kd', 'Kh Ks 7c 7d 2h', 'QUADS'],
+        ['two sets of trips is a full house', '7c 7d', '7h Ks Kd Kc 2h', 'FULL_HOUSE'],
+        ['trips + board pair → FULL_HOUSE',  '7c 7d', '7h Ks Kd 2c 3h', 'FULL_HOUSE'],
+        ['three pairs is still TWO_PAIR',    'Ac Ad', 'Kc Kd Qh Qs 2c', 'TWO_PAIR'],
+        ['double-paired board, unpaired hero → TWO_PAIR', 'Ac 9d', 'Kc Kd Qh Qs 2c', 'TWO_PAIR'],
+        ['paired board only → PAIR',         'Ac 9d', 'Kc Kd 7h 4s 2c', 'PAIR'],
+        ['board trips → TRIPS',              'Ac 9d', 'Kc Kd Kh 4s 2c', 'TRIPS'],
+        ['four to a flush is not a flush',   'Ah 2h', '9h Kh 7c 4s 3d', 'HIGH_CARD'],
+    ])('%s', (_name, hero, board, label) => {
+        expect(ev(hero, board)).toBe(label);
+    });
+
+    it('rank numbers are strictly ordered by category', () => {
+        const order = ['HIGH_CARD', 'PAIR', 'TWO_PAIR', 'TRIPS', 'STRAIGHT', 'FLUSH', 'FULL_HOUSE', 'QUADS', 'STRAIGHT_FLUSH'];
+        const samples = {
+            HIGH_CARD: ['Ac 9d', 'Kc 7d 4h 3s 2c'], PAIR: ['Ac Ad', 'Kc 7d 4h 3s 2c'],
+            TWO_PAIR: ['Ac Kd', 'Ah Kc 4h 3s 9c'], TRIPS: ['Ac Ad', 'Ah Kc 4h 3s 9c'],
+            STRAIGHT: ['Tc 9d', '8h 7s 6c 2d 2h'], FLUSH: ['Ah 9h', '7h 4h 2h Kc Kd'],
+            FULL_HOUSE: ['Ac Ad', 'Ah Kc Kh 3s 9c'], QUADS: ['Ac Ad', 'Ah As Kh 3s 9c'],
+            STRAIGHT_FLUSH: ['9h 8h', '7h 6h 5h 2c 2d'],
+        };
+        const ranks = order.map(cat => PROD.evaluateRawHand(H(samples[cat][0]), H(samples[cat][1])).rank);
+        expect(ranks).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    });
+});
+
+// =============================================================================
+// Challenge progress — v1 → v2 migration rewrites saved progress (audit §4.4)
+// =============================================================================
+
+describe('Challenge v1 → v2 migration', () => {
+    const V1_IDS = ['n1_rfi_ep', 'n2_rfi_mp', 'n3_rfi_lp', 'n4_rfi_blinds', 'n5_def_blinds',
+                    'n6_vs3b_ip', 'n7_vs3b_oop', 'n8_vs_limp', 'n9_squeeze'];
+    const reset = () => { PROD.__setLocal('gto_challenge_v2', ''); PROD.__setLocal('gto_challenge_v1', ''); };
+
+    it('every v1 node maps onto a node that exists in the v2 DAG, keeping accuracy and pass state', () => {
+        reset();
+        const nodes = {};
+        V1_IDS.forEach((id, i) => { nodes[id] = { bestAcc: 70 + i, completed: i % 2 === 0, completedAt: 1000 + i }; });
+        PROD.__setLocal('gto_challenge_v1', JSON.stringify({ v: 1, nodes, lastPlayed: 'n3_rfi_lp' }));
+
+        const p = PROD.getChallengeProgress();
+        const v2Ids = new Set(PROD.CHALLENGE_NODES.map(n => n.id));
+        expect(p.v).toBe(2);
+        expect(Object.keys(p.nodes).length).toBe(V1_IDS.length);
+        Object.keys(p.nodes).forEach(id => expect(v2Ids.has(id)).toBe(true));
+        expect(v2Ids.has(p.lastPlayed)).toBe(true);
+        const passed = Object.values(p.nodes).filter(r => r.medal === 'pass').length;
+        expect(passed).toBe(5);                                    // i = 0,2,4,6,8 were completed
+        expect(Object.values(p.nodes).map(r => r.bestAcc).sort()).toEqual(V1_IDS.map((_, i) => 70 + i));
+
+        // Migration persisted v2, so the next load does not re-migrate
+        PROD.__setLocal('gto_challenge_v1', JSON.stringify({ v: 1, nodes: {}, lastPlayed: null }));
+        expect(Object.keys(PROD.getChallengeProgress().nodes).length).toBe(V1_IDS.length);
+        reset();
+    });
+
+    it('unknown v1 ids are dropped; corrupt or absent v1 data yields fresh progress', () => {
+        reset();
+        PROD.__setLocal('gto_challenge_v1', JSON.stringify({ v: 1, nodes: { bogus: { bestAcc: 99, completed: true } } }));
+        expect(PROD.getChallengeProgress().nodes).toEqual({});
+        reset();
+        PROD.__setLocal('gto_challenge_v1', '{{{not json');
+        expect(PROD.getChallengeProgress()).toEqual({ v: 2, nodes: {}, lastPlayed: null, completedAt: null });
+        reset();
+        expect(PROD.getChallengeProgress()).toEqual({ v: 2, nodes: {}, lastPlayed: null, completedAt: null });
+    });
+
+    it('the DAG is well-formed: unique ids, prereqs exist, every node reachable from the roots', () => {
+        const nodes = PROD.CHALLENGE_NODES;
+        const ids = nodes.map(n => n.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        nodes.forEach(n => (n.prereqs || []).forEach(pid => expect(ids).toContain(pid)));
+        // Pass nodes in order: each must be unlocked by the time we reach it
+        const progress = { v: 2, nodes: {}, lastPlayed: null, completedAt: null };
+        let guard = 0, changed = true;
+        while (changed && guard++ < 100) {
+            changed = false;
+            nodes.forEach(n => {
+                if (!progress.nodes[n.id] && PROD.isNodeUnlocked(progress, n)) {
+                    progress.nodes[n.id] = { medal: 'pass' }; changed = true;
+                }
+            });
+        }
+        expect(Object.keys(progress.nodes).length).toBe(nodes.length);
+    });
+});
+
+// =============================================================================
 // Poker Room — 3-bet-pot defense grading (hero called a 3-bet, faces c-bet)
 // =============================================================================
 

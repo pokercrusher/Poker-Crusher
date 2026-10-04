@@ -50,7 +50,7 @@ function makeSandbox() {
 }
 
 // Browser order matters: cloud.js defines profileKey used by engine.js's SR init
-const FILES = ['ranges.js', 'ranges-postflop-data.js', 'cloud.js', 'engine.js', 'sim.js', 'poker-room.js'];
+const FILES = ['ranges.js', 'ranges-postflop-data.js', 'cloud.js', 'engine.js', 'sim.js', 'poker-room.js', 'challenge.js'];
 
 // Names the tests need. Mix of `function` and `const` declarations —
 // both are reachable from an expression evaluated inside the context.
@@ -81,6 +81,8 @@ const EXPORT_NAMES = [
     'PR_buildHandSeatsRotated', 'PR_minRaiseTo', 'PR_canRaise', 'PR_exploitNote',
     // cloud.js
     'applyTrainerPayload', 'profileKey', '_mergeCloudKey', '_pcValidateTrainerKey',
+    // challenge.js
+    'CHALLENGE_NODES', 'getChallengeProgress', 'isNodeUnlocked', 'computeMedal',
 ];
 
 let cached = null;
