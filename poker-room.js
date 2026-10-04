@@ -1845,6 +1845,9 @@ const PR_ARCHETYPE_KEYS = ['NIT', 'TAG', 'LAG', 'FISH', 'MANIAC', 'AGGRO'];
 
 const PR_HERO_NAME_MAX = 14;
 
+// Room state lives in localStorage only (pc_poker_room_v1) and is NOT part of
+// cloud sync. The bankroll is trivially editable client-side: never surface it
+// in anything shared, synced or leaderboard-like without moving it server-side.
 function PR_defaultRoomState() {
     return {
         version: 1,
@@ -1886,6 +1889,36 @@ function PR_sanitizeRegulars(raw) {
     return out;
 }
 
+// A saved table is reused only if every villain is well-formed; anything off
+// (old schema, wrong seat count, bad stack) returns null and the lobby simply
+// deals a fresh table — a corrupt save must never break the room.
+function PR_sanitizeTableConfig(raw) {
+    if (!raw || typeof raw !== 'object' || !PR_STAKE_CONFIG[raw.stake]) return null;
+    const v = raw.villains;
+    const n = raw.seatCount;
+    if (!Array.isArray(v) || typeof n !== 'number' || n < 2 || n > 9 || v.length !== n - 1) return null;
+    const ok = v.every(function(x, i) {
+        return x && typeof x === 'object' &&
+            typeof x.name === 'string' && x.name.length > 0 &&
+            PR_ARCHETYPE_KEYS.indexOf(x.type) !== -1 &&
+            typeof x.stackBB === 'number' && isFinite(x.stackBB) && x.stackBB >= 0;
+    });
+    if (!ok) return null;
+    return {
+        stake: raw.stake,
+        seatCount: n,
+        villains: v.map(function(x, i) {
+            const ss = (x.sessionStats && typeof x.sessionStats === 'object') ? x.sessionStats : {};
+            const num = function(k) { return (typeof ss[k] === 'number' && isFinite(ss[k]) && ss[k] >= 0) ? ss[k] : 0; };
+            return Object.assign({}, x, {
+                id: typeof x.id === 'string' ? x.id : 'v' + (i + 1),
+                avatar: (typeof x.avatar === 'string' && x.avatar) ? x.avatar.slice(0, 8) : PR_AVATAR_POOL[0],
+                sessionStats: Object.assign({}, ss, { handsDealt: num('handsDealt'), vpipHands: num('vpipHands'), pfrHands: num('pfrHands') }),
+            });
+        }),
+    };
+}
+
 // Load persisted room state; malformed or missing data falls back per-field
 // so one bad key can never brick the room.
 function PR_loadRoomState() {
@@ -1909,7 +1942,7 @@ function PR_loadRoomState() {
         regulars: PR_sanitizeRegulars(raw.regulars),
         // Table config holds VILLAINS only — hero is always the remaining seat.
         // (Older saves stored a 'seats' array including all positions; discard those.)
-        tableConfig: (raw.tableConfig && Array.isArray(raw.tableConfig.villains)) ? raw.tableConfig : null,
+        tableConfig: PR_sanitizeTableConfig(raw.tableConfig),
         sessionHistory: Array.isArray(raw.sessionHistory)
             ? raw.sessionHistory.slice(0, PR_SESSION_HISTORY_CAP) : [],
         allTimeStats: (raw.allTimeStats && typeof raw.allTimeStats === 'object')

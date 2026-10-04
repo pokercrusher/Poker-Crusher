@@ -1240,6 +1240,27 @@ describe('Poker Room — Pass 3 persistence', () => {
         expect(byId('v5').sessionStats).toEqual({ handsDealt: 1, vpipHands: 0, pfrHands: 0 });
     });
 
+    it('saved table config round-trips; malformed ones fall back to a fresh deal', () => {
+        const s = PROD.PR_defaultRoomState();
+        s.tableConfig = PROD.PR_generateTableConfig('1/2', 6, null, {});
+        PROD.PR_saveRoomState(s);
+        const good = PROD.PR_loadRoomState().tableConfig;
+        expect(good.seatCount).toBe(6);
+        expect(good.villains.map(v => v.name)).toEqual(s.tableConfig.villains.map(v => v.name));
+
+        const bad = [
+            { stake: '1/2', seatCount: 6, villains: [{ name: 'x' }] },                       // wrong count, no type
+            { stake: 'NOPE', seatCount: 2, villains: [{ name: 'a', type: 'NIT', stackBB: 100 }] },
+            { stake: '1/2', seatCount: 2, villains: [{ name: 'a', type: 'NIT', stackBB: NaN }] },
+            { stake: '1/2', seatCount: 2, villains: [{ name: 'a', type: 'WIZARD', stackBB: 100 }] },
+            { stake: '1/2', seats: [] },                                                      // pre-hero-as-seat schema
+        ];
+        bad.forEach((tc) => {
+            PROD.PR_saveRoomState(Object.assign(PROD.PR_defaultRoomState(), { tableConfig: tc }));
+            expect(PROD.PR_loadRoomState().tableConfig).toBeNull();
+        });
+    });
+
     it('session history is capped', () => {
         const s = PROD.PR_defaultRoomState();
         for (let i = 0; i < 250; i++) {
