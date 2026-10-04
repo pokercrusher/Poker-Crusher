@@ -2733,7 +2733,36 @@ function renderSettingsStakeDisplay() {
     };
 })();
 
+// Keyboard focus trap for overlay screens (audit §6.2). Tab / Shift+Tab cycle
+// within the topmost visible role="dialog"; focus that has wandered behind it
+// (into the menu or table underneath) is pulled back in. Touch/mouse users
+// never press Tab, so nothing changes for them.
+const _FOCUSABLE_SEL = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function _topmostOpenDialog() {
+    let top = null, topZ = -Infinity;
+    document.querySelectorAll('[role="dialog"]').forEach(function(d) {
+        if (d.classList.contains('hidden') || !d.getClientRects().length) return;
+        const z = parseInt(getComputedStyle(d).zIndex, 10) || 0;
+        if (z >= topZ) { top = d; topZ = z; }   // ties: later in DOM wins
+    });
+    return top;
+}
+function _trapDialogFocus(e) {
+    if (e.key !== 'Tab') return;
+    const dlg = _topmostOpenDialog();
+    if (!dlg) return;
+    const items = Array.prototype.filter.call(dlg.querySelectorAll(_FOCUSABLE_SEL),
+        function(el) { return el.getClientRects().length > 0; });
+    if (!items.length) { e.preventDefault(); return; }
+    const first = items[0], last = items[items.length - 1];
+    const active = document.activeElement;
+    if (!dlg.contains(active)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
+    if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+}
+
 function initEventListeners() {
+    document.addEventListener('keydown', _trapDialogFocus);
     // ── Menu screen ──
     document.getElementById('btn-dismiss-onboarding').addEventListener('click', dismissOnboarding);
     document.getElementById('btn-train-now').addEventListener('click', showConfigMenu);

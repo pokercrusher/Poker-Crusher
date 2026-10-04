@@ -138,6 +138,9 @@ renderer and mostly unnecessary.
 - Inline handlers built from stored data use `jsArgAttr()` (engine.js), never
   ad-hoc `.replace(/'/g, ...)`; labels from stored keys go through
   `escapeHtml()` at every innerHTML site.
+- Accessibility: overlay screens carry role="dialog" + aria-modal + a name;
+  `_trapDialogFocus` (ui.js) keeps Tab inside the topmost open dialog by
+  z-index. New overlays need the same role or the trap ignores them.
 - Firebase config lives ONLY in the inline bootstrap at the bottom of
   index.html (events.js was dead and is deleted; ui.js `initEventListeners`
   is the wiring).
