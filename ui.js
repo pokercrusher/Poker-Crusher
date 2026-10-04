@@ -1627,7 +1627,7 @@ function showReviewComplete() {
     const wrongSpots = [...new Set(stillWrong.map(e => e.spotKey).filter(Boolean))];
 
     const wrongRows = wrongSpots.slice(0, 4).map(sk =>
-        `<div class="text-[11px] text-rose-300 font-semibold py-1 border-b border-slate-800/40 last:border-0">${prettySpotName(sk)}</div>`
+        `<div class="text-[11px] text-rose-300 font-semibold py-1 border-b border-slate-800/40 last:border-0">${escapeHtml(prettySpotName(sk))}</div>`
     ).join('');
 
     const el = document.getElementById('review-complete-screen');
@@ -1696,7 +1696,7 @@ function showSessionSummary() {
     const spotRows = worstSpots.length ? worstSpots.map(sp => {
         const col = sp.acc >= 80 ? 'text-emerald-400' : sp.acc >= 60 ? 'text-yellow-400' : 'text-rose-400';
         return `<div class="flex items-center justify-between py-1.5 border-b border-slate-800/50 last:border-0">
-            <span class="text-[11px] text-slate-300 font-semibold">${prettySpotName(sp.key)}</span>
+            <span class="text-[11px] text-slate-300 font-semibold">${escapeHtml(prettySpotName(sp.key))}</span>
             <span class="text-[11px] font-black ${col}">${sp.acc}%</span>
         </div>`;
     }).join('') : '<div class="text-slate-600 text-xs italic">Not enough data yet</div>';
@@ -1916,18 +1916,18 @@ function renderPrescriptionCard() {
     const spotName = (typeof prettySpotName === 'function') ? prettySpotName(top.spotKey) : top.spotKey;
     const handStr = top.worstHands.length ? top.worstHands.join(' · ') : '';
     const accColor = top.recentAcc >= 70 ? 'text-yellow-400' : 'text-rose-400';
-    const escapedKey = top.spotKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const escapedKey = jsArgAttr(top.spotKey);
 
     el.innerHTML = `
         <button onclick="toggleLeakCard(this)" style="width:100%;background:none;border:none;cursor:pointer;text-align:left;" class="flex items-center justify-between gap-2 py-0.5">
             <div class="flex items-center gap-2 min-w-0">
                 <span class="text-[10px] font-black text-rose-400/80 uppercase tracking-widest shrink-0">Biggest Leak</span>
-                <span class="text-slate-200 font-bold text-xs leading-tight truncate">${spotName}</span>
+                <span class="text-slate-200 font-bold text-xs leading-tight truncate">${escapeHtml(spotName)}</span>
             </div>
             <span class="${accColor} font-black text-sm shrink-0">${top.recentAcc}%</span>
         </button>
         <div class="leak-card-detail" style="max-height:0;overflow:hidden;transition:max-height 0.25s ease-out;">
-            ${handStr ? `<p class="text-slate-500 text-[11px] mt-2">Leaking on: ${handStr}</p>` : ''}
+            ${handStr ? `<p class="text-slate-500 text-[11px] mt-2">Leaking on: ${escapeHtml(handStr)}</p>` : ''}
             <button onclick="launchTargetedSession('${escapedKey}')" class="mt-2 w-full py-2.5 bg-rose-600/80 hover:bg-rose-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">Fix This Now — 15 hands</button>
         </div>`;
 }
@@ -2269,7 +2269,7 @@ function drilldownScenario(sc) {
             const barColor = p >= 80 ? 'bg-emerald-500' : p >= 60 ? 'bg-yellow-500' : 'bg-rose-500';
             return `<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-slate-600 transition-colors" onclick="drilldownSpot('${spotKey}')">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-bold text-slate-200">${spotLabel}</span>
+                    <span class="text-sm font-bold text-slate-200">${escapeHtml(spotLabel)}</span>
                     <div class="flex items-center gap-2">
                         <span class="font-black text-sm ${color}">${p}%</span>
                         <span class="text-slate-600 text-xs">${d.total} hands</span>
@@ -2307,7 +2307,7 @@ function drilldownPosition(pos) {
             const barColor = p >= 80 ? 'bg-emerald-500' : p >= 60 ? 'bg-yellow-500' : 'bg-rose-500';
             return `<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-slate-600 transition-colors" onclick="drilldownSpot('${spotKey}')">
                 <div class="flex justify-between items-center mb-2">
-                    <div><span class="text-sm font-bold text-slate-200">${spotLabel}</span><span class="text-[10px] text-slate-500 ml-2">${scLabel}</span></div>
+                    <div><span class="text-sm font-bold text-slate-200">${escapeHtml(spotLabel)}</span><span class="text-[10px] text-slate-500 ml-2">${scLabel}</span></div>
                     <div class="flex items-center gap-2">
                         <span class="font-black text-sm ${color}">${p}%</span>
                         <span class="text-slate-600 text-xs">${d.total} hands</span>
@@ -2433,7 +2433,7 @@ function drilldownSpot(spotKey) {
         const statusLabel = stats.status.charAt(0).toUpperCase() + stats.status.slice(1);
 
         // Run This Spot CTA
-        const escapedKey = spotKey.replace(/'/g, "\\'");
+        const escapedKey = jsArgAttr(spotKey);
         const runBtn = `<button onclick="launchSpotDrill('${escapedKey}')"
             class="w-full py-3.5 pc-btn-primary transition-all flex items-center justify-center gap-2" style="font-size:14px;">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>

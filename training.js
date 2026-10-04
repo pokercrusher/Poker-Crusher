@@ -766,7 +766,7 @@ function updateDailyRunUI() {
                 <div class="text-slate-100 font-black text-lg mt-1">${lastOptName ? `${lastRun} · ${lastOptName}` : '—'}</div>
                 <div class="text-slate-500 text-xs mt-1">${lastWhen ? lastWhen.toLocaleString() : ''}</div>
                 <div class="text-slate-400 text-xs mt-2">${lastOptName ? `Accuracy: ${lastCorrect}/${lastTotal}` : ''}</div>
-                <div class="text-slate-400 text-xs mt-1">${lastLeak ? `Leak: ${lastLeak}` : ''}</div>
+                <div class="text-slate-400 text-xs mt-1">${lastLeak ? `Leak: ${escapeHtml(lastLeak)}` : ''}</div>
             </div>
         `;
     }
@@ -916,7 +916,7 @@ function showDailyRunComplete() {
         </div>
         <div class="mt-3 bg-slate-950/40 border border-slate-800 rounded-2xl p-4">
             <div class="text-slate-400 text-xs font-bold uppercase tracking-widest">Biggest leak</div>
-            <div class="text-slate-100 font-black text-lg mt-1">${leakLabel}</div>
+            <div class="text-slate-100 font-black text-lg mt-1">${escapeHtml(leakLabel)}</div>
         </div>
         <div class="mt-3 text-slate-400 text-xs">
             Slots today: <span class="text-slate-200 font-bold">${['easy','medium','hard'].filter(o => (meta.completedToday||{})[o]).length}/3</span> · Day streak: <span class="text-slate-200 font-bold">${meta.streak}</span>

@@ -60,7 +60,7 @@ const EXPORT_NAMES = [
     'classifyFlopHand', 'classifyTurnHand', 'classifyRiverHand',
     'PLAYER_TYPE_RANGE_PROFILES',
     // engine.js
-    'checkRangeHelper', 'buildSRKey', 'buildSpotKey', 'computeCorrectAction', 'SR',
+    'checkRangeHelper', 'escapeHtml', 'jsArgAttr', 'buildSRKey', 'buildSpotKey', 'computeCorrectAction', 'SR',
     // sim.js
     'FULL_TABLE_POSITIONS', '_freshDeck', '_shuffle', '_cardsToHandNotation',
     '_deepCopy', '_resolveVillainPreflopAction',
@@ -80,7 +80,7 @@ const EXPORT_NAMES = [
     'PR_accumulateSeatStats', 'PR_STORAGE_KEY', 'PR_buildHandSeats',
     'PR_buildHandSeatsRotated', 'PR_minRaiseTo', 'PR_canRaise', 'PR_exploitNote',
     // cloud.js
-    'applyTrainerPayload', 'profileKey', '_mergeCloudKey',
+    'applyTrainerPayload', 'profileKey', '_mergeCloudKey', '_pcValidateTrainerKey',
 ];
 
 let cached = null;

@@ -161,6 +161,15 @@ function triggerImport() {
                 throw new Error('Invalid backup file.');
             }
 
+            // Validate every key BEFORE touching storage (same rules as cloud
+            // load, _pcValidateTrainerKey) so a bad file changes nothing at all.
+            const validated = {};
+            Object.keys(PC_TRAINER_KEY_SHAPES).forEach(k => {
+                const raw = _pcValidateTrainerKey(k, payload.data[k]);
+                if (raw !== null) validated[k] = raw;
+            });
+            if (!Object.keys(validated).length) throw new Error('Backup contained no usable data.');
+
             // If the backup has a profile name, switch to it (safe: we reload after import).
             if (payload.profile !== undefined) {
                 const normalized = normalizeProfileName(payload.profile);
@@ -173,14 +182,11 @@ function triggerImport() {
                 } catch(e) {}
             }
 
-            // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
-            const allowed = ['gto_rfi_stats_v2', 'gto_sr_v2', 'gto_config_v2', 'gto_medals_v1', 'gto_limper_mix', 'gto_challenge_v1', 'gto_challenge_v2', 'pc_dailyRun_v1'];
+            // Write AFTER the profile switch so profileKey targets the new namespace.
             let wrote = 0;
-            allowed.forEach(k => {
-                if (payload.data[k] !== undefined && payload.data[k] !== null) {
-                    localStorage.setItem(profileKey(k), String(payload.data[k]));
-                    wrote++;
-                }
+            Object.keys(validated).forEach(k => {
+                localStorage.setItem(profileKey(k), validated[k]);
+                wrote++;
             });
 
             showToast(`Import complete (${wrote} items)`, 'correct', 1400);
@@ -469,12 +475,78 @@ function _mergeCloudKey(key, cloudRaw, localRaw) {
             return JSON.stringify(Object.assign({}, c, l));
         }
         if (key === 'gto_rfi_stats_v2') {
-            const ch = (c.global && c.global.totalHands) || 0;
-            const lh = (l.global && l.global.totalHands) || 0;
+            // The key stores state.global itself, so totalHands is top-level
+            // (older code read c.global.totalHands, which is always 0 → cloud
+            // always won). The .global fallback tolerates any legacy wrapper.
+            const ch = c.totalHands || (c.global && c.global.totalHands) || 0;
+            const lh = l.totalHands || (l.global && l.global.totalHands) || 0;
             return lh > ch ? localRaw : cloudRaw;
         }
     } catch (e) { /* unparseable local — take the validated cloud copy */ }
     return cloudRaw;
+}
+
+// ---------------------------------------------------------------------------
+// Validation for trainer data arriving from OUTSIDE this device (backup file
+// import, cloud load). Stored keys and strings are later interpolated into
+// innerHTML and inline onclick handlers on the Stats screen, so a tampered
+// file or cloud doc must not be able to smuggle markup or quote characters in.
+//   - only allowlisted keys, each JSON of the expected top-level shape
+//   - 1MB cap per key
+//   - any object key containing < > " ' ` \ (or string value containing
+//     < > " ` \) is dropped; legitimate trainer data never contains these
+// Returns the (possibly cleaned) JSON string to store, or null to skip the key.
+// ---------------------------------------------------------------------------
+const PC_TRAINER_KEY_SHAPES = {
+    gto_rfi_stats_v2: 'object', gto_sr_v2: 'object', gto_config_v2: 'object',
+    gto_medals_v1: 'object', gto_limper_mix: 'any', gto_challenge_v1: 'object',
+    gto_challenge_v2: 'object', pc_dailyRun_v1: 'object',
+};
+const PC_TRAINER_MAX_KEY_BYTES = 1000000; // far above any legitimate payload
+const _PC_UNSAFE_KEY_RE = /[<>"'`\\]/;
+const _PC_UNSAFE_VAL_RE = /[<>"`\\]/;
+
+// Removes unsafe keys/strings in place; returns how many entries were dropped.
+function _pcScrubUnsafe(node, depth) {
+    if (!node || typeof node !== 'object' || depth > 12) return 0;
+    let dropped = 0;
+    Object.keys(node).forEach(function(k) {
+        const v = node[k];
+        if (_PC_UNSAFE_KEY_RE.test(k) || (typeof v === 'string' && _PC_UNSAFE_VAL_RE.test(v))) {
+            if (Array.isArray(node)) node[k] = null; else delete node[k];
+            dropped++;
+        } else if (v && typeof v === 'object') {
+            dropped += _pcScrubUnsafe(v, depth + 1);
+        }
+    });
+    return dropped;
+}
+
+function _pcValidateTrainerKey(k, value) {
+    const shape = PC_TRAINER_KEY_SHAPES[k];
+    if (!shape || value === undefined || value === null) return null;
+    const raw = String(value);
+    if (raw.length > PC_TRAINER_MAX_KEY_BYTES) {
+        console.warn('[PokerCrusher] Imported key too large, skipped:', k, raw.length);
+        return null;
+    }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) {
+        if (shape === 'object') { console.warn('[PokerCrusher] Imported key unparseable, skipped:', k); return null; }
+        return _PC_UNSAFE_VAL_RE.test(raw) ? null : raw; // 'any' keys may be plain strings
+    }
+    if (shape === 'object' && (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))) {
+        console.warn('[PokerCrusher] Imported key wrong shape, skipped:', k);
+        return null;
+    }
+    if (typeof parsed === 'string') return _PC_UNSAFE_VAL_RE.test(parsed) ? null : raw;
+    const dropped = _pcScrubUnsafe(parsed, 0);
+    if (dropped) {
+        console.warn('[PokerCrusher] Dropped', dropped, 'unsafe entries from imported key:', k);
+        return JSON.stringify(parsed);
+    }
+    return raw;
 }
 
 function applyTrainerPayload(payload) {
@@ -482,6 +554,14 @@ function applyTrainerPayload(payload) {
         showToast('Cloud load failed (bad data)', 'incorrect', 2000);
         return false;
     }
+
+    // Validate first: a payload with nothing usable must not switch profiles.
+    const validated = {};
+    Object.keys(PC_TRAINER_KEY_SHAPES).forEach(k => {
+        const raw = _pcValidateTrainerKey(k, payload.data[k]);
+        if (raw !== null) validated[k] = raw;
+    });
+    if (!Object.keys(validated).length) return false;
 
     // Switch profile if payload specifies one.
     // IMPORTANT: Guest is stored as '' (empty). Do not create a literal "guest" namespace by accident.
@@ -500,40 +580,12 @@ function applyTrainerPayload(payload) {
         }
     } catch(e) {}
 
-    // Write only the known keys into the *active* profile namespace.
-    // NOTE: raw string literals — cloud.js loads before engine.js (STORAGE_KEYS unavailable).
-    // Per-key validation: each value must be parseable JSON of the expected
-    // top-level shape and under a size cap. A corrupt key is skipped with a
-    // warning instead of poisoning localStorage — a bad cloud doc can never
-    // brick startup, and the good keys still apply.
-    const allowed = {
-        gto_rfi_stats_v2: 'object', gto_sr_v2: 'object', gto_config_v2: 'object',
-        gto_medals_v1: 'object', gto_limper_mix: 'any', gto_challenge_v1: 'object',
-        gto_challenge_v2: 'object', pc_dailyRun_v1: 'object',
-    };
-    const MAX_KEY_BYTES = 1000000; // 1MB per key — far above any legitimate payload
-    const data = payload.data;
-
+    // Write the validated keys into the *active* profile namespace. Corrupt
+    // keys were skipped by _pcValidateTrainerKey instead of poisoning
+    // localStorage — a bad cloud doc can never brick startup.
     let wrote = 0;
-    Object.keys(allowed).forEach(k => {
-        if (data[k] === undefined || data[k] === null) return;
-        const raw = String(data[k]);
-        if (raw.length > MAX_KEY_BYTES) {
-            console.warn('[PokerCrusher] Cloud key too large, skipped:', k, raw.length);
-            return;
-        }
-        if (allowed[k] === 'object') {
-            try {
-                const parsed = JSON.parse(raw);
-                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                    console.warn('[PokerCrusher] Cloud key wrong shape, skipped:', k);
-                    return;
-                }
-            } catch (e) {
-                console.warn('[PokerCrusher] Cloud key unparseable, skipped:', k);
-                return;
-            }
-        }
+    Object.keys(validated).forEach(k => {
+        const raw = validated[k];
         let toWrite = raw;
         try { toWrite = _mergeCloudKey(k, raw, localStorage.getItem(profileKey(k))); } catch(e) {}
         try { localStorage.setItem(profileKey(k), toWrite); wrote++; } catch(e) {}
@@ -742,10 +794,10 @@ function renderUserStats() {
             ${topLeaks.map(sp => {
                 const col = sp.acc >= 75 ? 'text-yellow-400' : 'text-rose-400';
                 const bar = sp.acc;
-                const escapedKey = sp.key.replace(/'/g, "\\'");
+                const escapedKey = jsArgAttr(sp.key);
                 return `<div class="flex items-center gap-3 cursor-pointer hover:bg-slate-800/40 active:bg-slate-800/70 rounded-xl px-1 py-1 transition-colors" onclick="drilldownSpot('${escapedKey}')">
                     <div class="flex-1 min-w-0">
-                        <div class="text-[11px] text-slate-300 font-semibold truncate">${prettySpotName(sp.key)}</div>
+                        <div class="text-[11px] text-slate-300 font-semibold truncate">${escapeHtml(prettySpotName(sp.key))}</div>
                         <div class="mt-1 h-1 bg-slate-800 rounded-full overflow-hidden">
                             <div class="h-1 rounded-full ${sp.acc >= 75 ? 'bg-yellow-500' : 'bg-rose-500'}" style="width:${bar}%"></div>
                         </div>
@@ -824,7 +876,7 @@ function renderUserStats() {
                 </div>
                 <div class="bg-slate-950/40 border border-slate-800 rounded-2xl p-3">
                     <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Leak</div>
-                    <div class="text-slate-100 font-black text-base mt-1 leading-tight">${drmLastLeak || '—'}</div>
+                    <div class="text-slate-100 font-black text-base mt-1 leading-tight">${escapeHtml(drmLastLeak || '—')}</div>
                 </div>
             </div>
         ` : `
@@ -873,16 +925,16 @@ function renderUserStats() {
         if (!list.length) return leakEmpty();
         return `<div class="flex flex-col">${list.map((r, i) => {
             const ret = r.retention || { label: 'New', colorClass: 'bg-slate-700/30 text-slate-500' };
-            const clickAttr = r.key ? `onclick="drilldownSpot('${r.key.replace(/'/g, "\\'")}')" style="cursor:pointer"` : '';
+            const clickAttr = r.key ? `onclick="drilldownSpot('${jsArgAttr(r.key)}')" style="cursor:pointer"` : '';
             const hoverClass = r.key ? 'hover:bg-slate-800/40 active:bg-slate-800/70 transition-colors' : '';
-            const drillBtn = (showDrill && r.key) ? `<button onclick="event.stopPropagation();launchTargetedSession('${r.key.replace(/'/g, "\\'")}')" class="shrink-0 text-[9px] font-black text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 hover:bg-indigo-900/60 active:scale-95 rounded-lg px-2 py-1 transition-all">Drill</button>` : '';
+            const drillBtn = (showDrill && r.key) ? `<button onclick="event.stopPropagation();launchTargetedSession('${jsArgAttr(r.key)}')" class="shrink-0 text-[9px] font-black text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 hover:bg-indigo-900/60 active:scale-95 rounded-lg px-2 py-1 transition-all">Drill</button>` : '';
             return `<div class="flex items-center gap-2.5 px-2 py-2.5 ${i > 0 ? 'border-t border-slate-800/25' : ''} ${hoverClass} rounded-lg" style="min-height:44px" ${clickAttr}>
                 <span class="text-[9px] font-black text-slate-700 w-3 text-center shrink-0">${i + 1}</span>
                 <div class="min-w-0 flex-1 flex flex-col gap-0.5">
                     <div class="flex items-center gap-1.5 min-w-0">
-                        <span class="text-[11px] font-bold text-slate-200 truncate leading-none">${r.label}</span>
+                        <span class="text-[11px] font-bold text-slate-200 truncate leading-none">${escapeHtml(r.label)}</span>
                         <span class="text-[8px] font-bold px-1.5 py-px rounded ${ret.colorClass} leading-tight shrink-0">${ret.label}</span>
-                        ${r.sub ? `<span class="text-[9px] text-slate-600 truncate leading-none shrink-[2]">${r.sub}</span>` : ''}
+                        ${r.sub ? `<span class="text-[9px] text-slate-600 truncate leading-none shrink-[2]">${escapeHtml(r.sub)}</span>` : ''}
                     </div>
                     <div class="flex items-center gap-2">
                         <div class="flex-1 bg-slate-800/40 rounded-full h-[3px]"><div class="${leakBarColor(r.acc)} h-[3px] rounded-full" style="width:${Math.max(3, r.acc)}%"></div></div>
@@ -1063,7 +1115,7 @@ function renderUserStats() {
         const scBarL = scSpots.length ? Math.round(scTiers.learning / scSpots.length * 100) : 0;
         const scBarS = scSpots.length ? Math.round(scTiers.struggling / scSpots.length * 100) : 0;
         const clickable = scSeen > 0 ? 'cursor-pointer hover:border-slate-600' : '';
-        const oc = scSeen > 0 ? `onclick="drilldownScenario('${sc}')"` : '';
+        const oc = scSeen > 0 ? `onclick="drilldownScenario('${jsArgAttr(sc)}')"` : '';
         const scAc = scAcc(sc);
         const scTot = scTotal(sc);
         const medalObj = medals[sc];
@@ -1111,7 +1163,7 @@ function renderUserStats() {
         const posAc = posD && posD.total ? Math.round(posD.correct / posD.total * 100) : 0;
         const posTot = posD ? posD.total : 0;
         const clickable = posSeen > 0 ? 'cursor-pointer hover:border-slate-600' : '';
-        const oc2 = posSeen > 0 ? `onclick="drilldownPosition('${pos}')"` : '';
+        const oc2 = posSeen > 0 ? `onclick="drilldownPosition('${jsArgAttr(pos)}')"` : '';
         html += `<div class="bg-slate-950/50 border border-slate-800/50 rounded-xl p-3 transition-colors ${clickable}" ${oc2}>
             <div class="flex justify-between items-center mb-1.5">
                 <span class="text-xs font-bold text-slate-300">${POS_LABELS[pos]}</span>
@@ -1168,11 +1220,11 @@ function renderUserStats() {
             <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">🔥 Needs Work</p>
             <div class="flex flex-col gap-2">`;
         strugglingSpots.forEach(s => {
-            const escapedKey = s.key.replace(/'/g, "\\'");
+            const escapedKey = jsArgAttr(s.key);
             html += `<div class="flex justify-between items-center bg-slate-950/50 hover:bg-slate-800/50 active:bg-slate-800/80 rounded-xl px-3 py-2.5 cursor-pointer transition-colors" onclick="drilldownSpot('${escapedKey}')">
                 <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-slate-300">${s.label}</span>
-                    <span class="text-[9px] text-slate-600">${s.scShort}</span>
+                    <span class="text-xs font-bold text-slate-300">${escapeHtml(s.label)}</span>
+                    <span class="text-[9px] text-slate-600">${escapeHtml(s.scShort)}</span>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="text-rose-400 font-black text-xs">${s.wrongPct}%</span>
@@ -1200,11 +1252,11 @@ function renderUserStats() {
             <p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-3">✨ Mastered Spots</p>
             <div class="flex flex-col gap-2">`;
         recentMastered.forEach(s => {
-            const escapedKey = s.key.replace(/'/g, "\\'");
+            const escapedKey = jsArgAttr(s.key);
             html += `<div class="flex justify-between items-center bg-slate-950/50 hover:bg-slate-800/50 active:bg-slate-800/80 rounded-xl px-3 py-2.5 cursor-pointer transition-colors" onclick="drilldownSpot('${escapedKey}')">
                 <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-emerald-300">${s.label}</span>
-                    <span class="text-[9px] text-slate-600">${s.scShort}</span>
+                    <span class="text-xs font-bold text-emerald-300">${escapeHtml(s.label)}</span>
+                    <span class="text-[9px] text-slate-600">${escapeHtml(s.scShort)}</span>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="text-emerald-500/60 text-[10px] font-bold">${s.coverage}% cov · ${s.accuracy}% acc</span>

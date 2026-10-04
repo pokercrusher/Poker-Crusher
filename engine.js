@@ -118,6 +118,22 @@ function escapeHtml(s) {
 }
 
 /**
+ * jsArgAttr — escape a string for use as a single-quoted JS string argument
+ * inside a double-quoted inline handler, e.g. onclick="fn('${jsArgAttr(key)}')".
+ * JS-escapes first (backslash, quote, line breaks), then HTML-escapes, because
+ * the browser HTML-decodes the attribute before parsing it as JS.
+ */
+function jsArgAttr(s) {
+    return escapeHtml(String(s == null ? '' : s)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\r/g, '\\r')
+        .replace(/\n/g, '\\n')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029'));
+}
+
+/**
  * checkRangeHelper — canonical definition.
  * Returns true if `hand` (e.g. 'AKs') is in the given range `list` (array of range tokens).
  * Moved here from ui.js; ui.js retains a one-line alias for backward compat.
@@ -1016,7 +1032,7 @@ function showReviewPreview() {
             spotListEl.innerHTML = topSpots.map(([sk, n]) => {
                 const name = prettySpotName(sk);
                 return `<div class="flex items-center justify-between py-1 border-b border-slate-800/40 last:border-0">
-                    <span class="text-[12px] text-slate-300 font-semibold">${name}</span>
+                    <span class="text-[12px] text-slate-300 font-semibold">${escapeHtml(name)}</span>
                     <span class="text-[10px] text-amber-400 font-black">${n} hand${n>1?'s':''}</span>
                 </div>`;
             }).join('');

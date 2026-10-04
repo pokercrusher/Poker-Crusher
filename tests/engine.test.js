@@ -1760,6 +1760,54 @@ describe('Cloud payload validation', () => {
 });
 
 // =============================================================================
+// Imported data hygiene — backup files and cloud docs can't inject markup
+// =============================================================================
+
+describe('Imported data hygiene', () => {
+
+    it('unsafe SR keys and string values are dropped; legitimate entries survive', () => {
+        const sr = {
+            'RFI|BTN|AKs': { lastSeenAt: 1, reps: 2 },
+            'SRP|BTN_vs_BB|x|y|IP|z|DRY_HIGH|TOP_PAIR': { lastSeenAt: 2 },
+            "RFI|BTN')\" onmouseover=\"alert(1)": { lastSeenAt: 3 },
+            'RFI|<img src=x onerror=alert(1)>': { lastSeenAt: 4 },
+            'RFI|CO|KQs': { lastSeenAt: 5, note: '<script>' },
+        };
+        const out = JSON.parse(PROD._pcValidateTrainerKey('gto_sr_v2', JSON.stringify(sr)));
+        expect(Object.keys(out).sort()).toEqual(['RFI|BTN|AKs', 'RFI|CO|KQs', 'SRP|BTN_vs_BB|x|y|IP|z|DRY_HIGH|TOP_PAIR']);
+        expect(out['RFI|CO|KQs'].note).toBeUndefined();
+        expect(out['RFI|CO|KQs'].lastSeenAt).toBe(5);
+    });
+
+    it('clean payloads pass through byte-for-byte', () => {
+        const raw = JSON.stringify({ totalHands: 10, byScenario: { RFI: { total: 3 } }, bySpot: { 'RFI|BTN': { correct: 1 } } });
+        expect(PROD._pcValidateTrainerKey('gto_rfi_stats_v2', raw)).toBe(raw);
+        expect(PROD._pcValidateTrainerKey('not_allowlisted', raw)).toBeNull();
+        expect(PROD._pcValidateTrainerKey('gto_sr_v2', '[1,2]')).toBeNull();
+    });
+
+    it('a payload with nothing usable is rejected without switching profiles', () => {
+        PROD.__setLocal('pc_profile_v1', 'keepme');
+        const ok = PROD.applyTrainerPayload({ profile: 'attacker', data: { gto_sr_v2: '{{{bad' } });
+        expect(ok).toBe(false);
+        expect(PROD.__getLocal('pc_profile_v1')).toBe('keepme');
+        PROD.__setLocal('pc_profile_v1', '');
+    });
+
+    it('jsArgAttr round-trips hostile strings through HTML-decode + JS parse', () => {
+        const decode = (h) => h.replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+            .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+        const nasty = ["a'b", 'a"b', 'back\\slash\\', "')+alert(1)+('", '<img src=x>', 'line\nbreak', 'x y', '&amp;'];
+        nasty.forEach((s) => {
+            const attr = PROD.jsArgAttr(s);
+            expect(attr).not.toMatch(/["<>]/);             // can't leave the attribute
+            const roundTrip = new Function("return '" + decode(attr) + "';")();
+            expect(roundTrip).toBe(s);                      // can't leave the JS string
+        });
+    });
+});
+
+// =============================================================================
 // Poker Room — 3-bet-pot defense grading (hero called a 3-bet, faces c-bet)
 // =============================================================================
 
@@ -2515,11 +2563,15 @@ describe('Cloud merge-on-load', () => {
             JSON.stringify({ m2: 'gold', m3: 'bronze' }));
         expect(JSON.parse(medals)).toEqual({ m1: 'gold', m2: 'gold', m3: 'bronze' });
 
-        const bigLocal = JSON.stringify({ global: { totalHands: 500 } });
-        const smallCloud = JSON.stringify({ global: { totalHands: 200 } });
+        // Real stored shape: the key holds state.global itself (top-level totalHands)
+        const bigLocal = JSON.stringify({ totalHands: 500, totalCorrect: 400 });
+        const smallCloud = JSON.stringify({ totalHands: 200, totalCorrect: 150 });
         expect(PROD._mergeCloudKey('gto_rfi_stats_v2', smallCloud, bigLocal)).toBe(bigLocal);
-        const bigCloud = JSON.stringify({ global: { totalHands: 900 } });
+        const bigCloud = JSON.stringify({ totalHands: 900, totalCorrect: 700 });
         expect(PROD._mergeCloudKey('gto_rfi_stats_v2', bigCloud, bigLocal)).toBe(bigCloud);
+        // Legacy wrapped shape still compares correctly
+        expect(PROD._mergeCloudKey('gto_rfi_stats_v2',
+            JSON.stringify({ global: { totalHands: 1 } }), bigLocal)).toBe(bigLocal);
     });
 
     it('fresh device (no local) and corrupt local both take the cloud copy; unknown keys untouched', () => {
