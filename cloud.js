@@ -206,37 +206,22 @@ function triggerImport() {
 
 
 // ============================================================
-// CLOUD SYNC (Firebase Firestore) — OPTIONAL
+// CLOUD SYNC (Firebase Firestore + Google sign-in) — OPTIONAL
 // ============================================================
-// 1) Create a Firebase project (free)
-// 2) Enable Firestore Database
-// 3) Paste your firebaseConfig below (Project settings → Web app)
-//
-// SECURITY NOTE:
-// This is "simple username sync" meant for personal use / friends.
-// The optional Sync Code is hashed into the document id to prevent casual overwrites.
-// For a real public product, you'd add proper auth + rules.
+// The Firebase config and SDK bootstrap live in the inline <script> at the
+// bottom of index.html (it must run before these deferred scripts); it sets
+// window.PokerCrusherCloud once ready, or null on file:// or if the SDK fails.
+// Firestore security rules are the only barrier between users' documents.
 
 const PC_CLOUD_SETTINGS_KEY = 'pc_cloud_settings_v1';
 const PC_CLOUD_AUTOSAVE_KEY = 'pc_cloud_autosave_v1';
 const PC_CLOUD_AUTOSAVE_INTERVAL_KEY = 'pc_cloud_autosave_interval_ms_v1';
 
-
-// Paste your config here (leave as null until you set it)
-const firebaseConfig = {
-  apiKey: "AIzaSyArpfetXIDgkdvnFXuWhpwKTyDyhDNqaFM",
-  authDomain: "poker-crusher.firebaseapp.com",
-  projectId: "poker-crusher",
-  storageBucket: "poker-crusher.firebasestorage.app",
-  messagingSenderId: "665996380905",
-  appId: "1:665996380905:web:eecb6be9bd2bea9c233e78"
-};
-
 let _pcFirebaseInited = false;
 function initCloud(silent=false) {
     if (_pcFirebaseInited) return true;
-    if (!firebaseConfig) {
-        if(!silent) showToast('Cloud sync not set up (missing Firebase config)', 'incorrect', 2200);
+    if (window.PokerCrusherCloud === null) { // bootstrap gave up (file:// or SDK failed to load)
+        if(!silent) showToast('Cloud sync unavailable — check your connection and reload', 'incorrect', 2200);
         return false;
     }
     // Modular SDK loads async at page bottom; check if ready

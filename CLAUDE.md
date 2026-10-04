@@ -117,7 +117,7 @@ renderer and mostly unnecessary.
   street — probes stay heuristic). ~11% of all decisions fall to the honest
   tier heuristic: delayed c-bets, probes, multiway — no data by design.
 
-### Engine invariants (tests/engine.test.js, ~167 tests, run vs PRODUCTION code)
+### Engine invariants (tests/engine.test.js, 200+ tests, run vs PRODUCTION code)
 - Tests load real files via `tests/helpers/load-production.js` (node:vm).
   NEVER copy production functions into tests — a drifted copy once masked a
   showdown that awarded no pots.
@@ -126,10 +126,21 @@ renderer and mostly unnecessary.
   short-all-in no-reopen + refund tagging + limp/donk grading rules.
 
 ### Remaining Poker Room work
-- Pass 6 cosmetic polish: card-flip animation, chip-slide to winner (optional).
-- Named villain profiles persisting across sessions (optional Pass 7 ext).
-- OPEN USER DECISION: house RFI ranges ~20-30% tighter than solver baselines
-  (RANGE-AUDIT.md Finding 2) — keep as house style or loosen.
+- Chip-slide-to-winner animation (optional; card flip/deal-in shipped in Phase 5,
+  named persistent villains shipped as Phase 2 regulars).
+- RANGE-AUDIT Finding 2 is DECIDED: keep the tight house ranges as the live
+  baseline (see Phase 1 above).
+
+### Imported-data hygiene (2026-10-04)
+- Backup import and cloud load both go through `_pcValidateTrainerKey`
+  (cloud.js): allowlist, JSON shape, 1MB cap, drops keys/strings carrying
+  markup or quote characters. Validate BEFORE switching profiles.
+- Inline handlers built from stored data use `jsArgAttr()` (engine.js), never
+  ad-hoc `.replace(/'/g, ...)`; labels from stored keys go through
+  `escapeHtml()` at every innerHTML site.
+- Firebase config lives ONLY in the inline bootstrap at the bottom of
+  index.html (events.js was dead and is deleted; ui.js `initEventListeners`
+  is the wiring).
 
 ## Trainer notes (2026-07-02 fixes)
 - `isTerminal` = hero folded OR <2 active (NOT "any fold").
@@ -140,7 +151,7 @@ renderer and mostly unnecessary.
   incremental size.
 
 ## Deployment checklist additions
-- `npm test` (193 unit/property) AND `npm run smoke` (headless walk of every
+- `npm test` (200+ unit/property) AND `npm run smoke` (headless walk of every
   screen at phone size; catches script-order/global breaks tests can't see).
 - Rebuild `tailwind.min.css` whenever new utility classes appear in ANY js/html
   (`npx @tailwindcss/cli -i src/input.css -o tailwind.min.css --minify`).
