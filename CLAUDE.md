@@ -145,6 +145,16 @@ renderer and mostly unnecessary.
   index.html (events.js was dead and is deleted; ui.js `initEventListeners`
   is the wiring).
 
+## Menu + first-run pass (2026-11-17, audit §6.4 + §8.5)
+- Menu is grouped Train / Play / Reference; button ids unchanged. Subtitles
+  are live (`menu-train-sub` = due count, `menu-room-sub` = bankroll,
+  `menu-challenge-progress` = nodes done), all set in `updateMenuUI`.
+- First run (0 trainer hands): dashboard renders a welcome instead of zeros,
+  the leak card is hidden, stats screen leads with a "Start training" banner.
+- Lobby: stakes + buy-in + SIT DOWN up top; table size, style, study mode,
+  seat editor and type mix live behind `details[data-prd="custom"]`. Open
+  state is kept in `PRUI.open` because every click re-renders the lobby.
+
 ## Trainer notes (2026-07-02 fixes)
 - `isTerminal` = hero folded OR <2 active (NOT "any fold").
 - Villains can 3-bet hero's open in FULL_TABLE; hero re-acts via

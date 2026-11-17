@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poker Crusher</title>
-    <link rel="stylesheet" href="tailwind.min.css?v=20261004b">
+    <link rel="stylesheet" href="tailwind.min.css?v=20261117a">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
         .poker-felt {
@@ -562,7 +562,7 @@
     <div id="menu-screen" class="w-full max-w-md p-6 flex flex-col items-center justify-start gap-5 text-center z-10 overflow-y-auto pb-10 scrollbar-hide" style="height:100dvh;">
         <div class="mb-1">
             <h1 class="text-5xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-indigo-300 to-indigo-600">Poker Crusher</h1>
-            <p class="text-indigo-400/80 text-[11px] font-bold uppercase tracking-[0.3em] mt-2"></p>
+            <p class="text-indigo-400/80 text-[11px] font-bold uppercase tracking-[0.3em] mt-2">Live poker trainer</p>
         </div>
 
         <!-- Mastery dashboard card -->
@@ -574,47 +574,60 @@
         <div id="menu-onboarding" class="hidden w-full bg-indigo-950/40 border border-indigo-700/30 rounded-2xl px-4 py-3 text-left">
             <p class="text-indigo-300 font-black text-xs uppercase tracking-widest mb-2">Getting started</p>
             <div class="flex flex-col gap-1.5 text-[11px] text-slate-400 leading-snug">
-                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">1.</span><span><span class="text-slate-200 font-bold">TRAIN NOW</span> — free practice. Pick your scenarios and go.</span></div>
-                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">2.</span><span><span class="text-slate-200 font-bold">DAILY RUN</span> — one shot per difficulty per day. Score = correct answers in a row.</span></div>
-                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">3.</span><span><span class="text-slate-200 font-bold">REVIEW</span> — hands you've missed come back on a schedule. Check it daily.</span></div>
+                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">1.</span><span><span class="text-slate-200 font-bold">TRAIN NOW</span> — learn which hands to play from each seat. Hands you miss come back for review.</span></div>
+                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">2.</span><span><span class="text-slate-200 font-bold">POKER ROOM</span> — sit in a play-money cash game against AI opponents. Every decision is graded.</span></div>
+                <div class="flex gap-2"><span class="text-indigo-400 font-black shrink-0">3.</span><span><span class="text-slate-200 font-bold">DAILY RUN</span> — once a day, see how many you can get right in a row.</span></div>
             </div>
             <button id="btn-dismiss-onboarding" class="mt-2 text-[9px] text-slate-600 hover:text-slate-400 font-bold uppercase tracking-wider">Dismiss</button>
         </div>
 
         <div class="w-full flex flex-col gap-3">
-            <button id="btn-train-now" class="w-full py-5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl font-black text-xl transition-all shadow-lg">
-                TRAIN NOW
-            </button>
-
-            <button id="btn-daily-run" class="w-full py-4 bg-indigo-700/90 hover:bg-indigo-600 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
-                <span>🔥</span><span>DAILY RUN</span>
-            </button>
-
-            <div class="flex flex-col gap-1">
-                <button id="btn-challenge" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
-                    <span>🏆</span><span>CHALLENGE MODE</span>
-                </button>
-            </div>
-            <button id="btn-poker-room" class="w-full py-4 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] rounded-2xl font-black text-base transition-all shadow-lg flex items-center justify-center gap-2">
-                <span>🃏</span><span>POKER ROOM</span>
-            </button>
-            <button id="btn-library" class="w-full py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
-                STRATEGY LIBRARY
+            <!-- TRAIN — study the ranges -->
+            <p class="pc-eyebrow text-indigo-400/80 text-left -mb-1">Train</p>
+            <button id="btn-train-now" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-2xl transition-all shadow-lg flex flex-col items-center">
+                <span class="font-black text-xl">TRAIN NOW</span>
+                <span id="menu-train-sub" class="text-[11px] font-bold text-indigo-200/80">Preflop ranges · missed hands come back</span>
             </button>
             <!-- Prescription card: populated by updateMenuUI() -->
-            <div id="menu-prescription-card" class="w-full bg-slate-900/60 border border-slate-700/40 rounded-2xl p-4 text-left"></div>
-            <button id="btn-math-drills" class="w-full py-4 bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                MATH DRILLS
+            <div id="menu-prescription-card" class="hidden w-full bg-slate-900/60 border border-slate-700/40 rounded-2xl p-4 text-left"></div>
+            <div class="grid grid-cols-3 gap-2">
+                <button id="btn-daily-run" class="py-3 px-1 bg-slate-900 border border-indigo-500/40 hover:border-indigo-400 active:scale-[0.98] rounded-2xl transition-all flex flex-col items-center gap-0.5">
+                    <span class="text-lg leading-none">🔥</span>
+                    <span class="font-black text-xs text-slate-100">DAILY RUN</span>
+                    <span class="text-[9px] font-bold text-slate-500">Streak test</span>
+                </button>
+                <button id="btn-challenge" class="py-3 px-1 bg-slate-900 border border-emerald-500/40 hover:border-emerald-400 active:scale-[0.98] rounded-2xl transition-all flex flex-col items-center gap-0.5">
+                    <span class="text-lg leading-none">🏆</span>
+                    <span class="font-black text-xs text-slate-100">CHALLENGE</span>
+                    <span id="menu-challenge-progress" class="text-[9px] font-bold text-slate-500">Campaign path</span>
+                </button>
+                <button id="btn-math-drills" class="py-3 px-1 bg-slate-900 border border-slate-700 hover:border-indigo-500 active:scale-[0.98] rounded-2xl transition-all flex flex-col items-center gap-0.5">
+                    <span class="text-lg leading-none">🧮</span>
+                    <span class="font-black text-xs text-slate-100">DRILLS</span>
+                    <span class="text-[9px] font-bold text-slate-500">Math &amp; reads</span>
+                </button>
+            </div>
+
+            <!-- PLAY — use them at a table -->
+            <p class="pc-eyebrow text-amber-400/80 text-left mt-2 -mb-1">Play</p>
+            <button id="btn-poker-room" class="w-full py-4 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] rounded-2xl transition-all shadow-lg flex flex-col items-center">
+                <span class="font-black text-xl">🃏 POKER ROOM</span>
+                <span id="menu-room-sub" class="text-[11px] font-bold text-amber-100/80">Live cash game vs AI opponents</span>
             </button>
-            <div class="grid grid-cols-2 gap-3">
-                <button id="btn-my-stats" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+
+            <!-- REFERENCE -->
+            <p class="pc-eyebrow text-slate-500 text-left mt-2 -mb-1">Reference</p>
+            <div class="grid grid-cols-3 gap-2">
+                <button id="btn-library" class="py-3 px-1 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex flex-col items-center gap-1 text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
+                    LIBRARY
+                </button>
+                <button id="btn-my-stats" class="py-3 px-1 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex flex-col items-center gap-1 text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                     MY STATS
                 </button>
-                <button id="btn-settings" class="py-4 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex items-center justify-center gap-2 text-sm col-span-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.5.36 1.05.36 1.62v.76c0 .57-.12 1.12-.36 1.62Z"/></svg>
+                <button id="btn-settings" class="py-3 px-1 bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl font-bold text-slate-300 transition-all flex flex-col items-center gap-1 text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.5.36 1.05.36 1.62v.76c0 .57-.12 1.12-.36 1.62Z"/></svg>
                     SETTINGS
                 </button>
             </div>
@@ -1196,18 +1209,18 @@
 
 
     <!-- PokerCrusher JS (split into modules — order matters!) -->
-    <script defer src="ranges.js?v=20261004b"></script>
-    <script defer src="scenarios.js?v=20261004b"></script>
-    <script defer src="cloud.js?v=20261004b"></script>
-    <script defer src="engine.js?v=20261004b"></script>
-    <script defer src="training.js?v=20261004b"></script>
-    <script defer src="sim.js?v=20261004b"></script>
-    <script defer src="poker-room.js?v=20261004b"></script>
-    <script defer src="challenge.js?v=20261004b"></script>
-    <script defer src="ui.js?v=20261004b"></script>
-    <script defer src="poker-room-ui.js?v=20261004b"></script>
-    <script defer src="poker-room-table.js?v=20261004b"></script>
-    <script defer src="drills.js?v=20261004b"></script>
+    <script defer src="ranges.js?v=20261117a"></script>
+    <script defer src="scenarios.js?v=20261117a"></script>
+    <script defer src="cloud.js?v=20261117a"></script>
+    <script defer src="engine.js?v=20261117a"></script>
+    <script defer src="training.js?v=20261117a"></script>
+    <script defer src="sim.js?v=20261117a"></script>
+    <script defer src="poker-room.js?v=20261117a"></script>
+    <script defer src="challenge.js?v=20261117a"></script>
+    <script defer src="ui.js?v=20261117a"></script>
+    <script defer src="poker-room-ui.js?v=20261117a"></script>
+    <script defer src="poker-room-table.js?v=20261117a"></script>
+    <script defer src="drills.js?v=20261117a"></script>
     <script>
     // Strategy-table data (~210KB of generator code) loads off the critical
     // path after first paint. Until it lands, postflop trainer lanes report
@@ -1215,7 +1228,7 @@
     // app's normal degraded mode, never an error.
     window.addEventListener('load', function () {
         var s = document.createElement('script');
-        s.src = 'ranges-postflop-data.js?v=20261004b';
+        s.src = 'ranges-postflop-data.js?v=20261117a';
         document.body.appendChild(s);
     });
     </script>
