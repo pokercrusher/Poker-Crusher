@@ -91,6 +91,32 @@ await visit('daily run starts', async () => {
     await page.evaluate(() => document.getElementById('btn-daily-run').click());
     await page.waitForTimeout(1200);
 });
+await visit('first-run menu: welcome, grouped sections, no empty leak card', async () => {
+    const r = await page.evaluate(() => ({
+        welcome: /Welcome/.test(document.getElementById('menu-dashboard').textContent),
+        leakHidden: document.getElementById('menu-prescription-card').classList.contains('hidden'),
+        buttons: ['btn-train-now', 'btn-daily-run', 'btn-challenge', 'btn-math-drills', 'btn-poker-room',
+                  'btn-library', 'btn-my-stats', 'btn-settings'].filter(id => !document.getElementById(id)),
+    }));
+    if (!r.welcome) throw new Error('no welcome card on first run');
+    if (!r.leakHidden) throw new Error('empty leak card shown on first run');
+    if (r.buttons.length) throw new Error('missing menu buttons: ' + r.buttons.join(','));
+});
+await visit('lobby: customise stays open across re-renders', async () => {
+    await page.evaluate(() => document.getElementById('btn-poker-room').click());
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+        const sitBefore = !!document.querySelector('[data-pr="sit"]');
+        const closedByDefault = !document.querySelector('details[data-prd="custom"]').open;
+        document.querySelector('details[data-prd="custom"]').open = true;
+        document.querySelector('[data-pr="study"]').click();   // forces a full re-render
+        return { sitBefore, closedByDefault, stillOpen: document.querySelector('details[data-prd="custom"]').open };
+    });
+    if (!r.sitBefore) throw new Error('no sit-down button');
+    if (!r.closedByDefault) throw new Error('customise should start closed');
+    if (!r.stillOpen) throw new Error('customise collapsed on re-render');
+    await page.evaluate(() => document.querySelector('[data-pr="study"]').click()); // restore
+});
 await visit('poker room lobby + a dealt hand', async () => {
     await page.evaluate(() => document.getElementById('btn-poker-room').click());
     await page.waitForTimeout(500);

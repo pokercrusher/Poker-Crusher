@@ -765,6 +765,15 @@ function renderUserStats() {
 
     let html = '';
 
+    // First run: say why everything below is zero, and offer the way out
+    if (total === 0) {
+        html += `<div class="p-5 rounded-2xl bg-indigo-950/40 border border-indigo-700/30 mb-4">
+            <div class="text-indigo-200 font-black text-sm">Nothing to show yet</div>
+            <div class="text-slate-400 text-xs leading-snug mt-1">Play a training session and your accuracy, mastery and weakest spots fill in here.</div>
+            <button onclick="hideUserStats(); showConfigMenu();" class="mt-3 w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] rounded-xl font-black text-sm transition-all">Start training</button>
+        </div>`;
+    }
+
     // === WEAKEST SPOTS CARD ===
     const topLeaks = Object.entries(g.bySpot || {})
         .filter(([,v]) => v.total >= 10)

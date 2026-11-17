@@ -19,6 +19,8 @@ const PRUI = {
     room: null,
     draft: { stake: '1/2', seatCount: 9, buyIn: null, typeWeights: null, tableConfig: null },
     session: null,
+    // Disclosure state survives the full re-render every lobby click triggers
+    open: { custom: false, mix: false },
 };
 
 function PRUI_fmt$(n) {
@@ -64,6 +66,7 @@ function PRUI_render() {
     if (!body) return;
     // The live table (poker-room-table.js) owns rendering while a session runs
     if (PRUI.session && typeof PRT !== 'undefined' && PRT.active) return;
+    body.querySelectorAll('details[data-prd]').forEach(function(d) { PRUI.open[d.dataset.prd] = d.open; });
     body.innerHTML = PRUI_lobbyHtml();
 }
 
@@ -153,92 +156,126 @@ function PRUI_lobbyHtml() {
         '</div>';
     }).join('');
 
+    const firstVisit = !(room.allTimeStats.handsPlayed > 0);
+    const villains = PRUI.draft.tableConfig.villains;
+    const faces = villains.map(function(v, i) {
+        return PRUI_AVATARS.includes(v.avatar) ? v.avatar : PRUI_AVATARS[i % PRUI_AVATARS.length];
+    }).join(' ');
+    const sectionLabel = 'text-[10px] text-slate-500 font-bold uppercase tracking-widest';
+
     return PRUI_headerHtml('Play vs AI') +
+
+        // First visit: what this is, in two sentences
+        (firstVisit
+            ? '<div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 text-left">' +
+                '<p class="text-amber-200 font-black text-sm">A live cash game, for play money</p>' +
+                '<p class="text-[11px] text-slate-400 leading-snug mt-1">Every decision you make is graded after the hand. ' +
+                'Opponents each have a hidden style — tap a seat at the table to see their stats and work out who they are.</p>' +
+              '</div>'
+            : '') +
 
         // Bankroll
         '<div class="bg-slate-900/60 border border-amber-500/20 rounded-2xl p-4 flex items-center justify-between">' +
-            '<div><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Bankroll</p>' +
+            '<div><p class="' + sectionLabel + '">Bankroll</p>' +
             '<p class="text-2xl font-black text-amber-300">' + PRUI_fmt$(room.bankroll) + '</p></div>' +
             (busted
                 ? '<button data-pr="topup" class="pc-btn-utility px-3 py-2 text-xs">Top up to ' + PRUI_fmt$(PR_DEFAULT_BANKROLL) + '</button>'
-                : '<div class="text-right text-[10px] text-slate-500">' +
-                    (room.allTimeStats.handsPlayed || 0) + ' hands all-time<br>' +
-                    'net ' + (room.allTimeStats.totalNetBB >= 0 ? '+' : '') + (room.allTimeStats.totalNetBB || 0) + 'bb</div>') +
+                : firstVisit
+                    ? '<div class="text-right text-[10px] text-slate-500">Play money<br>free top-up if you bust</div>'
+                    : '<div class="text-right text-[10px] text-slate-500">' +
+                        (room.allTimeStats.handsPlayed || 0) + ' hands all-time<br>' +
+                        'net ' + (room.allTimeStats.totalNetBB >= 0 ? '+' : '') + (room.allTimeStats.totalNetBB || 0) + 'bb</div>') +
         '</div>' +
 
-        // Stake + buy-in
+        // The table you are about to join: stakes, buy-in, who is there
         '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">' +
             '<div class="flex items-center justify-between">' +
-                '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Stakes</p>' +
+                '<p class="' + sectionLabel + '">Stakes</p>' +
                 '<div class="flex gap-1.5">' + stakeChips + '</div>' +
             '</div>' +
             '<div class="flex items-center justify-between gap-3">' +
                 '<div class="flex-1">' +
-                    '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Buy-in (' + PRUI_fmt$(cfg.minBuy) + '–' + PRUI_fmt$(cfg.maxBuy) + ')</p>' +
-                    '<input data-pr="buyin" type="range" min="' + cfg.minBuy + '" max="' + cfg.maxBuy + '" step="' + cfg.bb * 5 + '" value="' + buyIn + '" class="w-full mt-1" />' +
+                    '<p class="' + sectionLabel + '">Buy-in (' + PRUI_fmt$(cfg.minBuy) + '–' + PRUI_fmt$(cfg.maxBuy) + ')</p>' +
+                    '<input data-pr="buyin" type="range" aria-label="Buy-in" min="' + cfg.minBuy + '" max="' + cfg.maxBuy + '" step="' + cfg.bb * 5 + '" value="' + buyIn + '" class="w-full mt-1" />' +
                 '</div>' +
                 '<div class="text-right shrink-0">' +
                     '<p class="text-lg font-black text-slate-100">' + PRUI_fmt$(buyIn) + '</p>' +
                     '<p class="text-[10px] text-slate-500 font-bold">' + Math.round(buyIn / cfg.bb) + 'bb</p>' +
                 '</div>' +
             '</div>' +
-            '<div class="flex items-center justify-between">' +
-                '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Table size</p>' +
-                '<select data-pr="seats" class="bg-slate-800 text-slate-200 text-xs font-bold rounded-lg px-2 py-1.5">' + seatOpts.join('') + '</select>' +
+            '<div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-800/60">' +
+                '<div class="min-w-0 text-left">' +
+                    '<p class="' + sectionLabel + '">' + villains.length + (villains.length === 1 ? ' opponent' : ' opponents') + ' waiting</p>' +
+                    '<p class="text-base mt-1 truncate" aria-hidden="true">' + faces + '</p>' +
+                '</div>' +
+                '<button data-pr="shuffle" class="pc-btn-utility px-3 py-1.5 text-[11px] shrink-0">↻ New table</button>' +
             '</div>' +
         '</div>' +
 
-        // Type distribution (collapsible)
-        '<details class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
-            '<summary class="text-[10px] text-slate-500 font-bold uppercase tracking-widest cursor-pointer select-none">Player type mix (applies on shuffle)</summary>' +
-            '<div class="mt-2">' + typeRows + '</div>' +
-        '</details>' +
-
-        // Table preview / seat editor
-        '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
-            '<div class="flex items-center justify-between mb-2">' +
-                '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Your table</p>' +
-                '<button data-pr="shuffle" class="pc-btn-utility px-3 py-1.5 text-[11px]">↻ Shuffle opponents</button>' +
-            '</div>' +
-            heroRow +
-            '<div class="mt-1">' + seatRows + '</div>' +
-            '<p class="text-[9px] text-slate-600 mt-2">Tap an avatar to change it · tap a name to rename · seats rotate with the button, player types stay hidden</p>' +
-        '</div>' +
-
-        // Table style — live cardroom sizing (default) vs online solver sizing
-        '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
-            '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Table style</p>' +
-            '<div class="grid grid-cols-2 gap-2 mt-2">' +
-                '<button data-pr="sizing" data-val="live" class="py-2.5 rounded-xl text-xs font-black transition-all ' +
-                    (room.sizing !== 'online' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 border border-slate-700 text-slate-500') +
-                    '">LIVE<span class="block text-[9px] font-bold opacity-80">3bb opens · +1/limper</span></button>' +
-                '<button data-pr="sizing" data-val="online" class="py-2.5 rounded-xl text-xs font-black transition-all ' +
-                    (room.sizing === 'online' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 border border-slate-700 text-slate-500') +
-                    '">ONLINE<span class="block text-[9px] font-bold opacity-80">2.5bb opens</span></button>' +
-            '</div>' +
-        '</div>' +
-
-        // Study mode — opt-in bridge to the trainer's spaced repetition
-        '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3">' +
-            '<div class="flex-1">' +
-                '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Study mode</p>' +
-                '<p class="text-[10px] text-slate-600 leading-snug mt-0.5">Mistakes at the table quietly join your trainer review queue. Playing a spot well counts as a review. Never interrupts play.</p>' +
-            '</div>' +
-            '<button data-pr="study" class="px-3 py-2 rounded-xl text-xs font-black transition-all ' +
-                (room.studyMode ? 'bg-emerald-600 text-white' : 'bg-slate-800 border border-slate-700 text-slate-500') +
-                '">' + (room.studyMode ? 'ON' : 'OFF') + '</button>' +
-        '</div>' +
-
-        // Sit down
+        // Sit down — the one primary action, above every optional control
         '<button data-pr="sit" class="w-full py-4 rounded-2xl font-black text-base transition-all shadow-lg ' +
             (canSit ? 'bg-amber-600 hover:bg-amber-500 active:scale-[0.98] text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed') +
             '"' + (canSit ? '' : ' disabled') + '>SIT DOWN — ' + PRUI_fmt$(buyIn) + '</button>' +
         (canSit ? '' : '<p class="text-[10px] text-rose-400/80 text-center -mt-2">' +
             (buyIn > room.bankroll ? 'Bankroll too small for this buy-in.' : 'Buy-in outside the allowed range.') + '</p>') +
 
+        // Everything optional lives behind one disclosure
+        '<details data-prd="custom"' + (PRUI.open.custom ? ' open' : '') + ' class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
+            '<summary class="cursor-pointer select-none text-left">' +
+                '<span class="text-xs font-black text-slate-300">Customise table</span>' +
+                '<span class="block text-[10px] text-slate-500 font-bold mt-0.5">' + PRUI.draft.seatCount + ' players · ' +
+                    (room.sizing === 'online' ? 'online' : 'live') + ' sizing · study mode ' + (room.studyMode ? 'on' : 'off') + '</span>' +
+            '</summary>' +
+            '<div class="flex flex-col gap-4 mt-4">' +
+
+                '<div class="flex items-center justify-between">' +
+                    '<p class="' + sectionLabel + '">Table size</p>' +
+                    '<select data-pr="seats" aria-label="Table size" class="bg-slate-800 text-slate-200 text-xs font-bold rounded-lg px-2 py-1.5">' + seatOpts.join('') + '</select>' +
+                '</div>' +
+
+                // Table style — live cardroom sizing (default) vs online solver sizing
+                '<div>' +
+                    '<p class="' + sectionLabel + '">Table style</p>' +
+                    '<div class="grid grid-cols-2 gap-2 mt-2">' +
+                        '<button data-pr="sizing" data-val="live" class="py-2.5 rounded-xl text-xs font-black transition-all ' +
+                            (room.sizing !== 'online' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 border border-slate-700 text-slate-500') +
+                            '">LIVE<span class="block text-[9px] font-bold opacity-80">3bb opens · +1/limper</span></button>' +
+                        '<button data-pr="sizing" data-val="online" class="py-2.5 rounded-xl text-xs font-black transition-all ' +
+                            (room.sizing === 'online' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 border border-slate-700 text-slate-500') +
+                            '">ONLINE<span class="block text-[9px] font-bold opacity-80">2.5bb opens</span></button>' +
+                    '</div>' +
+                '</div>' +
+
+                // Study mode — opt-in bridge to the trainer's spaced repetition
+                '<div class="flex items-center justify-between gap-3">' +
+                    '<div class="flex-1 text-left">' +
+                        '<p class="' + sectionLabel + '">Study mode</p>' +
+                        '<p class="text-[10px] text-slate-600 leading-snug mt-0.5">Mistakes at the table quietly join your trainer review queue. Playing a spot well counts as a review. Never interrupts play.</p>' +
+                    '</div>' +
+                    '<button data-pr="study" aria-pressed="' + (room.studyMode ? 'true' : 'false') + '" class="px-3 py-2 rounded-xl text-xs font-black transition-all ' +
+                        (room.studyMode ? 'bg-emerald-600 text-white' : 'bg-slate-800 border border-slate-700 text-slate-500') +
+                        '">' + (room.studyMode ? 'ON' : 'OFF') + '</button>' +
+                '</div>' +
+
+                // Seat editor
+                '<div>' +
+                    '<p class="' + sectionLabel + ' mb-2">Seats</p>' +
+                    heroRow +
+                    '<div class="mt-1">' + seatRows + '</div>' +
+                    '<p class="text-[9px] text-slate-600 mt-2 text-left">Tap an avatar to change it · tap a name to rename · seats rotate with the button, player types stay hidden</p>' +
+                '</div>' +
+
+                // Type distribution
+                '<details data-prd="mix"' + (PRUI.open.mix ? ' open' : '') + ' class="border-t border-slate-800/60 pt-3">' +
+                    '<summary class="' + sectionLabel + ' cursor-pointer select-none text-left">Player type mix (applies on new table)</summary>' +
+                    '<div class="mt-2">' + typeRows + '</div>' +
+                '</details>' +
+            '</div>' +
+        '</details>' +
+
         // History
         (history ? '<div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4">' +
-            '<p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Recent sessions</p>' + history + '</div>' : '');
+            '<p class="' + sectionLabel + ' mb-1">Recent sessions</p>' + history + '</div>' : '');
 }
 
 // ---------------------------------------------------------------------------

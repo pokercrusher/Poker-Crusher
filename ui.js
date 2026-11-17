@@ -1834,7 +1834,36 @@ function updateMenuUI() {
         </div>
     </div>`;
 
+    // First run: a welcome instead of a wall of zeros. The dashboard takes over
+    // after the first trained hand.
+    if (total === 0) {
+        html = `<div class="text-left">
+            <p class="text-white font-black text-lg leading-tight">Welcome to the table</p>
+            <p class="text-slate-400 text-xs leading-snug mt-1.5">Learn solid live preflop ranges, then put them to work in a cash game against AI opponents.</p>
+            <p class="text-slate-500 text-[11px] leading-snug mt-2">Your mastery, streaks and accuracy appear here after your first training session.</p>
+        </div>`;
+    }
     document.getElementById('menu-dashboard').innerHTML = html;
+
+    // Poker Room button subtitle: bankroll once the player has sat down
+    try {
+        const rs2 = document.getElementById('menu-room-sub');
+        if (rs2 && typeof PR_loadRoomState === 'function') {
+            const room = PR_loadRoomState();
+            const played = (room.allTimeStats && room.allTimeStats.handsPlayed) || 0;
+            rs2.textContent = played > 0
+                ? 'Bankroll $' + Math.round(room.bankroll).toLocaleString('en-US') + ' \u00B7 ' + played + ' hands played'
+                : 'Live cash game vs AI opponents';
+        }
+    } catch(_) {}
+
+    // Train Now subtitle: surface the review queue when something is due
+    try {
+        const tsub = document.getElementById('menu-train-sub');
+        if (tsub) tsub.textContent = dueCount > 0 && total > 0
+            ? dueCount + (dueCount === 1 ? ' spot' : ' spots') + ' due for review'
+            : 'Preflop ranges \u00B7 missed hands come back';
+    } catch(_) {}
 
     // Training streak
     try {
@@ -1878,22 +1907,13 @@ function updateMenuUI() {
             if (done > 0) {
                 let label = '';
                 if (prog.completedAt) {
-                    label = 'Poker Crusher Champion \uD83C\uDFC6 \u00B7 ' + done + '/' + CHALLENGE_NODES.length + ' nodes';
+                    label = 'Champion \u00B7 ' + done + '/' + CHALLENGE_NODES.length;
                 } else {
-                    // Highest cleared tier's playerLabel
-                    let playerLabel = '';
-                    for (let i = CHALLENGE_TIERS.length - 1; i >= 0; i--) {
-                        if (_allTierNodesPassed(prog, CHALLENGE_TIERS[i].id)) {
-                            playerLabel = CHALLENGE_TIERS[i].playerLabel;
-                            break;
-                        }
-                    }
-                    label = (playerLabel ? playerLabel + ' \u00B7 ' : '') + done + '/' + CHALLENGE_NODES.length + ' nodes';
+                    label = done + '/' + CHALLENGE_NODES.length + ' nodes';
                 }
                 cpEl.textContent = label;
-                cpEl.classList.remove('hidden');
             } else {
-                cpEl.classList.add('hidden');
+                cpEl.textContent = 'Campaign path';
             }
         }
     } catch(_) {}
@@ -1910,6 +1930,8 @@ function renderPrescriptionCard() {
     let leaks = [];
     try { leaks = SR.analyzeWeakSpots(); } catch(_) {}
 
+    // Nothing to prescribe on first run — don't show an empty card
+    el.classList.toggle('hidden', totalHands === 0);
     if (totalHands < 10 || leaks.length === 0) {
         el.innerHTML = `<p class="text-slate-500 text-xs text-center py-1">Keep training — your biggest leak will appear here</p>`;
         return;
