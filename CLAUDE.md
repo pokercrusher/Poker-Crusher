@@ -1,5 +1,10 @@
 # Poker Crusher — Project Memory
 
+## Workflow
+- Sole developer. Build directly on `main` and push there — no feature
+  branches or pull requests (owner's instruction, 2026-11-17). Pushing main
+  deploys to GitHub Pages, so run `npm test` and `npm run smoke` first.
+
 ## Tech Stack
 - Vanilla HTML/JS, no frameworks. Tailwind CSS (local build).
 - Deployed to GitHub Pages (`pokercrusher.github.io`).
