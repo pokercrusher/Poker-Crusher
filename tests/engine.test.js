@@ -1561,7 +1561,7 @@ describe('Poker Room — turn and river barrel grading', () => {
         expect(gCheck.grade).toBe('correct');
     });
 
-    it('turn after a checked-back flop falls back to the heuristic (delayed line not covered)', () => {
+    it('turn after a checked-back flop grades against the delayed c-bet tree', () => {
         const hand = barrelSpot(cards2('K', 's', 'K', 'h'),
             [C('Q', 'd'), C('7', 'c'), C('2', 'h'), C('3', 's')],
             { flop: [
@@ -1569,7 +1569,9 @@ describe('Poker Room — turn and river barrel grading', () => {
                 { seatLabel: 'BTN', action: 'check', sizingBB: 0 },
               ] });
         const g = PROD.PR_gradeHeroAction(hand, 'bet', 5);
-        expect(g.explanation).not.toContain('%');   // heuristic, no false authority
+        expect(g.explanation).toContain('%');
+        expect(g.explanation).toContain('delayed c-bet');
+        expect(g.grade).not.toBe('error');          // an overpair bets the turn it skipped on the flop
     });
 });
 
@@ -2001,7 +2003,7 @@ describe('Poker Room — table-UI grading regressions', () => {
         expect(g.explanation).not.toContain('Complex spot');
     });
 
-    it('UTG open called by LJ: flop c-bet grades via the UTG_vs_BB proxy tree', () => {
+    it('UTG open called by LJ: flop c-bet grades via an OUT-OF-POSITION proxy tree', () => {
         const prHand = gradeHand(
             'UTG', 'LJ', cards2('A', 's', 'K', 'h'),
             [C('K', 's'), C('7', 'h'), C('2', 'd')],
@@ -2012,9 +2014,17 @@ describe('Poker Room — table-UI grading regressions', () => {
             { potStructure: 'SRP', opener: 'UTG' },
             [], { UTG: 0, LJ: 0 }, 6,
         );
-        const g = PROD.PR_gradeHeroAction(prHand, 'bet'); // UTG_vs_LJ has no tree of its own
-        expect(g.grade).toBe('correct');
+        // UTG_vs_LJ has no tree of its own. UTG acts first postflop, so the
+        // proxy must be an opener-out-of-position tree (CO_vs_BTN), never the
+        // in-position UTG_vs_BB tree, which c-bets far more often.
+        expect(PROD._PR_srpFamilyCandidates('UTG', 'LJ')).toEqual(['CO_vs_BTN']);
+        const g = PROD.PR_gradeHeroAction(prHand, 'bet');
+        expect(g.grade).not.toBe('error');
         expect(g.explanation).toContain('%');
+        // air out of position is a check, not a range bet
+        prHand.seats[0].holeCards = cards2('6', 'c', '5', 'c');
+        expect(PROD.PR_gradeHeroAction(prHand, 'bet').grade).toBe('error');
+        expect(PROD.PR_gradeHeroAction(prHand, 'check').grade).toBe('correct');
     });
 
     it('losers at showdown show their cards (training tool: no mucking)', () => {
@@ -2257,6 +2267,135 @@ describe('Poker Room — donk-node grading (caller first to act, no bet in front
         const g = PROD.PR_gradeHeroAction(h, 'bet');
         expect(g.explanation || '').not.toContain('Donk-betting');
         expect(g.explanation || '').not.toContain('check to the raiser');
+    });
+});
+
+// =============================================================================
+// Poker Room — off-the-main-line grading: delayed c-bets, probes, turn checks
+// =============================================================================
+
+describe('Poker Room — delayed c-bet / probe line grading', () => {
+
+    const flop = [C('Q', 'd'), C('7', 'c'), C('2', 'h')];
+    const XX = (first, second) => [
+        { seatLabel: first,  action: 'check', sizingBB: 0 },
+        { seatLabel: second, action: 'check', sizingBB: 0 },
+    ];
+    const betCall = (bettor, caller, checkFirst) => (checkFirst ? [{ seatLabel: caller, action: 'check', sizingBB: 0 }] : []).concat([
+        { seatLabel: bettor, action: 'bet',  sizingBB: 3 },
+        { seatLabel: caller, action: 'call', sizingBB: 3 },
+    ]);
+
+    // Heads-up SRP, opener vs caller. `now` = this street's actions so far.
+    function lineHand(heroLbl, vilLbl, openerLbl, heroCards, board, hist, now) {
+        const callerLbl = openerLbl === heroLbl ? vilLbl : heroLbl;
+        const street = board.length === 4 ? 'turn' : 'river';
+        const h = gradeHand(heroLbl, vilLbl, heroCards, board,
+            [{ seatLabel: openerLbl, action: 'raise', sizingBB: 2.5 },
+             { seatLabel: callerLbl, action: 'call',  sizingBB: 2.5 }],
+            { potStructure: 'SRP', opener: openerLbl }, now || [], {}, 6);
+        h.gameState.street = street;
+        h.gameState.streetState.street = street;
+        const bet = (now || []).find(a => a.action === 'bet');
+        h.gameState.streetState.betMadeThisStreet = !!bet;
+        h.gameState.streetState.committedBB = bet ? { [bet.seatLabel]: bet.sizingBB } : {};
+        Object.assign(h.gameState.streetHistory, hist);
+        return h;
+    }
+    const turnBoard  = flop.concat([C('3', 's')]);
+    const riverBoard = turnBoard.concat([C('9', 'd')]);
+    const SET = cards2('7', 's', '7', 'd');
+    const AIR = cards2('6', 's', '5', 's'); // gutshot-free on Q72-3: 6-5 needs a 4
+
+    it('hero BB probes the turn after the raiser checks back', () => {
+        const mk = (cards) => lineHand('BB', 'BTN', 'BTN', cards, turnBoard, { flop: XX('BB', 'BTN') });
+        const g = PROD.PR_gradeHeroAction(mk(SET), 'bet');
+        expect(g.grade).toBe('correct');
+        expect(g.explanation).toContain('turn probe');
+        expect(g.explanation).toContain('%');
+        expect(g.explanation).not.toContain('Donk');
+    });
+
+    it('hero BTN faces a turn probe: folding a set is an error', () => {
+        const h = lineHand('BTN', 'BB', 'BTN', SET, turnBoard, { flop: XX('BB', 'BTN') },
+            [{ seatLabel: 'BB', action: 'bet', sizingBB: 3 }]);
+        const g = PROD.PR_gradeHeroAction(h, 'fold');
+        expect(g.grade).toBe('error');
+        expect(g.explanation).toContain('%');
+        // the tree raises a set 82% — but slow-playing it is missed value, not a blunder
+        expect(PROD.PR_gradeHeroAction(h, 'call').grade).toBe('mixed');
+        expect(PROD.PR_gradeHeroAction(h, 'raise').grade).toBe('correct');
+    });
+
+    it('probe trees exist for BTN/CO only — an HJ opener borrows CO_vs_BB', () => {
+        const h = lineHand('HJ', 'BB', 'HJ', SET, turnBoard, { flop: XX('BB', 'HJ') },
+            [{ seatLabel: 'BB', action: 'bet', sizingBB: 3 }]);
+        expect(PROD.PR_gradeHeroAction(h, 'fold').explanation).toContain('%');
+    });
+
+    it('hero BB faces a delayed c-bet on the turn', () => {
+        const h = lineHand('BB', 'BTN', 'BTN', SET, turnBoard, { flop: XX('BB', 'BTN') },
+            [{ seatLabel: 'BB', action: 'check', sizingBB: 0 }, { seatLabel: 'BTN', action: 'bet', sizingBB: 3 }]);
+        const g = PROD.PR_gradeHeroAction(h, 'fold');
+        expect(g.grade).toBe('error');
+        expect(g.explanation).toContain('delayed c-bet');
+    });
+
+    it('river lines: delayed barrel, turn-check river, river probe, second probe', () => {
+        const cases = [
+            // [hero, villain, hist, now, label]
+            ['BTN', 'BB', { flop: XX('BB', 'BTN'), turn: betCall('BTN', 'BB', true) }, [{ seatLabel: 'BB', action: 'check', sizingBB: 0 }], 'delayed turn bet'],
+            ['BTN', 'BB', { flop: betCall('BTN', 'BB', true), turn: XX('BB', 'BTN') }, [{ seatLabel: 'BB', action: 'check', sizingBB: 0 }], 'turn checked through'],
+            ['BB', 'BTN', { flop: XX('BB', 'BTN'), turn: XX('BB', 'BTN') }, [], 'river probe'],
+            ['BB', 'BTN', { flop: XX('BB', 'BTN'), turn: betCall('BB', 'BTN', false) }, [], 'turn probe was called'],
+        ];
+        for (const [hero, vil, hist, now, label] of cases) {
+            const g = PROD.PR_gradeHeroAction(lineHand(hero, vil, 'BTN', SET, riverBoard, hist, now), 'bet');
+            expect(g.explanation, label).toContain(label);
+            expect(g.explanation, label).toContain('%');
+            expect(g.grade, label).toBe('correct'); // a set value-bets every one of these rivers
+        }
+    });
+
+    it('never grades a line the tables do not describe', () => {
+        // flop was check-raised
+        const raised = lineHand('BTN', 'BB', 'BTN', SET, turnBoard, { flop: [
+            { seatLabel: 'BB',  action: 'check', sizingBB: 0 },
+            { seatLabel: 'BTN', action: 'bet',   sizingBB: 3 },
+            { seatLabel: 'BB',  action: 'raise', sizingBB: 9 },
+            { seatLabel: 'BTN', action: 'call',  sizingBB: 9 },
+        ] });
+        expect(PROD._PR_gradeLineV2(raised, 'bet', raised.seats[0])).toBe(null);
+        // a third player saw the flop
+        const three = lineHand('BTN', 'BB', 'BTN', SET, turnBoard, { flop: XX('BB', 'BTN').concat(
+            [{ seatLabel: 'SB', action: 'check', sizingBB: 0 }]) });
+        expect(PROD._PR_gradeLineV2(three, 'bet', three.seats[0])).toBe(null);
+        // caller in position, raiser checked to them: no tree for the stab
+        const stab = lineHand('BTN', 'CO', 'CO', AIR, turnBoard, { flop: XX('CO', 'BTN') },
+            [{ seatLabel: 'CO', action: 'check', sizingBB: 0 }]);
+        expect(PROD._PR_gradeLineV2(stab, 'bet', stab.seats[0])).toBe(null);
+        // 3-bet pots
+        const tbp = lineHand('BTN', 'BB', 'BTN', SET, turnBoard, { flop: XX('BB', 'BTN') });
+        tbp.preflopContext.potStructure = '3BP';
+        expect(PROD._PR_gradeLineV2(tbp, 'bet', tbp.seats[0])).toBe(null);
+    });
+
+    it('family proxies keep the raiser on the same side of position', () => {
+        expect(PROD._PR_srpFamilyCandidates('BTN', 'BB')).toEqual(['BTN_vs_BB']);
+        expect(PROD._PR_srpFamilyCandidates('HJ', 'SB')).toEqual(['HJ_vs_BB']);
+        expect(PROD._PR_srpFamilyCandidates('UTG1', 'BB')).toEqual(['UTG_vs_BB']);
+        expect(PROD._PR_srpFamilyCandidates('LJ', 'BTN')).toEqual(['CO_vs_BTN']);
+        expect(PROD._PR_srpFamilyCandidates('CO', 'BTN')).toEqual(['CO_vs_BTN']);
+    });
+
+    it('betting in position after the raiser checks is not a donk bet', () => {
+        const h = gradeHand('BTN', 'CO', AIR, flop,
+            [{ seatLabel: 'CO', action: 'raise', sizingBB: 2.5 }, { seatLabel: 'BTN', action: 'call', sizingBB: 2.5 }],
+            { potStructure: 'SRP', opener: 'CO' },
+            [{ seatLabel: 'CO', action: 'check', sizingBB: 0 }], {}, 6.5);
+        const g = PROD.PR_gradeHeroAction(h, 'bet');
+        expect(g.grade).not.toBe('error');
+        expect(g.explanation).not.toContain('Donk');
     });
 });
 
@@ -2536,6 +2675,23 @@ describe('Poker Room — multiway rule grading', () => {
         h.gameState.board = [C('K', 'h'), C('7', 'h'), C('2', 'd')]; // nut flush draw
         const g = PROD.PR_gradeHeroAction(h, 'call');
         expect(g.spot ? g.spot.srKey : null).toBeFalsy();
+    });
+
+    it('nobody has bet and hero is not the raiser: value leads, bluffs are errors', () => {
+        // UTG (raiser) and LJ already checked to hero on the flop
+        const mk = (cards) => {
+            const h = mwHand(cards, { heroPFR: false });
+            h.gameState.streetState.actions = [
+                { seatLabel: 'UTG', action: 'check', sizingBB: 0 },
+                { seatLabel: 'LJ',  action: 'check', sizingBB: 0 },
+            ];
+            return h;
+        };
+        const air = PROD.PR_gradeHeroAction(mk(cards2('9', 'd', '8', 'd')), 'bet');
+        expect(air.grade).toBe('error');
+        expect(air.spot.srKey).toBe('MW|LEAD|WEAK');
+        expect(PROD.PR_gradeHeroAction(mk(cards2('9', 'd', '8', 'd')), 'check').grade).toBe('correct');
+        expect(PROD.PR_gradeHeroAction(mk(cards2('7', 's', '7', 'c')), 'bet').grade).toBe('correct');
     });
 
     it('heads-up pots never hit the multiway rules', () => {

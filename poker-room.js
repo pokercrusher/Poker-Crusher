@@ -1349,6 +1349,31 @@ function _PR_proxyFamily(family) {
     }).join('_');
 }
 
+// SRP trees exist for eight matchups. Any other raiser/caller pair grades
+// against the nearest tree with the SAME positional structure: a raiser in
+// position borrows their own vs-BB tree, a raiser out of position borrows
+// CO_vs_BTN (the one opener-OOP-vs-cold-caller tree). Returns family names
+// in preference order; empty when nothing fits.
+function _PR_srpFamilyCandidates(pfrLabel, defLabel) {
+    if (typeof POSTFLOP_PREFLOP_FAMILIES === 'undefined') return [];
+    const pfrIP = PR_POSTFLOP_ORDER.indexOf(pfrLabel) > PR_POSTFLOP_ORDER.indexOf(defLabel);
+    const want = pfrIP ? 'IP' : 'OOP';
+    const names = [_PR_proxyFamily(pfrLabel + '_vs_' + defLabel)];
+    names.push(pfrIP ? _PR_proxyFamily(pfrLabel + '_vs_BB') : 'CO_vs_BTN');
+    return names.filter(function(f, i) {
+        const fi = POSTFLOP_PREFLOP_FAMILIES[f];
+        return fi && fi.positionState === want && names.indexOf(f) === i;
+    });
+}
+
+// Facing a bet, calling when the tree prefers to RAISE is a missed-value
+// slow-play, not a blunder: the hand continues either way. Only applies when
+// the tree almost never folds the hand.
+function _PR_isSlowplayCall(heroAction, strat) {
+    return heroAction === 'call' && (strat.actions.fold || 0) < 0.2 &&
+        (strat.actions.raise || 0) > (strat.actions.call || 0);
+}
+
 // True when this street's log is exactly "bettorLabel bet, other player(s) only called"
 function _PR_betWasCalled(actions, bettorLabel) {
     const aggressive = actions.filter(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
@@ -1389,15 +1414,12 @@ function _PR_gradeCbetV2(prHand, heroAction, heroSeat) {
         } else {
             return null;
         }
-        family = _PR_proxyFamily(family);
-        let fi = POSTFLOP_PREFLOP_FAMILIES[family];
-        if (!fi && potType === 'SRP') {
-            // Trees are keyed vs specific callers (mostly _vs_BB). When this
-            // exact matchup has no tree, grade vs the BB-caller tree — the
-            // same proxying the trainer's LANE_FAMILY applies.
-            family = _PR_proxyFamily(heroSeat.label + '_vs_BB');
-            fi = POSTFLOP_PREFLOP_FAMILIES[family];
-        }
+        // Trees are keyed vs specific callers; an unlisted SRP matchup
+        // grades against the nearest tree with the same position.
+        family = potType === 'SRP'
+            ? _PR_srpFamilyCandidates(heroSeat.label, villain.label)[0]
+            : _PR_proxyFamily(family);
+        const fi = family ? POSTFLOP_PREFLOP_FAMILIES[family] : null;
         if (!fi) return null;
 
         const board = prHand.gameState.board;
@@ -1498,10 +1520,10 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
         if (aggressive.length !== 1 || aggressive[0].seatLabel !== villain.label ||
             aggressive[0].action !== 'bet') return null;
 
-        const family = _PR_proxyFamily(potType === 'SRP'
-            ? villain.label + '_vs_' + heroSeat.label            // SRP: PFR_vs_caller
-            : heroSeat.label + '_CALL_3BP_vs_' + villain.label); // 3BP: caller-first
-        const fi = POSTFLOP_PREFLOP_FAMILIES[family];
+        const family = potType === 'SRP'
+            ? _PR_srpFamilyCandidates(villain.label, heroSeat.label)[0]             // SRP: PFR_vs_caller
+            : _PR_proxyFamily(heroSeat.label + '_CALL_3BP_vs_' + villain.label);    // 3BP: caller-first
+        const fi = family ? POSTFLOP_PREFLOP_FAMILIES[family] : null;
         if (!fi) return null;
         // SRP defend tables are built with a literal OOP position state
         const posState = potType === 'SRP' ? 'OOP' : fi.positionState;
@@ -1551,6 +1573,184 @@ function _PR_gradeDefendV2(prHand, heroAction, heroSeat) {
             heroAction + 's ' + pct + '% here. ' + (strat.reasoning || '');
         if (chosenFreq >= 0.65) return { grade: 'correct', explanation: 'Good ' + heroAction + ' — ' + base };
         if (chosenFreq >= 0.35) return { grade: 'mixed', explanation: 'Mixed spot — ' + base };
+        if (_PR_isSlowplayCall(heroAction, strat)) {
+            return { grade: 'mixed', explanation: 'Calling keeps you in, but GTO mostly raises for value here — ' + base };
+        }
+        return { grade: 'error', explanation: 'GTO rarely ' + heroAction + 's here (' + pct + '%) — ' +
+            'preferred: ' + (strat.preferredAction || 'call') + '. ' + base };
+    } catch (_) {
+        return null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// _PR_gradeLineV2 — heads-up SRP lines that leave the bet-bet-bet path. The
+// trainer's delayed c-bet, probe and turn-check tables cover them; the line is
+// read off the street history relative to the preflop raiser (PFR):
+//   'XX'  street checked through     'PFR' PFR bet, was called
+//   'DEF' defender bet, was called   anything else (raises) is not covered
+//
+//   hero PFR, no bet in front        turn  XX        delayed c-bet
+//                                    river XX,PFR    delayed barrel
+//                                    river PFR,XX    river after turn check
+//   hero PFR in position, faces      turn  XX        vs turn probe
+//   the defender's lead              river XX,XX     vs river probe
+//                                    river XX,DEF    vs second probe barrel
+//   hero defender, faces PFR's bet   turn  XX        vs delayed c-bet
+//                                    river XX,PFR    vs delayed barrel
+//                                    river PFR,XX    vs river bet after turn check
+//   hero defender out of position,   turn  XX        turn probe
+//   first to act                     river XX,XX     river probe
+//                                    river XX,DEF    probe again
+// Returns null when the line, matchup or hand class has no table.
+// ---------------------------------------------------------------------------
+function _PR_streetLine(actions, pfrLabel, defLabel) {
+    const acts = actions || [];
+    if (acts.some(a => a.seatLabel !== pfrLabel && a.seatLabel !== defLabel)) return null; // a third player was involved
+    if (!acts.some(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action))) {
+        return acts.length > 0 ? 'XX' : null;
+    }
+    if (_PR_betWasCalled(acts, pfrLabel)) return 'PFR';
+    if (_PR_betWasCalled(acts, defLabel)) return 'DEF';
+    return null;
+}
+
+// node name + registry for each covered line, keyed 'role|situation|street|line'
+function _PR_lineTable(key) {
+    const T = {
+        'PFR|OPEN|turn|XX':        ['TURN_DELAYED_CBET_DECISION',        typeof POSTFLOP_TURN_DELAYED_STRATEGY !== 'undefined' ? POSTFLOP_TURN_DELAYED_STRATEGY : null],
+        'PFR|OPEN|river|XX,PFR':   ['RIVER_DELAYED_CBET_DECISION',       typeof POSTFLOP_RIVER_DELAYED_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_DELAYED_STRATEGY : null],
+        'PFR|OPEN|river|PFR,XX':   ['RIVER_TURN_CHECK_CBET_DECISION',    typeof POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_TURN_CHECK_CBET_STRATEGY : null],
+        'PFR|FACING|turn|XX':      ['TURN_PROBE_FACING_DECISION',        typeof POSTFLOP_TURN_PROBE_STRATEGY !== 'undefined' ? POSTFLOP_TURN_PROBE_STRATEGY : null],
+        'PFR|FACING|river|XX,XX':  ['RIVER_PROBE_FACING_DECISION',       typeof POSTFLOP_RIVER_PROBE_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_PROBE_STRATEGY : null],
+        'PFR|FACING|river|XX,DEF': ['RIVER_PROBE_CALL_DEFEND_DECISION',  typeof POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_PROBE_CALL_DEFEND_STRATEGY : null],
+        'DEF|FACING|turn|XX':      ['TURN_DELAYED_DEFEND_DECISION',      typeof POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_TURN_DELAYED_DEFEND_STRATEGY : null],
+        'DEF|FACING|river|XX,PFR': ['RIVER_DELAYED_DEFEND_DECISION',     typeof POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_DELAYED_DEFEND_STRATEGY : null],
+        'DEF|FACING|river|PFR,XX': ['RIVER_TURN_CHECK_DEFEND_DECISION',  typeof POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_TURN_CHECK_DEFEND_STRATEGY : null],
+        'DEF|OPEN|turn|XX':        ['TURN_PROBE_BET_DECISION',           typeof POSTFLOP_TURN_PROBE_DEFEND_STRATEGY !== 'undefined' ? POSTFLOP_TURN_PROBE_DEFEND_STRATEGY : null],
+        'DEF|OPEN|river|XX,XX':    ['RIVER_PROBE_BET_DECISION',          typeof POSTFLOP_RIVER_PROBE_BET_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_PROBE_BET_STRATEGY : null],
+        'DEF|OPEN|river|XX,DEF':   ['RIVER_PROBE_CALL_BET_DECISION',     typeof POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY !== 'undefined' ? POSTFLOP_RIVER_PROBE_CALL_BET_STRATEGY : null],
+    };
+    return T[key] || null;
+}
+
+const _PR_LINE_LABELS = {
+    TURN_DELAYED_CBET_DECISION:       'delayed c-bet spot (flop checked through)',
+    RIVER_DELAYED_CBET_DECISION:      'river after your delayed turn bet was called',
+    RIVER_TURN_CHECK_CBET_DECISION:   'river after the turn checked through',
+    TURN_PROBE_FACING_DECISION:       'turn lead after you checked back the flop',
+    RIVER_PROBE_FACING_DECISION:      'river lead after two checked streets',
+    RIVER_PROBE_CALL_DEFEND_DECISION: 'second barrel of their probe line',
+    TURN_DELAYED_DEFEND_DECISION:     'delayed c-bet (the raiser skipped the flop)',
+    RIVER_DELAYED_DEFEND_DECISION:    'river barrel after their delayed turn bet',
+    RIVER_TURN_CHECK_DEFEND_DECISION: 'river bet after the turn checked through',
+    TURN_PROBE_BET_DECISION:          'turn probe spot (the raiser checked back the flop)',
+    RIVER_PROBE_BET_DECISION:         'river probe spot (two checked streets)',
+    RIVER_PROBE_CALL_BET_DECISION:    'river after your turn probe was called',
+};
+
+function _PR_gradeLineV2(prHand, heroAction, heroSeat) {
+    try {
+        if (typeof POSTFLOP_PREFLOP_FAMILIES === 'undefined' || typeof classifyTurnCard !== 'function') return null;
+        const street = prHand.gameState.street;
+        if (street !== 'turn' && street !== 'river') return null;
+
+        const active = prHand.seats.filter(s => s !== null && !s.folded);
+        if (active.length !== 2) return null;
+        const villain = active.find(s => !s.isHero);
+        if (!villain) return null;
+
+        const ctx = prHand.preflopContext || {};
+        if (ctx.potStructure !== 'SRP') return null;
+        const hist = prHand.gameState.streetHistory;
+        const lastRaise = [...(hist.preflop || [])].reverse().find(a => ['raise', '3bet', '4bet'].includes(a.action));
+        if (!lastRaise || lastRaise.seatLabel !== ctx.opener) return null;
+        let role;
+        if (ctx.opener === heroSeat.label) role = 'PFR';
+        else if (ctx.opener === villain.label) role = 'DEF';
+        else return null;
+        const pfr = role === 'PFR' ? heroSeat : villain;
+        const def = role === 'PFR' ? villain : heroSeat;
+
+        // Situation this street: first to bet, or facing exactly one unraised bet
+        const ss = prHand.gameState.streetState;
+        const facing = _PR_facingAmount(prHand, heroSeat.label);
+        const aggressive = ss.actions.filter(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
+        let situation;
+        if (facing > 0) {
+            if (!['fold', 'call', 'raise'].includes(heroAction)) return null;
+            if (aggressive.length !== 1 || aggressive[0].action !== 'bet' ||
+                aggressive[0].seatLabel !== villain.label) return null;
+            situation = 'FACING';
+        } else {
+            if (heroAction !== 'bet' && heroAction !== 'check') return null;
+            if (aggressive.length !== 0) return null;
+            situation = 'OPEN';
+        }
+
+        // Who acts last postflop
+        const heroIP = PR_POSTFLOP_ORDER.indexOf(heroSeat.label) > PR_POSTFLOP_ORDER.indexOf(villain.label);
+        // The probe trees are built for an in-position raiser against an
+        // out-of-position caller; the mirror-image spots have no table.
+        if (role === 'PFR' && situation === 'FACING' && !heroIP) return null;
+        if (role === 'DEF' && situation === 'OPEN' && heroIP) return null;
+
+        const board = prHand.gameState.board;
+        const flop = board.slice(0, 3);
+        const flopLine = _PR_streetLine(hist.flop, pfr.label, def.label);
+        if (!flopLine) return null;
+        let line = flopLine;
+        if (street === 'river') {
+            const turnLine = _PR_streetLine(hist.turn, pfr.label, def.label);
+            if (!turnLine) return null;
+            line = flopLine + ',' + turnLine;
+        }
+        const entry = _PR_lineTable(role + '|' + situation + '|' + street + '|' + line);
+        if (!entry || !entry[1]) return null;
+        const node = entry[0], reg = entry[1];
+
+        const heroHand = { cards: heroSeat.holeCards };
+        let heroHandClass, cardFamily;
+        if (street === 'turn') {
+            if (board.length < 4) return null;
+            heroHandClass = classifyTurnHand(heroHand, flop, board[3]);
+            cardFamily = classifyTurnCard(board[3], flop);
+        } else {
+            if (board.length < 5 || typeof classifyRiverCard !== 'function') return null;
+            heroHandClass = classifyRiverHand(heroHand, flop, board[3], board[4]);
+            cardFamily = classifyRiverCard(board[4], board.slice(0, 4));
+        }
+
+        // Exact matchup first, then the nearest tree. Probe trees exist for
+        // BTN/CO vs BB only, so every other in-position raiser borrows CO's.
+        const candidates = _PR_srpFamilyCandidates(pfr.label, def.label);
+        const isProbeNode = node.indexOf('PROBE') !== -1;
+        if (isProbeNode && candidates.indexOf('CO_vs_BB') === -1) candidates.push('CO_vs_BB');
+        let strat = null;
+        for (let i = 0; i < candidates.length && !strat; i++) {
+            const fi = POSTFLOP_PREFLOP_FAMILIES[candidates[i]];
+            // defender tables are keyed with a literal OOP
+            const pos = role === 'DEF' ? 'OOP' : fi.positionState;
+            strat = reg['SRP|' + candidates[i] + '|' + street.toUpperCase() + '|' +
+                (role === 'PFR' ? 'PFR' : 'DEFENDER') + '|' + pos + '|' + node + '|' + cardFamily + '|' + heroHandClass];
+        }
+        if (!strat || !strat.actions) return null;
+
+        const actKey = heroAction === 'bet' ? 'bet50' : heroAction;
+        const chosenFreq = strat.actions[actKey] || 0;
+        const pct = Math.round(chosenFreq * 100);
+        const hand = heroHandClass.replace(/_/g, ' ').toLowerCase();
+        const where = _PR_LINE_LABELS[node] || ('this ' + street);
+        const base = hand + ', ' + where + ': GTO ' + heroAction + 's ' + pct + '% here. ' + (strat.reasoning || '');
+        if (chosenFreq >= 0.65) return { grade: 'correct', explanation: 'Good ' + heroAction + ' — ' + base };
+        if (chosenFreq >= 0.35) return { grade: 'mixed', explanation: 'Mixed spot — ' + base };
+        if (situation === 'OPEN') {
+            return { grade: 'error', explanation: 'GTO strongly prefers ' +
+                (heroAction === 'bet' ? 'checking' : 'betting') + ' — ' + base };
+        }
+        if (_PR_isSlowplayCall(heroAction, strat)) {
+            return { grade: 'mixed', explanation: 'Calling keeps you in, but GTO mostly raises for value here — ' + base };
+        }
         return { grade: 'error', explanation: 'GTO rarely ' + heroAction + 's here (' + pct + '%) — ' +
             'preferred: ' + (strat.preferredAction || 'call') + '. ' + base };
     } catch (_) {
@@ -1579,6 +1779,9 @@ function _PR_gradeDonkNode(prHand, heroAction, heroSeat) {
         if (!lastRaise || lastRaise.seatLabel === heroSeat.label) return null;
         const aggr = prHand.seats.find(s => s !== null && s.label === lastRaise.seatLabel);
         if (!aggr || aggr.folded) return null;
+        // Only a donk if the raiser is still to act. Once they have checked
+        // to hero, betting is a stab in position — a normal play.
+        if (ss.actions.some(a => a.seatLabel === aggr.label)) return null;
 
         if (street === 'turn' && !_PR_betWasCalled(hist.flop || [], aggr.label)) return null;
         if (street === 'river' && (!_PR_betWasCalled(hist.flop || [], aggr.label) ||
@@ -1740,6 +1943,32 @@ function _PR_gradeMultiwayNode(prHand, heroAction, heroSeat) {
                 : { grade: 'error', spot, explanation: mw + 'c-bet bluffs burn money against multiple callers. Check and give up cheap.' };
         }
 
+        // Node C — no bet in front and hero is not the raiser (limped pots,
+        // streets the raiser gave up on). Same live rule: bet value, never bluff.
+        if (!heroIsPFR && !ss.betMadeThisStreet && facing <= 0 &&
+            (heroAction === 'bet' || heroAction === 'check')) {
+            const spot = { srKey: 'MW|LEAD|' + tier };
+            if (tier === 'NUT_VALUE' || tier === 'STRONG') {
+                return heroAction === 'bet'
+                    ? { grade: 'correct', spot, explanation: mw + 'nobody has bet and you hold a strong hand — lead out and charge the field.' }
+                    : { grade: 'mixed', spot, explanation: mw + 'checking a strong hand hopes someone else bets; with this many players, betting yourself gets paid more often.' };
+            }
+            if (tier === 'MEDIUM') {
+                return { grade: heroAction === 'check' ? 'correct' : 'mixed', spot,
+                    explanation: heroAction === 'check'
+                        ? mw + 'one pair is a showdown hand against a crowd — checking keeps the pot small.'
+                        : mw + 'betting top pair is fine for a small size, but expect to be called by better more often than heads-up.' };
+            }
+            if (tier === 'DRAW') {
+                return heroAction === 'check'
+                    ? { grade: 'correct', spot, explanation: mw + 'take the free card with a draw — a bet rarely folds out several players.' }
+                    : { grade: 'mixed', spot, explanation: mw + 'leading a draw into a field is thin; it works mainly when everyone has shown weakness.' };
+            }
+            return heroAction === 'check'
+                ? { grade: 'correct', spot, explanation: mw + 'nothing to bet for value and bluffs do not work against a crowd — check.' }
+                : { grade: 'error', spot, explanation: mw + 'bluffing into several players burns money — someone almost always has enough to call.' };
+        }
+
         // Node B — facing exactly one unraised bet, hero didn't make it
         const aggr = ss.actions.filter(a => ['bet', 'raise', '3bet', '4bet'].includes(a.action));
         if (facing > 0 && aggr.length === 1 && aggr[0].action === 'bet' &&
@@ -1780,6 +2009,7 @@ function _PR_gradePostflopAction(prHand, heroAction, heroSeat, sizingBB) {
     // check-to-the-raiser is near-universal, and the multiway rule set.
     const v2 = _PR_gradeCbetV2(prHand, heroAction, heroSeat) ||
                _PR_gradeDefendV2(prHand, heroAction, heroSeat) ||
+               _PR_gradeLineV2(prHand, heroAction, heroSeat) ||
                _PR_gradeDonkNode(prHand, heroAction, heroSeat) ||
                _PR_gradeMultiwayNode(prHand, heroAction, heroSeat);
     if (v2) return v2;

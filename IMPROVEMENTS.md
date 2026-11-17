@@ -33,8 +33,8 @@ Last updated: 2026-04-17
 ### ✅ 2.2 Production Console Noise
 **Status:** Done. `_log`/`_warn` helpers in `engine.js`. All diagnostic console calls in `engine.js`, `training.js`, `cloud.js` gated behind `window.PC_DEBUG`.
 
-### 🔄 2.3 Incomplete Postflop Hero-Hand Awareness
-**Status:** Partial. **3BP is now fully hero-hand-aware across flop + turn + river** (Pass B, 2026-04-17): 13 bettor families, 5 defender families, 4 new strategy registries. SRP remains partial: BTN_vs_BB and CO_vs_BB are hero-hand-aware; HJ/LJ/UTG2/UTG1/UTG vs BB and OOP SRP spots still use fallback logic. SRP defender families expanded to 8 (Pass A). Tracked in Claude.md Known Issues.
+### ✅ 2.3 Incomplete Postflop Hero-Hand Awareness
+**Status:** Done. All 8 SRP families (BTN/CO/HJ/LJ/UTG vs BB, SB_vs_BB, BTN_vs_SB, CO_vs_BTN) carry hero-hand-aware tables on flop, turn and river, including the delayed c-bet, turn-check and probe lines; 3BP is complete across all three streets. Verified 2026-11-17 by dumping every `POSTFLOP_*` registry. The Poker Room now grades against the delayed/probe tables too (`_PR_gradeLineV2`).
 
 ### ✅ 2.4 Challenge Path v2
 **Status:** Done. 24-node DAG, 8 tiers, pass/silver/gold medals live in `challenge.js`. Progress in `gto_challenge_v2` with v1 migration.
@@ -84,7 +84,6 @@ Last updated: 2026-04-17
 | # | Item | Risk | Effort |
 |---|---|---|---|
 | 3.1 | Global state isolation (158 mutations) | High | High |
-| 2.3 | Expand SRP hero-hand awareness (3BP complete) | Medium | Medium |
 | 4.4 | Split `ranges.js` | Low | Low |
 | 1.1 | XSS/innerHTML audit | Medium | Medium |
 | — | `UI_CONFIG` animation constants | Low | Low |

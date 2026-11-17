@@ -117,6 +117,27 @@ renderer and mostly unnecessary.
   street — probes stay heuristic). ~11% of all decisions fall to the honest
   tier heuristic: delayed c-bets, probes, multiway — no data by design.
 
+### Postflop coverage extension (2026-11-17)
+- `_PR_gradeLineV2` grades heads-up SRP lines off the bet-bet-bet path
+  against the trainer's existing tables: delayed c-bet (PFR + defender,
+  turn and river), turn-check river, turn/river probes (bet and facing),
+  second probe barrel. Line is read from street history as XX / PFR / DEF
+  per street (`_PR_streetLine`); raises or a third player → null.
+- `_PR_srpFamilyCandidates(pfr, def)`: unlisted matchups proxy to a tree
+  with the SAME position — raiser IP → own `_vs_BB`, raiser OOP →
+  `CO_vs_BTN`. Used by c-bet, defend and line graders (the c-bet grader
+  previously graded OOP raisers against IP trees). Probe trees exist for
+  BTN/CO vs BB only; other IP raisers borrow `CO_vs_BB`.
+- Donk node only fires while the raiser is still to act (betting in
+  position after the raiser checks is no longer an "error").
+- Multiway Node C ('MW|LEAD|tier'): no bet in front, hero not the raiser.
+- `_PR_isSlowplayCall`: calling when the tree raises a never-fold hand is
+  'mixed', not 'error'.
+- Seeded 6k-hand sim (random hero postflop play): heuristic share of
+  postflop decisions 44% → 27% (6.0% → 3.7% of all decisions). Still
+  heuristic by design: in-position stabs after the raiser checks, facing
+  donks/raises, hero's own donk lines, draws facing multiway bets.
+
 ### Engine invariants (tests/engine.test.js, 200+ tests, run vs PRODUCTION code)
 - Tests load real files via `tests/helpers/load-production.js` (node:vm).
   NEVER copy production functions into tests — a drifted copy once masked a
