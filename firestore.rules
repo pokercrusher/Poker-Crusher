@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Poker Crusher — Firestore security rules.
+//
+// The app stores one document per signed-in user at /users/{uid} (see the
+// inline Firebase bootstrap at the bottom of index.html: getDoc + setDoc on
+// that single path, nothing else). The web API key is public by design, so
+// these rules are the ONLY thing separating one player's data from another's.
+//
+// This file is the source of truth. Changing it here does nothing until it is
+// deployed:
+//   Firebase console → Firestore Database → Rules → paste → Publish
+//   or:  npx firebase-tools deploy --only firestore:rules --project poker-crusher
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A signed-in user may read and write their own document, and no one else's.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Everything else is closed. (Unmatched paths are denied by default; this
+    // makes the intent explicit and survives someone adding a broad rule above.)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

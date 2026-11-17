@@ -153,6 +153,8 @@ Because action rendering is timeout choreography (§2.3) with no input lockout, 
 ### 7.1 (P0-verify) Firestore rules are the only barrier — verify and commit them
 The client writes `/users/{uid}` with a public API key (correct for Firebase). Everything depends on rules being exactly `allow read, write: if request.auth != null && request.auth.uid == userId;`. The rules aren't in this repo, so they can't be audited or change-tracked. Export `firestore.rules` into the repo and note the console deploy step in the deployment checklist. If rules are currently open (the cloud.js:209 comment "for a real public product, you'd add proper auth + rules" predates Google sign-in and suggests they may be permissive), every user's profile is readable/writable by anyone with the projectId.
 
+**Update 2026-11-17:** `firestore.rules` + `firebase.json` committed (owner-only `/users/{uid}`, all else denied). Unauthenticated REST reads of `/users`, a `/users/{id}` doc and an unrelated path all return 403 PERMISSION_DENIED, so the database is not wide open. Still to confirm by the owner: the deployed console rules match the committed file (the remote probe cannot test a signed-in user reading another user's document).
+
 ### 7.2 (P1) XSS audit graduates from "deferred" to "required" at Pass 4
 IMPROVEMENTS.md 1.1 deferred the innerHTML audit because "all data is internal." Pass 4 makes villain names user-editable and Pass 5 renders them at seats; ui.js has 64 innerHTML sites and training.js 99. Add one `esc(s)` helper, use it for every user-derived string (names, avatars, sync-code-adjacent fields), and prefer `textContent` for plain-text nodes (`showActionBadge` already does this correctly with `innerText`, ui.js:50).
 

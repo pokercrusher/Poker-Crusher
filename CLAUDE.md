@@ -199,3 +199,9 @@ renderer and mostly unnecessary.
   Without it, returning mobile users run stale code until a hard refresh.
 - GitHub Pages deploys can wedge (build ok, deploy queued forever): re-save
   Settings → Pages source, then push any commit.
+- **Firestore rules** live in `firestore.rules` (owner-only `/users/{uid}`,
+  everything else denied). Editing the file does NOT deploy it: publish via
+  Firebase console → Firestore → Rules, or `npx firebase-tools deploy --only
+  firestore:rules --project poker-crusher`. Probe 2026-11-17: unauthenticated
+  reads of `/users` and other paths return 403. Not yet confirmed: that the
+  deployed rules match this file (cross-user reads while signed in).
